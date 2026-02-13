@@ -55,19 +55,19 @@
 
 <div class="flex-1 flex flex-col h-full overflow-y-auto hide-scrollbar">
   <header class="px-6 py-4 shrink-0">
-    <h2 class="text-xl font-display font-bold">Library</h2>
-    <p class="text-slate-400 mt-1">Your download history</p>
+    <h2 class="text-xl font-display font-bold text-gray-900">Library</h2>
+    <p class="text-gray-400 mt-1">Your download history</p>
   </header>
 
   <!-- Search -->
   <div class="px-6 mb-4">
     <div class="relative">
-      <div class="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-500">
+      <div class="absolute inset-y-0 left-4 flex items-center pointer-events-none text-gray-400">
         <span class="material-symbols-outlined text-[20px]">search</span>
       </div>
       <input
         type="text"
-        class="w-full h-10 bg-yt-highlight text-white rounded-xl pl-12 pr-4 border border-slate-700/50 focus:ring-2 focus:ring-yt-primary focus:outline-none placeholder-slate-500 text-sm"
+        class="w-full h-10 bg-yt-highlight text-gray-900 rounded-xl pl-12 pr-4 border border-gray-200 focus:ring-2 focus:ring-yt-primary focus:outline-none placeholder-gray-400 text-sm"
         placeholder="제목으로 검색..."
         value={search}
         oninput={(e) => handleSearch((e.target as HTMLInputElement).value)}
@@ -82,30 +82,30 @@
       </div>
     {:else if items.length === 0}
       <div class="flex flex-col items-center justify-center py-20">
-        <span class="material-symbols-outlined text-slate-600 text-6xl">library_books</span>
-        <p class="text-slate-400 mt-4 text-lg">다운로드 이력이 없습니다</p>
+        <span class="material-symbols-outlined text-gray-300 text-6xl">library_books</span>
+        <p class="text-gray-500 mt-4 text-lg">다운로드 이력이 없습니다</p>
       </div>
     {:else}
       {#each items as item}
-        <div class="bg-yt-highlight rounded-xl p-4 flex gap-4 items-center group hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-700">
-          <div class="w-20 h-14 bg-slate-800 rounded-lg overflow-hidden shrink-0 relative">
-            <div class="w-full h-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center">
-              <span class="material-symbols-outlined text-green-400/60">check_circle</span>
+        <div class="bg-yt-highlight rounded-xl p-4 flex gap-4 items-center group hover:bg-gray-100 transition-colors border border-gray-200">
+          <div class="w-20 h-14 bg-gray-100 rounded-lg overflow-hidden shrink-0 relative">
+            <div class="w-full h-full bg-gradient-to-br from-gray-50 to-gray-200 flex items-center justify-center">
+              <span class="material-symbols-outlined text-green-600/60">check_circle</span>
             </div>
           </div>
 
           <div class="flex-1 min-w-0">
-            <h4 class="font-medium text-white text-sm truncate mb-1">{item.title}</h4>
-            <div class="flex items-center gap-3 text-xs text-slate-400">
-              <span class="px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">{item.qualityLabel || "N/A"}</span>
-              <span class="px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">{item.format}</span>
+            <h4 class="font-medium text-gray-900 text-sm truncate mb-1">{item.title}</h4>
+            <div class="flex items-center gap-3 text-xs text-gray-400">
+              <span class="px-2 py-0.5 rounded bg-gray-200 text-gray-600">{item.qualityLabel || "N/A"}</span>
+              <span class="px-2 py-0.5 rounded bg-gray-200 text-gray-600">{item.format}</span>
               <span>{formatSize(item.fileSize)}</span>
-              <span class="text-slate-500">{formatDate(item.downloadedAt)}</span>
+              <span class="text-gray-400">{formatDate(item.downloadedAt)}</span>
             </div>
           </div>
 
           <button
-            class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 transition-all p-2 rounded-lg hover:bg-red-500/10"
+            class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-all p-2 rounded-lg hover:bg-red-500/10"
             onclick={() => handleDelete(item.id)}
           >
             <span class="material-symbols-outlined text-[20px]">delete</span>
@@ -117,17 +117,17 @@
       {#if totalPages > 1}
         <div class="flex justify-center items-center gap-4 pt-4">
           <button
-            class="px-4 py-2 rounded-xl bg-yt-highlight text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50"
+            class="px-4 py-2 rounded-xl bg-yt-highlight text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 border border-gray-200"
             onclick={prevPage}
             disabled={currentPage === 0}
           >
             <span class="material-symbols-outlined text-[18px]">chevron_left</span>
           </button>
-          <span class="text-sm text-slate-400">
+          <span class="text-sm text-gray-500">
             {currentPage + 1} / {totalPages}
           </span>
           <button
-            class="px-4 py-2 rounded-xl bg-yt-highlight text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50"
+            class="px-4 py-2 rounded-xl bg-yt-highlight text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 border border-gray-200"
             onclick={nextPage}
             disabled={currentPage >= totalPages - 1}
           >

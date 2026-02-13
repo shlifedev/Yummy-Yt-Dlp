@@ -245,13 +245,13 @@
     <!-- Header -->
     <header class="px-6 py-4 flex justify-between items-center shrink-0">
       <div>
-        <h2 class="text-xl font-display font-bold">Dashboard</h2>
-        <p class="text-slate-400 mt-1">Ready to capture some content?</p>
+        <h2 class="text-xl font-display font-bold text-gray-900">Dashboard</h2>
+        <p class="text-gray-400 mt-1">Ready to capture some content?</p>
       </div>
       <div class="flex items-center gap-4">
-        <div class="h-6 w-px bg-slate-800"></div>
-        <div class="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-1.5 rounded-full">
-          <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+        <div class="h-6 w-px bg-gray-200"></div>
+        <div class="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 px-3 py-1.5 rounded-full">
+          <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
           Engine Ready
         </div>
       </div>
@@ -261,8 +261,8 @@
       <!-- Error -->
       {#if error}
         <div class="bg-red-500/10 border border-red-500/20 rounded-xl px-5 py-3 flex items-center justify-between">
-          <span class="text-red-400 text-sm">{error}</span>
-          <button class="text-red-400 hover:text-red-300" onclick={() => error = null}>
+          <span class="text-red-600 text-sm">{error}</span>
+          <button class="text-red-600 hover:text-red-500" onclick={() => error = null}>
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
@@ -270,14 +270,14 @@
 
       <!-- URL Input -->
       <div class="mt-4">
-        <div class="bg-yt-highlight border border-slate-700/50 rounded-xl p-1 shadow-2xl shadow-black/20">
+        <div class="bg-yt-highlight border border-gray-200 rounded-xl p-1 shadow-lg shadow-black/5">
           <div class="flex flex-col lg:flex-row gap-2">
             <div class="flex-1 relative group">
-              <div class="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-yt-primary transition-colors">
+              <div class="absolute inset-y-0 left-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-yt-primary transition-colors">
                 <span class="material-symbols-outlined">link</span>
               </div>
               <input
-                class="w-full h-10 bg-yt-surface text-white rounded-xl pl-12 pr-4 border-0 focus:ring-2 focus:ring-yt-primary focus:outline-none placeholder-slate-500 font-mono text-sm"
+                class="w-full h-10 bg-yt-surface text-gray-900 rounded-xl pl-12 pr-4 border border-gray-200 focus:ring-2 focus:ring-yt-primary focus:outline-none placeholder-gray-400 font-mono text-sm"
                 placeholder="Paste YouTube, Twitch, or video URL here..."
                 type="text"
                 bind:value={url}
@@ -287,7 +287,7 @@
             </div>
             <div class="flex gap-2">
               <button
-                class="h-10 px-6 rounded-xl bg-yt-surface hover:bg-slate-700 text-white font-medium flex items-center gap-2 transition-colors border border-transparent hover:border-slate-600"
+                class="h-10 px-6 rounded-xl bg-yt-surface hover:bg-gray-100 text-gray-600 font-medium flex items-center gap-2 transition-colors border border-gray-200"
                 onclick={handlePaste}
                 disabled={analyzing || downloading}
               >
@@ -313,29 +313,29 @@
 
       <!-- Video Info Banner (after analyze) -->
       {#if videoInfo}
-        <div class="bg-yt-highlight rounded-xl p-4 flex items-center gap-4 border border-slate-700/50">
+        <div class="bg-yt-highlight rounded-xl p-4 flex items-center gap-4 border border-gray-200">
           {#if videoInfo.thumbnail}
             <img src={videoInfo.thumbnail} alt="" class="w-32 h-20 rounded-xl object-cover shrink-0" />
           {/if}
           <div class="flex-1 min-w-0">
-            <h3 class="font-display font-semibold text-white truncate">{videoInfo.title}</h3>
-            <p class="text-slate-400 text-sm mt-1">{videoInfo.channel} &middot; {formatDuration(videoInfo.duration)}</p>
+            <h3 class="font-display font-semibold text-gray-900 truncate">{videoInfo.title}</h3>
+            <p class="text-gray-500 text-sm mt-1">{videoInfo.channel} &middot; {formatDuration(videoInfo.duration)}</p>
           </div>
         </div>
       {/if}
 
       <!-- Playlist / Channel Result -->
       {#if playlistResult}
-        <div class="bg-yt-highlight rounded-xl border border-slate-700/50 overflow-hidden">
+        <div class="bg-yt-highlight rounded-xl border border-gray-200 overflow-hidden">
           <!-- Playlist Header -->
-          <div class="p-5 border-b border-slate-700/50">
+          <div class="p-5 border-b border-gray-200">
             <div class="flex items-center gap-3">
               <div class="p-2 bg-yt-primary/10 rounded-lg text-yt-primary">
                 <span class="material-symbols-outlined text-[24px]">playlist_play</span>
               </div>
               <div class="flex-1 min-w-0">
-                <h3 class="font-display font-semibold text-white truncate">{playlistResult.title}</h3>
-                <p class="text-slate-400 text-sm mt-0.5">
+                <h3 class="font-display font-semibold text-gray-900 truncate">{playlistResult.title}</h3>
+                <p class="text-gray-500 text-sm mt-0.5">
                   {#if playlistResult.channelName}{playlistResult.channelName} &middot; {/if}{playlistResult.videoCount ?? playlistResult.entries.length}개 영상
                 </p>
               </div>
@@ -343,37 +343,37 @@
           </div>
 
           <!-- Video List -->
-          <div class="max-h-[400px] overflow-y-auto hide-scrollbar divide-y divide-slate-800/50">
+          <div class="max-h-[400px] overflow-y-auto hide-scrollbar divide-y divide-gray-100">
             {#each playlistResult.entries as entry, i}
               <button
-                class="w-full flex items-center gap-3 p-3 hover:bg-slate-700/30 transition-colors text-left disabled:opacity-50"
+                class="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors text-left disabled:opacity-50"
                 onclick={() => handleSelectVideo(entry)}
                 disabled={analyzing}
               >
-                <span class="text-slate-500 text-xs font-mono w-6 text-right shrink-0">{i + 1}</span>
+                <span class="text-gray-400 text-xs font-mono w-6 text-right shrink-0">{i + 1}</span>
                 {#if entry.thumbnail}
-                  <img src={entry.thumbnail} alt="" class="w-20 h-12 rounded-lg object-cover shrink-0 bg-slate-800" />
+                  <img src={entry.thumbnail} alt="" class="w-20 h-12 rounded-lg object-cover shrink-0 bg-gray-100" />
                 {:else}
-                  <div class="w-20 h-12 rounded-lg bg-slate-800 shrink-0 flex items-center justify-center">
-                    <span class="material-symbols-outlined text-slate-600 text-[20px]">movie</span>
+                  <div class="w-20 h-12 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-gray-300 text-[20px]">movie</span>
                   </div>
                 {/if}
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm text-white truncate">{entry.title || "제목 없음"}</p>
+                  <p class="text-sm text-gray-900 truncate">{entry.title || "제목 없음"}</p>
                   {#if entry.duration}
-                    <p class="text-xs text-slate-500 mt-0.5">{formatDuration(entry.duration)}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">{formatDuration(entry.duration)}</p>
                   {/if}
                 </div>
-                <span class="material-symbols-outlined text-slate-500 text-[18px] shrink-0 opacity-0 group-hover:opacity-100">arrow_forward</span>
+                <span class="material-symbols-outlined text-gray-400 text-[18px] shrink-0 opacity-0 group-hover:opacity-100">arrow_forward</span>
               </button>
             {/each}
           </div>
 
           <!-- Load More -->
           {#if playlistResult.videoCount && playlistResult.entries.length < playlistResult.videoCount}
-            <div class="p-3 border-t border-slate-700/50">
+            <div class="p-3 border-t border-gray-200">
               <button
-                class="w-full py-2.5 rounded-xl bg-yt-surface hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                class="w-full py-2.5 rounded-xl bg-yt-surface hover:bg-gray-100 text-gray-600 text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 border border-gray-200"
                 onclick={handleLoadMore}
                 disabled={loadingMore}
               >
@@ -393,40 +393,40 @@
       <!-- Format / Quality / Subtitles Cards -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <!-- Format -->
-        <div class="bg-yt-highlight rounded-xl p-4 border border-slate-800/50">
+        <div class="bg-yt-highlight rounded-xl p-4 border border-gray-200">
           <div class="flex items-center gap-3 mb-3">
-            <div class="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+            <div class="p-2 bg-purple-500/10 rounded-lg text-purple-600">
               <span class="material-symbols-outlined text-[20px]">movie</span>
             </div>
-            <h3 class="font-display font-semibold text-base">Format</h3>
+            <h3 class="font-display font-semibold text-base text-gray-900">Format</h3>
           </div>
-          <div class="grid grid-cols-3 gap-2 bg-yt-surface p-1 rounded-xl">
+          <div class="grid grid-cols-3 gap-2 bg-yt-surface p-1 rounded-xl border border-gray-200">
             <button
-              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mp4' ? 'bg-yt-primary text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}"
+              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mp4' ? 'bg-yt-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}"
               onclick={() => format = "mp4"}
             >MP4</button>
             <button
-              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mkv' ? 'bg-yt-primary text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}"
+              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mkv' ? 'bg-yt-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}"
               onclick={() => format = "mkv"}
             >MKV</button>
             <button
-              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mp3' ? 'bg-yt-primary text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}"
+              class="py-2 rounded-lg text-sm font-medium transition-colors {format === 'mp3' ? 'bg-yt-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}"
               onclick={() => format = "mp3"}
             >MP3</button>
           </div>
         </div>
 
         <!-- Quality -->
-        <div class="bg-yt-highlight rounded-xl p-4 border border-slate-800/50">
+        <div class="bg-yt-highlight rounded-xl p-4 border border-gray-200">
           <div class="flex items-center gap-3 mb-3">
-            <div class="p-2 bg-amber-500/10 rounded-lg text-amber-400">
+            <div class="p-2 bg-amber-500/10 rounded-lg text-amber-600">
               <span class="material-symbols-outlined text-[20px]">hd</span>
             </div>
-            <h3 class="font-display font-semibold text-base">Quality</h3>
+            <h3 class="font-display font-semibold text-base text-gray-900">Quality</h3>
           </div>
           <div class="relative">
             <select
-              class="w-full bg-yt-surface text-white border-0 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-yt-primary focus:outline-none appearance-none cursor-pointer"
+              class="w-full bg-yt-surface text-gray-900 border border-gray-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-yt-primary focus:outline-none appearance-none cursor-pointer"
               bind:value={quality}
               disabled={format === "mp3"}
             >
@@ -435,25 +435,25 @@
               <option value="720p">720p (HD)</option>
               <option value="480p">480p</option>
             </select>
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
               <span class="material-symbols-outlined text-[20px]">expand_more</span>
             </div>
           </div>
         </div>
 
         <!-- Subtitles -->
-        <div class="bg-yt-highlight rounded-xl p-4 border border-slate-800/50">
+        <div class="bg-yt-highlight rounded-xl p-4 border border-gray-200">
           <div class="flex items-center gap-3 mb-3">
-            <div class="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+            <div class="p-2 bg-emerald-500/10 rounded-lg text-emerald-600">
               <span class="material-symbols-outlined text-[20px]">subtitles</span>
             </div>
-            <h3 class="font-display font-semibold text-base">Subtitles</h3>
+            <h3 class="font-display font-semibold text-base text-gray-900">Subtitles</h3>
           </div>
-          <div class="flex items-center justify-between bg-yt-surface p-2.5 rounded-xl px-4">
-            <span class="text-sm text-slate-300">Embed Subs</span>
+          <div class="flex items-center justify-between bg-yt-surface p-2.5 rounded-xl px-4 border border-gray-200">
+            <span class="text-sm text-gray-600">Embed Subs</span>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" bind:checked={embedSubs} class="sr-only peer" />
-              <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-yt-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
+              <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-yt-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
             </label>
           </div>
         </div>
@@ -470,21 +470,21 @@
               {#if downloading}
                 <span class="material-symbols-outlined text-yt-primary animate-spin">progress_activity</span>
               {:else if downloadStatus === "completed"}
-                <span class="material-symbols-outlined text-green-400">check_circle</span>
+                <span class="material-symbols-outlined text-green-600">check_circle</span>
               {:else}
-                <span class="material-symbols-outlined text-red-400">error</span>
+                <span class="material-symbols-outlined text-red-600">error</span>
               {/if}
               <div>
-                <p class="text-white font-medium">
+                <p class="text-gray-900 font-medium">
                   {#if downloading}다운로드 중... {progress.toFixed(0)}%{:else if downloadStatus === "completed"}다운로드 완료!{:else}다운로드 실패{/if}
                 </p>
                 {#if downloading && speed}
-                  <p class="text-slate-400 text-sm">{speed} &middot; ETA: {eta}</p>
+                  <p class="text-gray-500 text-sm">{speed} &middot; ETA: {eta}</p>
                 {/if}
               </div>
             </div>
             {#if downloading}
-              <button class="text-slate-400 hover:text-red-400 transition-colors" onclick={handleCancelDownload}>
+              <button class="text-gray-400 hover:text-red-600 transition-colors" onclick={handleCancelDownload}>
                 <span class="material-symbols-outlined">close</span>
               </button>
             {/if}
@@ -510,8 +510,8 @@
             {/if}
           </div>
         </button>
-        <p class="text-center text-slate-500 text-sm mt-3">
-          Downloads are saved to <span class="text-slate-300 font-mono">{downloadPath}</span>
+        <p class="text-center text-gray-400 text-sm mt-3">
+          Downloads are saved to <span class="text-gray-600 font-mono">{downloadPath}</span>
         </p>
       </div>
     </div>

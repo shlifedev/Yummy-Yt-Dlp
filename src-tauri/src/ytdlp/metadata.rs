@@ -85,14 +85,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
         .app_data_dir()
         .map_err(|e| AppError::Custom(format!("Failed to get app data dir: {}", e)))?;
 
-    let ytdlp_path = binary::get_ytdlp_path(&app_data_dir);
-
-    // Check if binary exists
-    if !ytdlp_path.exists() {
-        return Err(AppError::BinaryNotFound(
-            "yt-dlp binary not found. Please install dependencies first.".to_string(),
-        ));
-    }
+    let ytdlp_path = binary::resolve_ytdlp_path(&app_data_dir).await?;
 
     // Run yt-dlp with --dump-json
     let output = tokio::process::Command::new(&ytdlp_path)
@@ -240,14 +233,7 @@ pub async fn fetch_playlist_info(
         .app_data_dir()
         .map_err(|e| AppError::Custom(format!("Failed to get app data dir: {}", e)))?;
 
-    let ytdlp_path = binary::get_ytdlp_path(&app_data_dir);
-
-    // Check if binary exists
-    if !ytdlp_path.exists() {
-        return Err(AppError::BinaryNotFound(
-            "yt-dlp binary not found. Please install dependencies first.".to_string(),
-        ));
-    }
+    let ytdlp_path = binary::resolve_ytdlp_path(&app_data_dir).await?;
 
     // Run yt-dlp with --flat-playlist --dump-json
     let output = tokio::process::Command::new(&ytdlp_path)

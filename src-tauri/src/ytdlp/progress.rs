@@ -9,6 +9,7 @@ static PROGRESS_RE: Lazy<Regex> =
 /// Input format (from --progress-template): "download:XX.X%|2.5MiB/s|00:01:30" or similar
 pub fn parse_progress_line(line: &str) -> Option<ProgressInfo> {
     let line = line.trim();
+    let line = line.strip_prefix("download:").unwrap_or(line).trim();
 
     if let Some(captures) = PROGRESS_RE.captures(line) {
         let percent_str = captures.get(1)?.as_str();
@@ -92,6 +93,24 @@ mod tests {
         assert_eq!(info.percent, 100.0);
         assert_eq!(info.speed, Some("3.1MiB/s".to_string()));
         assert_eq!(info.eta, Some("00:00:00".to_string()));
+    }
+
+    #[test]
+    fn test_parse_with_download_prefix() {
+        let line = "download:  45.2%|2.5MiB/s|00:01:30";
+        let info = parse_progress_line(line).unwrap();
+        assert_eq!(info.percent, 45.2);
+        assert_eq!(info.speed, Some("2.5MiB/s".to_string()));
+        assert_eq!(info.eta, Some("00:01:30".to_string()));
+    }
+
+    #[test]
+    fn test_parse_with_download_prefix_zero() {
+        let line = "download:  0.0%|N/A|N/A";
+        let info = parse_progress_line(line).unwrap();
+        assert_eq!(info.percent, 0.0);
+        assert_eq!(info.speed, None);
+        assert_eq!(info.eta, None);
     }
 
     #[test]

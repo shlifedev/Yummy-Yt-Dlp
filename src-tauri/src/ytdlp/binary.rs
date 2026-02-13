@@ -1,7 +1,11 @@
 use super::types::{DependencyStatus, InstallEvent};
 use crate::modules::types::AppError;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tauri::ipc::Channel;
+use tokio::sync::OnceCell;
+
+static RESOLVED_YTDLP: OnceCell<PathBuf> = OnceCell::const_new();
 
 /// Get the binaries directory inside app data dir
 pub fn get_binaries_dir(app_data_dir: &Path) -> PathBuf {
@@ -9,12 +13,37 @@ pub fn get_binaries_dir(app_data_dir: &Path) -> PathBuf {
 }
 
 /// Get yt-dlp binary path (platform-specific extension)
+/// Returns the app's local binary path (used for downloads/installs)
 pub fn get_ytdlp_path(app_data_dir: &Path) -> PathBuf {
     let binaries_dir = get_binaries_dir(app_data_dir);
     match std::env::consts::OS {
         "windows" => binaries_dir.join("yt-dlp.exe"),
         _ => binaries_dir.join("yt-dlp"),
     }
+}
+
+/// Resolve the actual yt-dlp binary to use at runtime (cached after first call).
+/// Prefers the app's local binary if it works, otherwise falls back to system PATH.
+pub async fn resolve_ytdlp_path(app_data_dir: &Path) -> Result<PathBuf, AppError> {
+    // Clone app_data_dir for the async closure
+    let app_data_dir = app_data_dir.to_path_buf();
+    RESOLVED_YTDLP
+        .get_or_try_init(|| async {
+            let local_path = get_ytdlp_path(&app_data_dir);
+            if local_path.exists()
+                && try_get_version(&local_path).await.is_some()
+            {
+                return Ok(local_path);
+            }
+            if try_get_version(Path::new("yt-dlp")).await.is_some() {
+                return Ok(PathBuf::from("yt-dlp"));
+            }
+            Err(AppError::BinaryNotFound(
+                "yt-dlp not found. Please install via Homebrew (brew install yt-dlp) or click Install.".to_string(),
+            ))
+        })
+        .await
+        .cloned()
 }
 
 /// Get ffmpeg binary path
@@ -26,19 +55,31 @@ pub fn get_ffmpeg_path(app_data_dir: &Path) -> PathBuf {
     }
 }
 
-/// Check if yt-dlp is installed, return version if so
+/// Check if yt-dlp is installed, return version if so.
+/// Checks the app's local binary first, then falls back to system PATH.
 pub async fn check_ytdlp(app_data_dir: &Path) -> Option<String> {
+    // First try the app's local binary
     let ytdlp_path = get_ytdlp_path(app_data_dir);
-
-    if !ytdlp_path.exists() {
-        return None;
+    if ytdlp_path.exists() {
+        if let Some(version) = try_get_version(&ytdlp_path).await {
+            return Some(version);
+        }
     }
 
-    let output = tokio::process::Command::new(&ytdlp_path)
-        .arg("--version")
-        .output()
-        .await
-        .ok()?;
+    // Fall back to system PATH (e.g. homebrew, pip)
+    try_get_version(Path::new("yt-dlp")).await
+}
+
+async fn try_get_version(binary_path: &Path) -> Option<String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::process::Command::new(binary_path)
+            .arg("--version")
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
 
     if output.status.success() {
         String::from_utf8(output.stdout)
@@ -57,11 +98,15 @@ pub async fn check_ffmpeg(app_data_dir: &Path) -> Option<String> {
         return None;
     }
 
-    let output = tokio::process::Command::new(&ffmpeg_path)
-        .arg("-version")
-        .output()
-        .await
-        .ok()?;
+    let output = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::process::Command::new(&ffmpeg_path)
+            .arg("-version")
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
 
     if output.status.success() {
         String::from_utf8(output.stdout)
@@ -142,6 +187,15 @@ pub async fn download_ytdlp(
         })?;
     }
 
+    // Remove macOS quarantine attribute so Gatekeeper doesn't block execution
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("xattr")
+            .args(["-d", "com.apple.quarantine"])
+            .arg(&ytdlp_path)
+            .output();
+    }
+
     let _ = on_event.send(InstallEvent::Completed {
         dependency: "yt-dlp".to_string(),
         message: "yt-dlp installed successfully".to_string(),
@@ -180,13 +234,7 @@ pub async fn install_dependencies(
 
 /// Update yt-dlp using --update flag
 pub async fn update_ytdlp(app_data_dir: &Path) -> Result<String, AppError> {
-    let ytdlp_path = get_ytdlp_path(app_data_dir);
-
-    if !ytdlp_path.exists() {
-        return Err(AppError::BinaryNotFound(
-            "yt-dlp is not installed".to_string(),
-        ));
-    }
+    let ytdlp_path = resolve_ytdlp_path(app_data_dir).await?;
 
     let output = tokio::process::Command::new(&ytdlp_path)
         .arg("--update")

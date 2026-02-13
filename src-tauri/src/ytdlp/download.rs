@@ -113,34 +113,34 @@ async fn execute_download(app: AppHandle, task_id: u64) {
     };
 
     // Get binary paths
-    let ytdlp_path = binary::get_ytdlp_path(&app_data_dir);
-    let ffmpeg_path = binary::get_ffmpeg_path(&app_data_dir);
-
-    // Check yt-dlp binary exists
-    if !ytdlp_path.exists() {
-        let _ = db_state.update_download_status(
-            task_id,
-            &DownloadStatus::Failed,
-            Some("yt-dlp binary not found. Please install dependencies first."),
-        );
-        let _ = app.emit(
-            "download-event",
-            GlobalDownloadEvent {
+    let ytdlp_path = match binary::resolve_ytdlp_path(&app_data_dir).await {
+        Ok(p) => p,
+        Err(_) => {
+            let _ = db_state.update_download_status(
                 task_id,
-                event_type: "error".to_string(),
-                percent: None,
-                speed: None,
-                eta: None,
-                file_path: None,
-                file_size: None,
-                message: Some("yt-dlp binary not found".to_string()),
-            },
-        );
-        let manager = app.state::<Arc<DownloadManager>>();
-        manager.release();
-        process_next_pending(app);
-        return;
-    }
+                &DownloadStatus::Failed,
+                Some("yt-dlp not found. Please install via Homebrew or click Install."),
+            );
+            let _ = app.emit(
+                "download-event",
+                GlobalDownloadEvent {
+                    task_id,
+                    event_type: "error".to_string(),
+                    percent: None,
+                    speed: None,
+                    eta: None,
+                    file_path: None,
+                    file_size: None,
+                    message: Some("yt-dlp not found".to_string()),
+                },
+            );
+            let manager = app.state::<Arc<DownloadManager>>();
+            manager.release();
+            process_next_pending(app);
+            return;
+        }
+    };
+    let ffmpeg_path = binary::get_ffmpeg_path(&app_data_dir);
 
     // Get settings for cookie browser and other options
     let settings = match settings::get_settings(&app) {

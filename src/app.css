@@ -2,9 +2,9 @@
 
 @theme {
   --color-yt-primary: #258cf4;
-  --color-yt-bg: #101a23;
-  --color-yt-surface: #16202a;
-  --color-yt-highlight: #1c2834;
+  --color-yt-bg: #f5f7fa;
+  --color-yt-surface: #ffffff;
+  --color-yt-highlight: #f0f2f5;
   --font-display: "Space Grotesk", sans-serif;
   --font-body: "Noto Sans KR", "Noto Sans", sans-serif;
 }
@@ -12,7 +12,7 @@
 body {
   font-family: var(--font-body);
   background-color: var(--color-yt-bg);
-  color: white;
+  color: #1a1a2e;
   overflow: hidden;
 }
 
