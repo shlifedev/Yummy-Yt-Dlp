@@ -569,7 +569,7 @@
       {/if}
 
       <!-- URL Input -->
-      <div class="flex flex-col lg:flex-row gap-2">
+      <div class="flex flex-row gap-2">
         <div class="flex-1 relative group">
           <div class="absolute inset-y-0 left-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-yt-primary transition-colors">
             <span class="material-symbols-outlined text-[20px]">link</span>
@@ -584,7 +584,7 @@
           />
         </div>
         <button
-          class="h-10 px-5 rounded-lg bg-yt-primary hover:bg-blue-600 text-white font-bold flex items-center gap-2 transition-all disabled:opacity-50 text-sm"
+          class="h-10 px-5 rounded-lg shrink-0 bg-yt-primary hover:bg-blue-600 text-white font-bold flex items-center gap-2 transition-all disabled:opacity-50 text-sm"
           onclick={playlistResult && !videoInfo
             ? (selectedEntries.size > 0 ? handleDownloadSelected : handleDownloadAll)
             : handleStartDownload}

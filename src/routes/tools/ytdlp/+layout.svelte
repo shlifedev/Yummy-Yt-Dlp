@@ -30,7 +30,6 @@
   let queueBounce = $state(false)
 
   const navItems = [
-    { href: "/tools/ytdlp/history", label: "Library", icon: "library_books" },
     { href: "/tools/ytdlp/settings", label: "Settings", icon: "settings" },
   ]
 
