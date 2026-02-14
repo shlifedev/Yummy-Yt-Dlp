@@ -114,13 +114,15 @@ pub async fn check_ytdlp(app_data_dir: &Path) -> (Option<String>, Option<String>
 
 /// Try to get version from a binary. Returns Ok(version) or Err(reason).
 async fn try_get_version(binary_path: &Path) -> Result<String, String> {
-    let timeout_result = tokio::time::timeout(
-        Duration::from_secs(5),
-        tokio::process::Command::new(binary_path)
-            .arg("--version")
-            .output(),
-    )
-    .await;
+    let mut cmd = tokio::process::Command::new(binary_path);
+    cmd.arg("--version");
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let timeout_result = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await;
 
     let cmd_result = match timeout_result {
         Ok(result) => result,
@@ -158,15 +160,18 @@ pub async fn check_ffmpeg(app_data_dir: &Path) -> Option<String> {
         return None;
     }
 
-    let output = tokio::time::timeout(
-        Duration::from_secs(5),
-        tokio::process::Command::new(&ffmpeg_path)
-            .arg("-version")
-            .output(),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    let mut cmd = tokio::process::Command::new(&ffmpeg_path);
+    cmd.arg("-version");
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = tokio::time::timeout(Duration::from_secs(5), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
 
     if output.status.success() {
         String::from_utf8(output.stdout)
@@ -327,8 +332,15 @@ pub async fn install_dependencies(
 pub async fn update_ytdlp(app_data_dir: &Path) -> Result<String, AppError> {
     let ytdlp_path = resolve_ytdlp_path(app_data_dir).await?;
 
-    let output = tokio::process::Command::new(&ytdlp_path)
-        .arg("--update")
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    cmd.arg("--update");
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| AppError::Custom(format!("Failed to update yt-dlp: {}", e)))?;

@@ -97,6 +97,12 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
         cmd.arg("--cookies-from-browser").arg(browser);
     }
     cmd.arg(&url);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     let output = cmd
         .output()
         .await
@@ -256,6 +262,12 @@ pub async fn fetch_playlist_info(
         cmd.arg("--cookies-from-browser").arg(browser);
     }
     cmd.arg(&url);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     let output = cmd
         .output()
         .await

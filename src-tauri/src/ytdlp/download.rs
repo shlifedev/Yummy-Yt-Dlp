@@ -246,6 +246,11 @@ async fn execute_download(app: AppHandle, task_id: u64) {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     // Spawn process
     let mut child = match cmd.spawn() {
         Ok(c) => c,
