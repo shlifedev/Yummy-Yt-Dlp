@@ -13,6 +13,31 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::watch;
 
+const STDERR_BUFFER_LIMIT_BYTES: usize = 64 * 1024;
+
+fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
+    if !buffer.is_empty() {
+        buffer.push('\n');
+    }
+    buffer.push_str(line);
+
+    if buffer.len() > max_bytes {
+        let overflow = buffer.len() - max_bytes;
+
+        let cut_at = if buffer.is_char_boundary(overflow) {
+            overflow
+        } else {
+            buffer
+                .char_indices()
+                .find(|(idx, _)| *idx > overflow)
+                .map(|(idx, _)| idx)
+                .unwrap_or(buffer.len())
+        };
+
+        buffer.drain(..cut_at);
+    }
+}
+
 pub struct DownloadManager {
     active_count: AtomicU32,
     max_concurrent: AtomicU32,
@@ -353,22 +378,8 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         let mut output = String::new();
-        const MAX_STDERR_BUFFER: usize = 64 * 1024;
-
         while let Ok(Some(line)) = lines.next_line().await {
-            if !output.is_empty() {
-                output.push('\n');
-            }
-            output.push_str(&line);
-
-            if output.len() > MAX_STDERR_BUFFER {
-                let truncate_from = output.len() - MAX_STDERR_BUFFER;
-                let safe_start = output
-                    .char_indices()
-                    .find_map(|(idx, _)| (idx >= truncate_from).then_some(idx))
-                    .unwrap_or(0);
-                output.drain(..safe_start);
-            }
+            append_limited(&mut output, &line, STDERR_BUFFER_LIMIT_BYTES);
         }
         output
     });
@@ -610,4 +621,19 @@ pub async fn pause_download(_app: AppHandle, _task_id: u64) -> Result<(), AppErr
 #[specta::specta]
 pub async fn resume_download(_app: AppHandle, _task_id: u64) -> Result<(), AppError> {
     Err(AppError::Custom("Not yet implemented".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn append_limited_keeps_recent_tail() {
+        let mut output = String::new();
+
+        append_limited(&mut output, "12345", 8);
+        append_limited(&mut output, "6789", 8);
+
+        assert_eq!(output, "345\n6789");
+    }
 }
