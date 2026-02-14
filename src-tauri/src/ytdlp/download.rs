@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::watch;
 
+const STDERR_TAIL_MAX_LINES: usize = 200;
+
 pub struct DownloadManager {
     active_count: AtomicU32,
     max_concurrent: AtomicU32,
@@ -338,18 +340,21 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         }
     });
 
-    // Collect stderr for error messages
+    // Collect stderr for error messages (bounded tail to avoid unbounded memory usage)
     let stderr_handle = tokio::spawn(async move {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
-        let mut output = String::new();
+        let mut tail_lines: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(STDERR_TAIL_MAX_LINES);
+
         while let Ok(Some(line)) = lines.next_line().await {
-            if !output.is_empty() {
-                output.push('\n');
+            if tail_lines.len() == STDERR_TAIL_MAX_LINES {
+                tail_lines.pop_front();
             }
-            output.push_str(&line);
+            tail_lines.push_back(line);
         }
-        output
+
+        tail_lines.into_iter().collect::<Vec<_>>().join("\n")
     });
 
     // 1-2: Wait for process with cancel support via tokio::select!
