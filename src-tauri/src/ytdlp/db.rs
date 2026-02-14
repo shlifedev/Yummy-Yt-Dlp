@@ -1,6 +1,6 @@
 use super::types::*;
 use crate::modules::types::AppError;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -419,6 +419,30 @@ impl Database {
             Ok(task) => Ok(Some(task)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(AppError::DatabaseError(e.to_string())),
+        }
+    }
+
+    /// Atomically claim the next pending download by setting its status to 'downloading'
+    /// in a single SQL statement. Returns the claimed task or None if no pending tasks exist.
+    /// This prevents the race condition where two concurrent callers could claim the same task.
+    pub fn claim_next_pending(&self) -> Result<Option<DownloadTaskInfo>, AppError> {
+        let conn = self.conn();
+
+        // Atomically update the oldest pending task to 'downloading' and return its id
+        let claimed_id: Option<u64> = conn
+            .query_row(
+                "UPDATE downloads SET status = 'downloading'
+                 WHERE id = (SELECT id FROM downloads WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1)
+                 RETURNING id",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        match claimed_id {
+            Some(id) => self.get_download(id),
+            None => Ok(None),
         }
     }
 

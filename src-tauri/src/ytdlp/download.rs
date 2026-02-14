@@ -194,6 +194,13 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         }
     };
 
+    // Guard: if the task was cancelled between being claimed and execution starting, bail out
+    if matches!(task.status, DownloadStatus::Cancelled) {
+        manager.release();
+        process_next_pending(app);
+        return;
+    }
+
     let ytdlp_path = match binary::resolve_ytdlp_path().await {
         Ok(p) => p,
         Err(_) => {
@@ -581,16 +588,9 @@ fn process_next_pending(app: AppHandle) {
 
     // Try to start pending tasks while slots are available
     while manager.try_acquire() {
-        match db_state.get_next_pending() {
+        // Use claim_next_pending for atomic dequeue (prevents double-dispatch race condition)
+        match db_state.claim_next_pending() {
             Ok(Some(task)) => {
-                // 1-6: Release slot if status update fails to prevent slot leak
-                if db_state
-                    .update_download_status(task.id, &DownloadStatus::Downloading, None)
-                    .is_err()
-                {
-                    manager.release();
-                    continue;
-                }
                 let app_clone = app.clone();
                 let app_panic_guard = app.clone();
                 let task_id = task.id;
