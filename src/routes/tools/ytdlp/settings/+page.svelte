@@ -63,14 +63,18 @@
     } catch (e: any) { updateStatus = "실패: " + (e.message || e) }
   }
 
-  function handleLanguageChange(locale: string) {
+  async function handleLanguageChange(locale: string) {
     setLocale(locale)
     settings.language = locale
+    // Auto-save so the change persists without requiring the user to click Save
+    await handleSave()
   }
 
-  function handleThemeChange(themeId: string) {
+  async function handleThemeChange(themeId: string) {
     setTheme(themeId as ThemeId)
     settings.theme = themeId
+    // Auto-save so the change persists without requiring the user to click Save
+    await handleSave()
   }
 </script>
 
