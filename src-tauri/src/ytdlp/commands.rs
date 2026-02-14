@@ -71,8 +71,11 @@ pub async fn retry_download(
                 super::download::process_next_pending_public(app_panic_guard);
             }
         });
+    } else {
+        // add_to_queue와 동일하게 슬롯이 없는 경우에도 pending 처리 트리거를 즉시 걸어둔다.
+        // 모든 작업이 끝난 뒤 retry가 들어온 경우, 별도 트리거가 없으면 pending에 머물 수 있다.
+        super::download::process_next_pending_public(app.clone());
     }
-    // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
     Ok(())
 }
