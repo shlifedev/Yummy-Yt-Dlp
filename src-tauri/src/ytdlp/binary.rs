@@ -3,39 +3,60 @@ use crate::modules::types::AppError;
 use std::path::Path;
 use std::time::Duration;
 
+/// Platform-specific PATH separator.
+const PATH_SEP: &str = if cfg!(target_os = "windows") {
+    ";"
+} else {
+    ":"
+};
+
 /// Build an augmented PATH that includes common package manager locations.
-/// macOS .app bundles don't inherit the user's shell PATH, so we must add
-/// directories like /opt/homebrew/bin (brew on Apple Silicon) explicitly.
+/// Bundled desktop apps often don't inherit the user's full shell PATH.
 fn augmented_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
-    let extra_dirs: &[&str] = if cfg!(target_os = "windows") {
-        &[]
+
+    let mut extra: Vec<String> = Vec::new();
+
+    if cfg!(target_os = "windows") {
+        // Windows: resolve user-specific paths at runtime
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            // winget
+            extra.push(format!(r"{}\AppData\Local\Microsoft\WinGet\Links", profile));
+            // scoop
+            extra.push(format!(r"{}\scoop\shims", profile));
+            // pip (common Python versions)
+            for ver in &["313", "312", "311", "310"] {
+                extra.push(format!(
+                    r"{}\AppData\Local\Programs\Python\Python{}\Scripts",
+                    profile, ver
+                ));
+            }
+            extra.push(format!(
+                r"{}\AppData\Local\Programs\Python\Python3\Scripts",
+                profile
+            ));
+            // pipx
+            extra.push(format!(r"{}\.local\bin", profile));
+        }
+        // chocolatey
+        extra.push(r"C:\ProgramData\chocolatey\bin".to_string());
     } else {
-        &[
-            "/opt/homebrew/bin", // brew (Apple Silicon)
-            "/usr/local/bin",    // brew (Intel Mac) / common Linux
-            "/usr/bin",
-            "/bin",
-        ]
-    };
-
-    // Also add ~/.local/bin (pip install --user)
-    let home_local = std::env::var("HOME")
-        .ok()
-        .map(|h| format!("{}/.local/bin", h));
-
-    let mut parts: Vec<String> = Vec::new();
-    for dir in extra_dirs {
-        parts.push(dir.to_string());
+        // macOS / Linux
+        extra.push("/opt/homebrew/bin".to_string()); // brew (Apple Silicon)
+        extra.push("/usr/local/bin".to_string()); // brew (Intel Mac) / common Linux
+        extra.push("/usr/bin".to_string());
+        extra.push("/bin".to_string());
+        // pip install --user
+        if let Ok(home) = std::env::var("HOME") {
+            extra.push(format!("{}/.local/bin", home));
+        }
     }
-    if let Some(ref hl) = home_local {
-        parts.push(hl.clone());
-    }
-    // Append the original PATH so user-custom paths are still searched
+
+    // Prepend extra dirs, then append original PATH
     if !current.is_empty() {
-        parts.push(current);
+        extra.push(current);
     }
-    parts.join(":")
+    extra.join(PATH_SEP)
 }
 
 /// Create a Command with augmented PATH environment variable.
@@ -71,8 +92,25 @@ pub async fn check_ytdlp() -> (Option<String>, Vec<String>) {
         Err(reason) => {
             debug_lines.push(format!("  FAIL: {}", reason));
 
-            // Also try full paths as a diagnostic hint
-            for p in &["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"] {
+            // Platform-specific diagnostic hints
+            let hint_paths: Vec<String> = if cfg!(target_os = "windows") {
+                let profile = std::env::var("USERPROFILE").unwrap_or_default();
+                vec![
+                    format!(
+                        r"{}\AppData\Local\Microsoft\WinGet\Links\yt-dlp.exe",
+                        profile
+                    ),
+                    format!(r"{}\scoop\shims\yt-dlp.exe", profile),
+                    r"C:\ProgramData\chocolatey\bin\yt-dlp.exe".to_string(),
+                ]
+            } else {
+                vec![
+                    "/opt/homebrew/bin/yt-dlp".to_string(),
+                    "/usr/local/bin/yt-dlp".to_string(),
+                ]
+            };
+
+            for p in &hint_paths {
                 let exists = std::path::Path::new(p).exists();
                 debug_lines.push(format!("  {} exists={}", p, exists));
             }
