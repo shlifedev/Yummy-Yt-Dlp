@@ -1,7 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
-  import { Channel } from "@tauri-apps/api/core"
   import { listen } from "@tauri-apps/api/event"
+  import { platform } from "@tauri-apps/plugin-os"
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
   import { t, initLocale } from "$lib/i18n/index.svelte"
@@ -11,11 +11,14 @@
 
   let checking = $state(true)
   let depsInstalled = $state(false)
-  let installing = $state(false)
-  let installMessage = $state("")
-  let installError = $state("")
+  let ytdlpInstalled = $state(false)
+  let ytdlpVersion = $state<string | null>(null)
+  let ffmpegInstalled = $state(false)
+  let ffmpegVersion = $state<string | null>(null)
   let ytdlpDebug = $state("")
   let showDebug = $state(false)
+  let currentPlatform = $state<string>("macos")
+  let copiedCmd = $state<string | null>(null)
 
   // Popup state
   let popupOpen = $state(false)
@@ -120,6 +123,14 @@
   }
 
   onMount(async () => {
+    // Detect OS platform
+    try {
+      const p = platform()
+      if (p === "windows") currentPlatform = "windows"
+      else if (p === "linux") currentPlatform = "linux"
+      else currentPlatform = "macos"
+    } catch { currentPlatform = "macos" }
+
     await checkDeps()
 
     // Initialize i18n and theme from saved settings
@@ -181,6 +192,10 @@
     try {
       const result = await commands.checkDependencies()
       if (result.status === "ok") {
+        ytdlpInstalled = result.data.ytdlpInstalled
+        ytdlpVersion = result.data.ytdlpVersion ?? null
+        ffmpegInstalled = result.data.ffmpegInstalled
+        ffmpegVersion = result.data.ffmpegVersion ?? null
         depsInstalled = result.data.ytdlpInstalled
         ytdlpDebug = result.data.ytdlpDebug ?? ""
       }
@@ -191,34 +206,32 @@
     }
   }
 
-  async function handleInstall() {
-    installing = true
-    installError = ""
-    installMessage = t("layout.downloading")
+  type InstallInfo = {
+    recommended: string
+    alternative: string
+  }
 
-    try {
-      const channel = new Channel()
-      channel.onmessage = (event: any) => {
-        if (event.event === "progress") {
-          installMessage = event.data.message
-        } else if (event.event === "completed") {
-          installMessage = event.data.message
-        } else if (event.event === "error") {
-          installError = event.data.message
-        }
-      }
+  const installCommands: Record<string, InstallInfo> = {
+    macos: {
+      recommended: "brew install yt-dlp ffmpeg",
+      alternative: "pip install yt-dlp",
+    },
+    windows: {
+      recommended: "winget install yt-dlp.yt-dlp && winget install Gyan.FFmpeg",
+      alternative: "scoop install yt-dlp ffmpeg",
+    },
+    linux: {
+      recommended: "sudo apt install yt-dlp ffmpeg",
+      alternative: "pip install yt-dlp",
+    },
+  }
 
-      const result = await commands.installDependencies(channel)
-      if (result.status === "error") {
-        installError = JSON.stringify(result.error)
-      } else {
-        await checkDeps()
-      }
-    } catch (e: any) {
-      installError = e.message || String(e)
-    } finally {
-      installing = false
-    }
+  let platformCommands = $derived(installCommands[currentPlatform] || installCommands.macos)
+
+  async function copyCommand(cmd: string) {
+    await navigator.clipboard.writeText(cmd)
+    copiedCmd = cmd
+    setTimeout(() => { copiedCmd = null }, 2000)
   }
 </script>
 
@@ -281,32 +294,89 @@
         </div>
       </div>
     {:else if !depsInstalled}
-      <div class="flex-1 flex flex-col items-center justify-center z-10 gap-6">
+      <div class="flex-1 flex flex-col items-center justify-center z-10 gap-5 px-4">
         <div class="w-16 h-16 rounded-xl bg-yt-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-yt-primary text-4xl">download</span>
         </div>
         <h2 class="font-display text-2xl font-bold text-gray-100">{t("layout.setupRequired")}</h2>
-        <p class="text-gray-400">{t("layout.setupDesc")}</p>
+        <p class="text-gray-400 text-center max-w-md">{t("layout.setupDesc")}</p>
 
-        {#if installError}
-          <div class="bg-red-500/10 border border-red-500/20 rounded-xl px-6 py-3 text-red-400 text-sm max-w-md">
-            {installError}
+        <!-- Dependency Status -->
+        <div class="w-full max-w-md flex gap-3">
+          <div class="flex-1 flex items-center gap-3 bg-yt-highlight border border-white/[0.06] rounded-lg px-4 py-3">
+            <span class="material-symbols-outlined text-[20px] {ytdlpInstalled ? 'text-green-400' : 'text-red-400'}">
+              {ytdlpInstalled ? "check_circle" : "cancel"}
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-gray-100">yt-dlp</p>
+              <p class="text-xs truncate {ytdlpInstalled ? 'text-green-400/80' : 'text-red-400/80'}">
+                {ytdlpInstalled ? ytdlpVersion ?? t("layout.installed") : t("layout.notInstalled")}
+              </p>
+            </div>
           </div>
-        {/if}
+          <div class="flex-1 flex items-center gap-3 bg-yt-highlight border border-white/[0.06] rounded-lg px-4 py-3">
+            <span class="material-symbols-outlined text-[20px] {ffmpegInstalled ? 'text-green-400' : 'text-red-400'}">
+              {ffmpegInstalled ? "check_circle" : "cancel"}
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-gray-100">ffmpeg</p>
+              <p class="text-xs truncate {ffmpegInstalled ? 'text-green-400/80' : 'text-red-400/80'}">
+                {ffmpegInstalled ? t("layout.installed") : t("layout.notInstalled")}
+              </p>
+            </div>
+          </div>
+        </div>
 
-        {#if installing}
-          <div class="flex flex-col items-center gap-3">
-            <span class="material-symbols-outlined text-yt-primary text-3xl animate-spin">progress_activity</span>
-            <p class="text-sm text-gray-400">{installMessage}</p>
+        <p class="text-gray-500 text-sm">{t("layout.installGuide")}</p>
+
+        <!-- Recommended command -->
+        <div class="w-full max-w-md">
+          <div class="text-xs text-yt-primary font-semibold mb-1.5 uppercase tracking-wider">{t("layout.recommended")}</div>
+          <div class="flex items-center gap-2 bg-yt-highlight border border-white/[0.06] rounded-lg px-4 py-3">
+            <code class="flex-1 text-sm text-gray-200 font-mono select-all">{platformCommands.recommended}</code>
+            <button
+              onclick={() => copyCommand(platformCommands.recommended)}
+              class="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
+              title="Copy"
+            >
+              <span class="material-symbols-outlined text-[18px] {copiedCmd === platformCommands.recommended ? 'text-green-400' : 'text-gray-400'}">
+                {copiedCmd === platformCommands.recommended ? "check" : "content_copy"}
+              </span>
+            </button>
           </div>
-        {:else}
-          <button
-            class="px-8 py-3 rounded-xl bg-yt-primary hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-yt-primary/20"
-            onclick={handleInstall}
-          >
-            {t("layout.install")}
-          </button>
-        {/if}
+        </div>
+
+        <!-- Alternative -->
+        <div class="text-xs text-gray-500">{t("layout.altMethod")}</div>
+
+        <div class="w-full max-w-md">
+          <div class="flex items-center gap-2 bg-yt-highlight/50 border border-white/[0.04] rounded-lg px-4 py-3">
+            <code class="flex-1 text-sm text-gray-400 font-mono select-all">{platformCommands.alternative}</code>
+            <button
+              onclick={() => copyCommand(platformCommands.alternative)}
+              class="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
+              title="Copy"
+            >
+              <span class="material-symbols-outlined text-[18px] {copiedCmd === platformCommands.alternative ? 'text-green-400' : 'text-gray-400'}">
+                {copiedCmd === platformCommands.alternative ? "check" : "content_copy"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ffmpeg note -->
+        <p class="text-xs text-gray-500 flex items-center gap-1.5 max-w-md">
+          <span class="material-symbols-outlined text-[16px]">info</span>
+          {t("layout.ffmpegNote")}
+        </p>
+
+        <!-- Recheck button -->
+        <button
+          class="px-8 py-3 rounded-xl bg-yt-primary hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-yt-primary/20 mt-2"
+          onclick={checkDeps}
+        >
+          {t("layout.recheck")}
+        </button>
       </div>
     {:else}
       <div class="flex-1 z-10 overflow-hidden">

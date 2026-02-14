@@ -4,7 +4,6 @@ use crate::modules::types::AppError;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tauri::AppHandle;
-use tauri::Manager;
 
 // Regex patterns for YouTube URL validation
 static VIDEO_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
@@ -82,12 +81,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Custom(format!("Failed to get app data dir: {}", e)))?;
-
-    let ytdlp_path = binary::resolve_ytdlp_path(&app_data_dir).await?;
+    let ytdlp_path = binary::resolve_ytdlp_path().await?;
     let settings = super::settings::get_settings(&app).unwrap_or_default();
 
     // Run yt-dlp with --dump-json
@@ -240,12 +234,7 @@ pub async fn fetch_playlist_info(
     page: u32,
     page_size: u32,
 ) -> Result<PlaylistResult, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Custom(format!("Failed to get app data dir: {}", e)))?;
-
-    let ytdlp_path = binary::resolve_ytdlp_path(&app_data_dir).await?;
+    let ytdlp_path = binary::resolve_ytdlp_path().await?;
     let settings = super::settings::get_settings(&app).unwrap_or_default();
 
     // Run yt-dlp with --flat-playlist --dump-json

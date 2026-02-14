@@ -202,14 +202,6 @@ pub struct DependencyStatus {
     pub ytdlp_debug: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase", tag = "event", content = "data")]
-pub enum InstallEvent {
-    Progress { dependency: String, message: String },
-    Completed { dependency: String, message: String },
-    Error { dependency: String, message: String },
-}
-
 // === History ===
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]

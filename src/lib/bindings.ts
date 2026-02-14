@@ -16,14 +16,6 @@ async checkDependencies() : Promise<Result<DependencyStatus, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async installDependencies(onEvent: TAURI_CHANNEL<InstallEvent>) : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("install_dependencies", { onEvent }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async updateYtdlp() : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_ytdlp") };
@@ -229,7 +221,6 @@ export type FormatInfo = { formatId: string; ext: string; resolution: string | n
 export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null }
 export type HistoryItem = { id: number; videoUrl: string; videoId: string; title: string; qualityLabel: string; format: string; filePath: string; fileSize: number | null; downloadedAt: number }
 export type HistoryResult = { items: HistoryItem[]; totalCount: number; page: number; pageSize: number }
-export type InstallEvent = { event: "progress"; data: { dependency: string; message: string } } | { event: "completed"; data: { dependency: string; message: string } } | { event: "error"; data: { dependency: string; message: string } }
 export type PlaylistEntry = { url: string; videoId: string; title: string | null; duration: number | null; thumbnail: string | null }
 export type PlaylistResult = { playlistId: string; title: string; url: string; videoCount: number | null; channelName: string | null; entries: PlaylistEntry[] }
 export type UrlType = "video" | "channel" | "playlist" | "unknown"

@@ -23,7 +23,7 @@ pub fn run() {
         .commands(collect_commands![
             command::increment_counter,
             ytdlp::commands::check_dependencies,
-            ytdlp::commands::install_dependencies,
+
             ytdlp::commands::update_ytdlp,
             ytdlp::commands::get_download_queue,
             ytdlp::commands::clear_completed,

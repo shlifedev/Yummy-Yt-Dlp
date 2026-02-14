@@ -9,35 +9,14 @@ use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn check_dependencies(app: AppHandle) -> Result<DependencyStatus, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Custom(e.to_string()))?;
-    Ok(binary::check_dependencies(&app_data_dir).await)
+pub async fn check_dependencies() -> Result<DependencyStatus, AppError> {
+    Ok(binary::check_dependencies().await)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn install_dependencies(
-    app: AppHandle,
-    on_event: Channel<InstallEvent>,
-) -> Result<(), AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Custom(e.to_string()))?;
-    binary::install_dependencies(&app_data_dir, &on_event).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn update_ytdlp(app: AppHandle) -> Result<String, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Custom(e.to_string()))?;
-    binary::update_ytdlp(&app_data_dir).await
+pub async fn update_ytdlp() -> Result<String, AppError> {
+    binary::update_ytdlp().await
 }
 
 #[tauri::command]
