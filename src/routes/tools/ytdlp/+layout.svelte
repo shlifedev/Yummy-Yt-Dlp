@@ -44,6 +44,15 @@
     } catch (e) { console.error("Failed to load active downloads:", e) }
   }
 
+  async function handleCancelAll() {
+    try {
+      const result = await commands.cancelAllDownloads()
+      if (result.status === "ok") {
+        await loadActiveDownloads()
+      }
+    } catch (e) { console.error("Failed to cancel all downloads:", e) }
+  }
+
   async function loadRecentCompleted() {
     try {
       const result = await commands.getDownloadQueue()
@@ -247,9 +256,19 @@
       <!-- Header -->
       <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
         <h3 class="font-display font-semibold text-sm text-gray-900">Queue</h3>
-        <button onclick={() => popupOpen = false} class="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
+        <div class="flex items-center gap-1">
+          {#if (activeCount + pendingCount) > 0}
+            <button
+              onclick={handleCancelAll}
+              class="text-amber-600 hover:bg-amber-500/10 text-xs font-medium px-2 py-1 rounded-lg transition-colors"
+            >
+              Cancel All
+            </button>
+          {/if}
+          <button onclick={() => popupOpen = false} class="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
       </div>
 
       <!-- Active Downloads -->

@@ -547,6 +547,23 @@ pub async fn cancel_download(app: AppHandle, task_id: u64) -> Result<(), AppErro
 
 #[tauri::command]
 #[specta::specta]
+pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
+    let db_state = app.state::<crate::DbState>();
+    let manager = app.state::<Arc<DownloadManager>>();
+
+    let ids = db_state.get_cancellable_ids()?;
+    let count = ids.len() as u32;
+
+    for id in ids {
+        let _ = db_state.update_download_status(id, &DownloadStatus::Cancelled, None);
+        manager.send_cancel(id);
+    }
+
+    Ok(count)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn pause_download(_app: AppHandle, _task_id: u64) -> Result<(), AppError> {
     Err(AppError::Custom("Not yet implemented".to_string()))
 }

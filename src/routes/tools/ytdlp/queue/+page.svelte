@@ -46,7 +46,17 @@
   }
 
   let activeCount = $derived(queue.filter(q => q.status === "downloading").length)
+  let pendingCount = $derived(queue.filter(q => q.status === "pending").length)
   let completedCount = $derived(queue.filter(q => q.status === "completed").length)
+
+  async function handleCancelAll() {
+    try {
+      const result = await commands.cancelAllDownloads()
+      if (result.status === "ok") await loadQueue()
+    } catch (e) {
+      console.error("Failed to cancel all downloads:", e)
+    }
+  }
 
   // 5-3: Fix formatSize(0) returning empty string
   function formatSize(bytes: number | null): string {
@@ -65,14 +75,24 @@
         <h2 class="text-xl font-display font-bold text-gray-900">Downloads</h2>
         <p class="text-gray-400 mt-1">Manage your download queue</p>
       </div>
-      <button
-        class="px-4 py-2 rounded-xl bg-red-500/10 text-red-600 hover:bg-red-500/20 text-sm font-medium transition-colors disabled:opacity-50"
-        onclick={handleClearCompleted}
-        disabled={completedCount === 0}
-      >
-        <span class="material-symbols-outlined text-[18px] align-middle mr-1">delete_sweep</span>
-        Clear Completed
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="px-4 py-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 text-sm font-medium transition-colors disabled:opacity-50"
+          onclick={handleCancelAll}
+          disabled={activeCount + pendingCount === 0}
+        >
+          <span class="material-symbols-outlined text-[18px] align-middle mr-1">cancel</span>
+          Cancel All
+        </button>
+        <button
+          class="px-4 py-2 rounded-xl bg-red-500/10 text-red-600 hover:bg-red-500/20 text-sm font-medium transition-colors disabled:opacity-50"
+          onclick={handleClearCompleted}
+          disabled={completedCount === 0}
+        >
+          <span class="material-symbols-outlined text-[18px] align-middle mr-1">delete_sweep</span>
+          Clear Completed
+        </button>
+      </div>
     </div>
 
     <!-- Stats -->

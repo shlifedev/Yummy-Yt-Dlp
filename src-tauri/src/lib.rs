@@ -42,6 +42,7 @@ pub fn run() {
             ytdlp::download::start_download,
             ytdlp::download::add_to_queue,
             ytdlp::download::cancel_download,
+            ytdlp::download::cancel_all_downloads,
             ytdlp::download::pause_download,
             ytdlp::download::resume_download,
         ])

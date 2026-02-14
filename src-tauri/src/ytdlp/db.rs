@@ -376,6 +376,21 @@ impl Database {
         Ok(count)
     }
 
+    pub fn get_cancellable_ids(&self) -> Result<Vec<u64>, AppError> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT id FROM downloads WHERE status IN ('downloading', 'pending')")
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let ids = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .collect::<Result<Vec<u64>, _>>()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Ok(ids)
+    }
+
     pub fn get_active_downloads(&self) -> Result<Vec<DownloadTaskInfo>, AppError> {
         let conn = self.conn();
         let mut stmt = conn

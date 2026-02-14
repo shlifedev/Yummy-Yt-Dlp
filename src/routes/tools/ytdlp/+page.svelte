@@ -25,6 +25,16 @@
   let eta = $state("")
   let taskId = $state<number | null>(null)
 
+  // Multi-select state
+  let selectedEntries = $state<Set<string>>(new Set())
+  let allSelected = $derived(
+    playlistResult ? selectedEntries.size === playlistResult.entries.length && playlistResult.entries.length > 0 : false
+  )
+
+  // Batch download state
+  let downloadingAll = $state(false)
+  let batchProgress = $state({ current: 0, total: 0 })
+
   // Auto-analyze (NOT $state to avoid being tracked by $effect)
   let analyzeTimeoutId: ReturnType<typeof setTimeout> | null = null
 
@@ -117,6 +127,7 @@
     videoInfo = null
     playlistResult = null
     playlistPage = 0
+    selectedEntries = new Set()
 
     try {
       const valResult = await commands.validateUrl(url)
@@ -251,6 +262,123 @@
     }
   }
 
+  function toggleSelect(videoId: string) {
+    const next = new Set(selectedEntries)
+    if (next.has(videoId)) {
+      next.delete(videoId)
+    } else {
+      next.add(videoId)
+    }
+    selectedEntries = next
+  }
+
+  function toggleSelectAll() {
+    if (!playlistResult) return
+    if (allSelected) {
+      selectedEntries = new Set()
+    } else {
+      selectedEntries = new Set(playlistResult.entries.map(e => e.videoId))
+    }
+  }
+
+  async function handleDownloadSelected() {
+    if (!playlistResult || downloadingAll || selectedEntries.size === 0) return
+    downloadingAll = true
+    error = null
+
+    try {
+      const entries = playlistResult.entries.filter(e => selectedEntries.has(e.videoId))
+      batchProgress = { current: 0, total: entries.length }
+      const formatStr = buildFormatString()
+      const qualityLabel = quality === "best" ? "Best" : quality
+
+      for (const entry of entries) {
+        if (!downloadingAll) break
+
+        const request = {
+          videoUrl: entry.url,
+          videoId: entry.videoId,
+          title: entry.title || `Video ${entry.videoId}`,
+          formatId: formatStr,
+          qualityLabel,
+          outputDir: null,
+          cookieBrowser: null,
+        }
+
+        const result = await commands.addToQueue(request)
+        if (result.status === "error") {
+          console.error(`Failed to queue ${entry.title}:`, extractError(result.error))
+        }
+
+        batchProgress = { current: batchProgress.current + 1, total: entries.length }
+      }
+
+      url = ""
+      videoInfo = null
+      playlistResult = null
+      selectedEntries = new Set()
+    } catch (e: any) {
+      error = e.message || String(e)
+    } finally {
+      downloadingAll = false
+      batchProgress = { current: 0, total: 0 }
+    }
+  }
+
+  async function handleDownloadAll() {
+    if (!playlistResult || downloadingAll) return
+    downloadingAll = true
+    error = null
+
+    try {
+      // Fetch all entries if not fully loaded
+      let allEntries = playlistResult.entries
+      if (playlistResult.videoCount && allEntries.length < playlistResult.videoCount) {
+        const fullResult = await commands.fetchPlaylistInfo(playlistResult.url, 0, 99999)
+        if (fullResult.status === "error") {
+          error = extractError(fullResult.error)
+          return
+        }
+        allEntries = fullResult.data.entries
+      }
+
+      batchProgress = { current: 0, total: allEntries.length }
+      const formatStr = buildFormatString()
+      const qualityLabel = quality === "best" ? "Best" : quality
+
+      for (const entry of allEntries) {
+        if (!downloadingAll) break // cancelled by user
+
+        const request = {
+          videoUrl: entry.url,
+          videoId: entry.videoId,
+          title: entry.title || `Video ${entry.videoId}`,
+          formatId: formatStr,
+          qualityLabel,
+          outputDir: null,
+          cookieBrowser: null,
+        }
+
+        const result = await commands.addToQueue(request)
+        if (result.status === "error") {
+          console.error(`Failed to queue ${entry.title}:`, extractError(result.error))
+        }
+
+        batchProgress = { current: batchProgress.current + 1, total: allEntries.length }
+      }
+
+      // Reset state after all queued
+      url = ""
+      videoInfo = null
+      playlistResult = null
+    } catch (e: any) {
+      error = e.message || String(e)
+    } finally {
+      downloadingAll = false
+      batchProgress = { current: 0, total: 0 }
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Enter" && !analyzing && !downloading) handleAnalyze()
   }
@@ -318,11 +446,21 @@
             <div class="flex gap-2">
               <button
                 class="h-10 px-6 rounded-xl bg-yt-primary hover:bg-blue-600 text-white font-bold flex items-center gap-2 transition-all shadow-lg shadow-yt-primary/20 disabled:opacity-50"
-                onclick={handleStartDownload}
-                disabled={downloading || !url.trim()}
+                onclick={playlistResult && !videoInfo
+                  ? (selectedEntries.size > 0 ? handleDownloadSelected : handleDownloadAll)
+                  : handleStartDownload}
+                disabled={downloading || downloadingAll || (!videoInfo && !playlistResult && !url.trim())}
               >
                 <span class="material-symbols-outlined text-[20px]">download</span>
-                <span>Download</span>
+                {#if downloadingAll}
+                  <span>Queuing... ({batchProgress.current}/{batchProgress.total})</span>
+                {:else if playlistResult && !videoInfo && selectedEntries.size > 0}
+                  <span>Download Selected ({selectedEntries.size})</span>
+                {:else if playlistResult && !videoInfo}
+                  <span>Download All ({playlistResult.videoCount ?? playlistResult.entries.length})</span>
+                {:else}
+                  <span>Download</span>
+                {/if}
               </button>
               <button
                 class="h-10 px-6 rounded-xl bg-yt-surface hover:bg-gray-100 text-gray-600 font-medium flex items-center gap-2 transition-colors border border-gray-200 disabled:opacity-50"
@@ -343,13 +481,24 @@
 
       <!-- Video Info Banner (after analyze) -->
       {#if videoInfo}
-        <div class="bg-yt-highlight rounded-xl p-4 flex items-center gap-4 border border-gray-200">
-          {#if videoInfo.thumbnail}
-            <img src={videoInfo.thumbnail} alt="" class="w-32 h-20 rounded-xl object-cover shrink-0" />
+        <div class="bg-yt-highlight rounded-xl p-4 border border-gray-200">
+          {#if videoInfo && playlistResult}
+            <button
+              class="text-sm text-yt-primary hover:text-blue-700 flex items-center gap-1 transition-colors mb-3"
+              onclick={() => { videoInfo = null }}
+            >
+              <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+              플레이리스트로 돌아가기 ({playlistResult.videoCount ?? playlistResult.entries.length}개 영상)
+            </button>
           {/if}
-          <div class="flex-1 min-w-0">
-            <h3 class="font-display font-semibold text-gray-900 truncate">{videoInfo.title}</h3>
-            <p class="text-gray-500 text-sm mt-1">{videoInfo.channel} &middot; {formatDuration(videoInfo.duration)}</p>
+          <div class="flex items-center gap-4">
+            {#if videoInfo.thumbnail}
+              <img src={videoInfo.thumbnail} alt="" class="w-32 h-20 rounded-xl object-cover shrink-0" />
+            {/if}
+            <div class="flex-1 min-w-0">
+              <h3 class="font-display font-semibold text-gray-900 truncate">{videoInfo.title}</h3>
+              <p class="text-gray-500 text-sm mt-1">{videoInfo.channel} &middot; {formatDuration(videoInfo.duration)}</p>
+            </div>
           </div>
         </div>
       {/if}
@@ -369,33 +518,87 @@
                   {#if playlistResult.channelName}{playlistResult.channelName} &middot; {/if}{playlistResult.videoCount ?? playlistResult.entries.length}개 영상
                 </p>
               </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium transition-colors flex items-center gap-1.5"
+                  onclick={toggleSelectAll}
+                >
+                  <span class="material-symbols-outlined text-[18px]">{allSelected ? "deselect" : "select_all"}</span>
+                  {allSelected ? "Deselect" : "Select All"}
+                </button>
+                <button
+                  class="px-4 py-2 rounded-lg bg-yt-primary hover:bg-blue-600 text-white text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50"
+                  onclick={selectedEntries.size > 0 ? handleDownloadSelected : handleDownloadAll}
+                  disabled={downloadingAll || downloading}
+                >
+                  <span class="material-symbols-outlined text-[18px]">playlist_add</span>
+                  {#if downloadingAll}
+                    {batchProgress.current}/{batchProgress.total}
+                  {:else if selectedEntries.size > 0}
+                    Download ({selectedEntries.size})
+                  {:else}
+                    Download All
+                  {/if}
+                </button>
+              </div>
             </div>
+            {#if downloadingAll}
+              <div class="mt-3">
+                <div class="flex items-center gap-2 mb-1.5">
+                  <span class="material-symbols-outlined text-yt-primary animate-spin text-[18px]">progress_activity</span>
+                  <span class="text-sm text-gray-600">큐에 추가 중... {batchProgress.current} / {batchProgress.total}</span>
+                  <button class="ml-auto text-xs text-gray-400 hover:text-red-600 transition-colors" onclick={() => downloadingAll = false}>
+                    취소
+                  </button>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-1.5">
+                  <div class="bg-yt-primary h-1.5 rounded-full transition-all" style="width: {batchProgress.total > 0 ? (batchProgress.current / batchProgress.total * 100) : 0}%"></div>
+                </div>
+              </div>
+            {/if}
           </div>
 
           <!-- Video List -->
           <div class="max-h-[400px] overflow-y-auto hide-scrollbar divide-y divide-gray-100">
             {#each playlistResult.entries as entry, i}
-              <button
-                class="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors text-left disabled:opacity-50"
-                onclick={() => handleSelectVideo(entry)}
-                disabled={analyzing}
+              <div
+                class="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors {selectedEntries.has(entry.videoId) ? 'bg-yt-primary/5' : ''}"
               >
-                <span class="text-gray-400 text-xs font-mono w-6 text-right shrink-0">{i + 1}</span>
-                {#if entry.thumbnail}
-                  <img src={entry.thumbnail} alt="" class="w-20 h-12 rounded-lg object-cover shrink-0 bg-gray-100" />
-                {:else}
-                  <div class="w-20 h-12 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center">
-                    <span class="material-symbols-outlined text-gray-300 text-[20px]">movie</span>
-                  </div>
-                {/if}
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm text-gray-900 truncate">{entry.title || "제목 없음"}</p>
-                  {#if entry.duration}
-                    <p class="text-xs text-gray-400 mt-0.5">{formatDuration(entry.duration)}</p>
+                <button
+                  type="button"
+                  class="shrink-0 flex items-center p-0 bg-transparent border-none"
+                  aria-label="Select {entry.title || 'video'}"
+                  onclick={(e: MouseEvent) => { e.stopPropagation(); toggleSelect(entry.videoId) }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedEntries.has(entry.videoId)}
+                    class="w-4 h-4 rounded border-gray-300 text-yt-primary focus:ring-yt-primary cursor-pointer pointer-events-none"
+                    tabindex={-1}
+                  />
+                </button>
+                <button
+                  class="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-50"
+                  onclick={() => handleSelectVideo(entry)}
+                  disabled={analyzing}
+                >
+                  <span class="text-gray-400 text-xs font-mono w-6 text-right shrink-0">{i + 1}</span>
+                  {#if entry.thumbnail}
+                    <img src={entry.thumbnail} alt="" class="w-20 h-12 rounded-lg object-cover shrink-0 bg-gray-100" />
+                  {:else}
+                    <div class="w-20 h-12 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center">
+                      <span class="material-symbols-outlined text-gray-300 text-[20px]">movie</span>
+                    </div>
                   {/if}
-                </div>
-                <span class="material-symbols-outlined text-gray-400 text-[18px] shrink-0 opacity-0 group-hover:opacity-100">arrow_forward</span>
-              </button>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-900 truncate">{entry.title || "제목 없음"}</p>
+                    {#if entry.duration}
+                      <p class="text-xs text-gray-400 mt-0.5">{formatDuration(entry.duration)}</p>
+                    {/if}
+                  </div>
+                  <span class="material-symbols-outlined text-gray-400 text-[18px] shrink-0">arrow_forward</span>
+                </button>
+              </div>
             {/each}
           </div>
 

@@ -172,6 +172,14 @@ async cancelDownload(taskId: number) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async cancelAllDownloads() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_all_downloads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async pauseDownload(taskId: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("pause_download", { taskId }) };
