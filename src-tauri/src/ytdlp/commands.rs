@@ -40,27 +40,39 @@ pub async fn retry_download(
     task_id: u64,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), AppError> {
+    let _ = on_event; // Suppress unused warning (legacy parameter)
+
     // Get the original download info from DB
     let db = app.state::<crate::DbState>();
-    let task = db
+    let _task = db
         .get_download(task_id)?
         .ok_or_else(|| AppError::Custom("Download task not found".to_string()))?;
 
-    // Reset status to pending
+    // Reset the original task to pending (reuse existing DB row instead of
+    // creating a duplicate via add_to_queue, which would leave a zombie pending row)
     db.update_download_status(task_id, &DownloadStatus::Pending, None)?;
 
-    // Re-trigger download with original parameters
-    let request = DownloadRequest {
-        video_url: task.video_url,
-        video_id: task.video_id,
-        title: task.title,
-        format_id: task.format_id, // 2-3: Use original format_id
-        quality_label: task.quality_label,
-        output_dir: None,
-        cookie_browser: None,
-    };
+    // Try to acquire a slot and start the download immediately if possible
+    let manager = app.state::<Arc<super::download::DownloadManager>>();
+    if manager.try_acquire() {
+        db.update_download_status(task_id, &DownloadStatus::Downloading, None)?;
+        let app_clone = app.clone();
+        let app_panic_guard = app.clone();
+        tokio::spawn(async move {
+            let result = tokio::spawn(async move {
+                super::download::execute_download_public(app_clone, task_id).await;
+            })
+            .await;
+            if let Err(e) = result {
+                eprintln!("Download task panicked: {:?}", e);
+                let manager = app_panic_guard.state::<Arc<super::download::DownloadManager>>();
+                manager.release();
+                super::download::process_next_pending_public(app_panic_guard);
+            }
+        });
+    }
+    // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
-    super::download::start_download(app, request, on_event).await?;
     Ok(())
 }
 
