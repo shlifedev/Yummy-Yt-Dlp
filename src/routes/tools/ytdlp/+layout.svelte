@@ -160,6 +160,7 @@
       const unlistenFn = await listen("download-event", (event: any) => {
         const data = event.payload
         if (data.eventType === "completed") {
+          // Look up title before refreshing activeDownloads (which may remove the completed item)
           const title = activeDownloads.find(d => d.id === data.taskId)?.title
           showToast(t("layout.downloadComplete", { title: title || "video" }), "download_done")
         }
@@ -265,10 +266,12 @@
 
   let platformCommands = $derived(installCommands[currentPlatform] || installCommands.macos)
 
+  let copiedCmdTimeout: ReturnType<typeof setTimeout> | null = null
   async function copyCommand(cmd: string) {
     await navigator.clipboard.writeText(cmd)
     copiedCmd = cmd
-    setTimeout(() => { copiedCmd = null }, 2000)
+    if (copiedCmdTimeout) clearTimeout(copiedCmdTimeout)
+    copiedCmdTimeout = setTimeout(() => { copiedCmd = null }, 2000)
   }
 </script>
 

@@ -573,7 +573,8 @@
     if (e.key === "Enter" && !downloading) handleAnalyze()
   }
 
-  function formatDuration(seconds: number): string {
+  function formatDuration(seconds: number | null | undefined): string {
+    if (seconds === null || seconds === undefined || isNaN(seconds)) return "--:--"
     const m = Math.floor(seconds / 60)
     const s = seconds % 60
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
@@ -692,7 +693,7 @@
             {/if}
             <div class="flex-1 min-w-0">
               <h3 class="font-display font-semibold text-gray-100 truncate text-sm">{videoInfo.title}</h3>
-              <p class="text-gray-400 text-xs mt-0.5">{videoInfo.channel} &middot; {formatDuration(videoInfo.duration)}</p>
+              <p class="text-gray-400 text-xs mt-0.5">{videoInfo.channel || "Unknown"} &middot; {formatDuration(videoInfo.duration)}</p>
             </div>
           </div>
         </div>

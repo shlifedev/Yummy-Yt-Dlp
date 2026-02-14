@@ -97,7 +97,7 @@
         <p class="text-gray-400 mt-4 text-lg">{t("history.empty")}</p>
       </div>
     {:else}
-      {#each items as item}
+      {#each items as item (item.id)}
         <div class="bg-yt-highlight rounded-xl p-4 flex gap-4 items-center group hover:bg-white/[0.06] transition-colors border border-white/[0.06]">
           <div class="w-20 h-14 bg-white/[0.04] rounded-lg overflow-hidden shrink-0 relative">
             <div class="w-full h-full bg-gradient-to-br from-white/[0.03] to-white/[0.08] flex items-center justify-center">
