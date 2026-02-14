@@ -149,7 +149,7 @@ jobs:
           tag_name: "v${{ inputs.version }}"
           name: "v${{ inputs.version }}"
           body: |
-            ## VibeTinker v${{ inputs.version }}
+            ## Modern YT-DLP GUI v${{ inputs.version }}
 
             ### Downloads
             | Platform | File |

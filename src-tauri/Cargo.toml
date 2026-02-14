@@ -1,7 +1,7 @@
 [package]
-name = "vibe-tinker"
+name = "modern-ytdlp-gui"
 version = "0.1.0"
-description = "VibeTinker - Developer Tools Collection"
+description = "Modern YT-DLP GUI - YouTube Video Downloader"
 authors = ["you"]
 edition = "2021"
 

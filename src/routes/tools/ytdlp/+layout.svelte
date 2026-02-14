@@ -196,7 +196,7 @@
       <div class="w-7 h-7 rounded-lg bg-yt-primary flex items-center justify-center text-white shrink-0">
         <span class="material-symbols-outlined text-[20px]">download</span>
       </div>
-      <h1 class="font-display font-bold text-base text-gray-900">YT-DLP GUI</h1>
+      <h1 class="font-display font-bold text-base text-gray-900">Modern YT-DLP GUI</h1>
     </a>
 
     <!-- Right: Actions -->
