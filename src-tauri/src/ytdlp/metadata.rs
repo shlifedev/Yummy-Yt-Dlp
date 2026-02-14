@@ -8,23 +8,36 @@ use tauri::AppHandle;
 // Regex patterns for YouTube URL validation
 static VIDEO_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})").unwrap(),
+        Regex::new(
+            r"^https?://(?:www\.|m\.|music\.)?youtube\.com/watch\?(?:.*&)?v=([a-zA-Z0-9_-]{11})(?:[&#].*)?$",
+        )
+        .unwrap(),
+        Regex::new(r"^https?://(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})(?:[/?#].*)?$").unwrap(),
+        Regex::new(
+            r"^https?://(?:www\.|m\.|music\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})(?:[/?#].*)?$",
+        )
+        .unwrap(),
     ]
 });
 
 static PLAYLIST_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^https?://(?:www\.)?youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)").unwrap()
+    Regex::new(
+        r"^https?://(?:www\.|m\.|music\.)?youtube\.com/playlist\?(?:.*&)?list=([a-zA-Z0-9_-]+)(?:[&#].*)?$",
+    )
+    .unwrap()
 });
 
 static CHANNEL_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
         Regex::new(r"^https?://(?:www\.)?youtube\.com/channel/([a-zA-Z0-9_-]+)").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/@([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)")
-            .unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/c/([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)")
-            .unwrap(),
+        Regex::new(
+            r"^https?://(?:www\.|m\.|music\.)?youtube\.com/@([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)",
+        )
+        .unwrap(),
+        Regex::new(
+            r"^https?://(?:www\.|m\.|music\.)?youtube\.com/c/([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)",
+        )
+        .unwrap(),
     ]
 });
 
@@ -75,6 +88,34 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
         url_type: UrlType::Unknown,
         normalized_url: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_mobile_watch_url_with_additional_query_params() {
+        let url = "https://m.youtube.com/watch?app=desktop&v=dQw4w9WgXcQ&feature=youtu.be";
+        let result = validate_url(url.to_string()).unwrap();
+
+        assert!(result.valid);
+        assert!(matches!(result.url_type, UrlType::Video));
+        assert_eq!(
+            result.normalized_url.as_deref(),
+            Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        );
+    }
+
+    #[test]
+    fn validate_playlist_url_with_list_not_first_param() {
+        let url =
+            "https://www.youtube.com/playlist?si=abc123&list=PLrAXtmRdnEQy6nuCH8Wm3Q6M6kQj4q2Yx";
+        let result = validate_url(url.to_string()).unwrap();
+
+        assert!(result.valid);
+        assert!(matches!(result.url_type, UrlType::Playlist));
+    }
 }
 
 /// Fetch video metadata using yt-dlp --dump-json
