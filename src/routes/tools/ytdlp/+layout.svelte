@@ -33,6 +33,11 @@
   let toastIcon = $state("check_circle")
   let toastTimeout: ReturnType<typeof setTimeout> | null = null
 
+  // Close dialog state
+  let showCloseDialog = $state(false)
+  let rememberChoice = $state(false)
+  let unlistenClose: (() => void) | null = null
+
   // Queue bounce animation
   let queueBounce = $state(false)
 
@@ -163,11 +168,20 @@
     loadActiveDownloads()
 
     window.addEventListener("queue-added", handleQueueAdded)
+
+    // Listen for close-requested event from backend
+    try {
+      const unlistenCloseFn = await listen("close-requested", () => {
+        showCloseDialog = true
+      })
+      unlistenClose = unlistenCloseFn
+    } catch (e) { console.error("Failed to listen for close-requested:", e) }
   })
 
   onDestroy(() => {
     stopPopupRefresh()
     if (unlisten) unlisten()
+    if (unlistenClose) unlistenClose()
     window.removeEventListener("queue-added", handleQueueAdded)
     if (toastTimeout) clearTimeout(toastTimeout)
   })
@@ -185,6 +199,14 @@
         }).catch(() => {})
       }
     }
+  }
+
+  async function handleCloseChoice(minimize: boolean) {
+    try {
+      await commands.setMinimizeToTray(minimize, rememberChoice)
+    } catch (e) { console.error("Failed to set minimize to tray:", e) }
+    showCloseDialog = false
+    rememberChoice = false
   }
 
   async function checkDeps() {
@@ -481,6 +503,46 @@
       <div class="flex items-center gap-3 bg-white/10 backdrop-blur-xl text-white px-5 py-3 rounded-xl shadow-2xl">
         <span class="material-symbols-outlined text-[20px] {toastIcon === 'download_done' ? 'text-green-400' : 'text-yt-primary'}">{toastIcon}</span>
         <span class="text-sm font-medium">{toastMessage}</span>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Close Dialog -->
+  {#if showCloseDialog}
+    <button
+      class="fixed inset-0 bg-black/70 z-[100]"
+      onclick={() => { showCloseDialog = false }}
+      aria-label="Close dialog"
+    ></button>
+    <div class="fixed inset-0 z-[101] flex items-center justify-center pointer-events-none">
+      <div class="bg-yt-surface border border-white/[0.08] rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 pointer-events-auto">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="p-2 bg-yt-primary/10 rounded-lg">
+            <span class="material-symbols-outlined text-yt-primary text-[24px]">minimize</span>
+          </div>
+          <h3 class="font-display font-bold text-base text-gray-100">{t("tray.dialogTitle")}</h3>
+        </div>
+        <p class="text-sm text-gray-400 mb-5">{t("tray.dialogMessage")}</p>
+
+        <label class="flex items-center gap-2.5 mb-5 cursor-pointer select-none">
+          <input type="checkbox" bind:checked={rememberChoice} class="w-4 h-4 rounded border-white/20 bg-yt-highlight accent-yt-primary" />
+          <span class="text-sm text-gray-300">{t("tray.rememberChoice")}</span>
+        </label>
+
+        <div class="flex gap-3">
+          <button
+            onclick={() => handleCloseChoice(false)}
+            class="flex-1 h-10 rounded-xl bg-yt-highlight hover:bg-white/[0.08] text-gray-300 text-sm font-medium transition-colors border border-white/[0.06]"
+          >
+            {t("tray.quit")}
+          </button>
+          <button
+            onclick={() => handleCloseChoice(true)}
+            class="flex-1 h-10 rounded-xl bg-yt-primary hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
+          >
+            {t("tray.minimize")}
+          </button>
+        </div>
       </div>
     </div>
   {/if}

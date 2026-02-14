@@ -104,6 +104,14 @@ const ko: Record<string, string> = {
   "theme.violet": "바이올렛",
   "theme.red": "레드",
   "theme.light": "라이트",
+
+  "tray.dialogTitle": "트레이로 최소화",
+  "tray.dialogMessage": "앱을 종료하는 대신 시스템 트레이로 최소화할까요?",
+  "tray.rememberChoice": "이 선택 기억하기",
+  "tray.minimize": "트레이로 최소화",
+  "tray.quit": "종료",
+  "settings.minimizeToTray": "트레이로 최소화",
+  "settings.minimizeToTrayDesc": "창을 닫을 때 시스템 트레이로 최소화",
 }
 
 export default ko

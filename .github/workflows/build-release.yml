@@ -67,7 +67,7 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows
-          - platform: macos-latest
+          - platform: macos-14
             target: universal-apple-darwin
             name: macos
 

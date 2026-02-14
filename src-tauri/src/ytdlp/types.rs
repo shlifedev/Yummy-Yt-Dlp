@@ -254,6 +254,7 @@ pub struct AppSettings {
     pub template_video_id: bool,
     pub language: Option<String>,
     pub theme: Option<String>,
+    pub minimize_to_tray: Option<bool>,
 }
 
 impl Default for AppSettings {
@@ -271,6 +272,7 @@ impl Default for AppSettings {
             template_video_id: false,
             language: None,
             theme: None,
+            minimize_to_tray: None,
         }
     }
 }

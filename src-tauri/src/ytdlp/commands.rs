@@ -199,3 +199,27 @@ pub async fn get_active_downloads(app: AppHandle) -> Result<Vec<DownloadTaskInfo
     let db = app.state::<crate::DbState>();
     db.get_active_downloads()
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_minimize_to_tray(
+    app: AppHandle,
+    minimize: bool,
+    remember: bool,
+) -> Result<(), AppError> {
+    if remember {
+        super::tray::set_minimize_to_tray_setting(&app, minimize)?;
+    }
+
+    if minimize {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.hide();
+        }
+    } else {
+        let manager = app.state::<Arc<super::download::DownloadManager>>();
+        manager.cancel_all();
+        app.exit(0);
+    }
+
+    Ok(())
+}

@@ -5,4 +5,5 @@ pub mod download;
 pub mod metadata;
 pub mod progress;
 pub mod settings;
+pub mod tray;
 pub mod types;

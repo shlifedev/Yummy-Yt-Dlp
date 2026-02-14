@@ -104,6 +104,14 @@ const zhCN: Record<string, string> = {
   "theme.violet": "紫色",
   "theme.red": "红色",
   "theme.light": "浅色",
+
+  "tray.dialogTitle": "最小化到托盘",
+  "tray.dialogMessage": "是否最小化到系统托盘而不是退出？",
+  "tray.rememberChoice": "记住此选择",
+  "tray.minimize": "最小化到托盘",
+  "tray.quit": "退出",
+  "settings.minimizeToTray": "最小化到托盘",
+  "settings.minimizeToTrayDesc": "关闭窗口时最小化到系统托盘",
 }
 
 export default zhCN

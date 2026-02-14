@@ -104,6 +104,14 @@ const ja: Record<string, string> = {
   "theme.violet": "バイオレット",
   "theme.red": "レッド",
   "theme.light": "ライト",
+
+  "tray.dialogTitle": "トレイに最小化",
+  "tray.dialogMessage": "終了する代わりにシステムトレイに最小化しますか？",
+  "tray.rememberChoice": "この選択を記憶する",
+  "tray.minimize": "トレイに最小化",
+  "tray.quit": "終了",
+  "settings.minimizeToTray": "トレイに最小化",
+  "settings.minimizeToTrayDesc": "ウィンドウを閉じる時にシステムトレイに最小化",
 }
 
 export default ja

@@ -18,6 +18,7 @@
     templateVideoId: false,
     language: null as string | null,
     theme: null as string | null,
+    minimizeToTray: null as boolean | null,
   })
 
   let browsers = $state<string[]>([])
@@ -172,6 +173,23 @@
           {#if updateStatus}
             <span class="text-sm text-gray-400">{updateStatus}</span>
           {/if}
+        </div>
+      </div>
+
+      <!-- Minimize to Tray -->
+      <div class="bg-yt-highlight rounded-xl p-4 border border-white/[0.06]">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="p-2 bg-purple-500/10 rounded-lg text-purple-600">
+            <span class="material-symbols-outlined text-[20px]">minimize</span>
+          </div>
+          <h3 class="font-display font-semibold text-base text-gray-100">{t("settings.minimizeToTray")}</h3>
+        </div>
+        <div class="flex items-center justify-between bg-yt-surface p-2.5 rounded-xl px-4 border border-white/[0.06]">
+          <span class="text-sm text-gray-400">{t("settings.minimizeToTrayDesc")}</span>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" checked={settings.minimizeToTray === true} onchange={(e) => settings.minimizeToTray = (e.target as HTMLInputElement).checked} class="sr-only peer" />
+            <div class="w-9 h-5 bg-white/10 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-yt-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-white/10 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
+          </label>
         </div>
       </div>
 

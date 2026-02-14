@@ -104,6 +104,14 @@ const de: Record<string, string> = {
   "theme.violet": "Violett",
   "theme.red": "Rot",
   "theme.light": "Hell",
+
+  "tray.dialogTitle": "In den Tray minimieren",
+  "tray.dialogMessage": "Möchten Sie das Programm in den Tray minimieren statt zu beenden?",
+  "tray.rememberChoice": "Auswahl merken",
+  "tray.minimize": "In den Tray minimieren",
+  "tray.quit": "Beenden",
+  "settings.minimizeToTray": "In den Tray minimieren",
+  "settings.minimizeToTrayDesc": "Beim Schließen in den System-Tray minimieren",
 }
 
 export default de

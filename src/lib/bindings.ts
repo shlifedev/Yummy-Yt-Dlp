@@ -187,6 +187,14 @@ async resumeDownload(taskId: number) : Promise<Result<null, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async setMinimizeToTray(minimize: boolean, remember: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_minimize_to_tray", { minimize, remember }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -206,7 +214,7 @@ globalDownloadEvent: "global-download-event"
 /** user-defined types **/
 
 export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string }
-export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null }
+export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null; minimizeToTray: boolean | null }
 export type DependencyStatus = { ytdlpInstalled: boolean; ytdlpVersion: string | null; ffmpegInstalled: boolean; ffmpegVersion: string | null; 
 /**
  * Diagnostic info when ytdlp check fails (path tried, error reason)

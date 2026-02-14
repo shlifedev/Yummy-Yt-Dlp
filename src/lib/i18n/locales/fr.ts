@@ -104,6 +104,14 @@ const fr: Record<string, string> = {
   "theme.violet": "Violet",
   "theme.red": "Rouge",
   "theme.light": "Clair",
+
+  "tray.dialogTitle": "Minimiser dans la barre",
+  "tray.dialogMessage": "Voulez-vous minimiser dans la barre système au lieu de quitter ?",
+  "tray.rememberChoice": "Se souvenir de ce choix",
+  "tray.minimize": "Minimiser dans la barre",
+  "tray.quit": "Quitter",
+  "settings.minimizeToTray": "Minimiser dans la barre",
+  "settings.minimizeToTrayDesc": "Minimiser dans la barre système lors de la fermeture",
 }
 
 export default fr

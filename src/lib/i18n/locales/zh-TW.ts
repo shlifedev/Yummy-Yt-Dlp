@@ -104,6 +104,14 @@ const zhTW: Record<string, string> = {
   "theme.violet": "紫色",
   "theme.red": "紅色",
   "theme.light": "淺色",
+
+  "tray.dialogTitle": "最小化到系統匣",
+  "tray.dialogMessage": "是否最小化到系統匣而不是退出？",
+  "tray.rememberChoice": "記住此選擇",
+  "tray.minimize": "最小化到系統匣",
+  "tray.quit": "退出",
+  "settings.minimizeToTray": "最小化到系統匣",
+  "settings.minimizeToTrayDesc": "關閉視窗時最小化到系統匣",
 }
 
 export default zhTW

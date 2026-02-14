@@ -4,7 +4,7 @@ mod ytdlp;
 #[cfg(debug_assertions)]
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_specta::{collect_commands, collect_events};
 
 pub mod modules {
@@ -44,6 +44,7 @@ pub fn run() {
             ytdlp::download::cancel_all_downloads,
             ytdlp::download::pause_download,
             ytdlp::download::resume_download,
+            ytdlp::commands::set_minimize_to_tray,
         ])
         .events(collect_events![ytdlp::types::GlobalDownloadEvent]);
 
@@ -86,9 +87,33 @@ pub fn run() {
             ));
             app.manage(download_manager);
 
+            // Setup system tray
+            ytdlp::tray::setup_tray(&app.handle().clone()).expect("Failed to setup system tray");
+
             Ok(())
         })
         .invoke_handler(invoke_handler)
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let setting = ytdlp::tray::get_minimize_to_tray_setting(app);
+                match setting {
+                    Some(true) => {
+                        // Minimize to tray
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    Some(false) => {
+                        // Let window close normally (cancel_all runs in RunEvent::Exit)
+                    }
+                    None => {
+                        // Not decided yet: prevent close and ask frontend
+                        api.prevent_close();
+                        let _ = app.emit("close-requested", ());
+                    }
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
