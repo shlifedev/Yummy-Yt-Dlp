@@ -122,12 +122,13 @@ async fn try_get_version(binary_path: &Path) -> Result<String, String> {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let timeout_result = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await;
+    // PyInstaller binaries (yt-dlp_macos) need time to extract on first run
+    let timeout_result = tokio::time::timeout(Duration::from_secs(30), cmd.output()).await;
 
     let cmd_result = match timeout_result {
         Ok(result) => result,
         Err(_) => {
-            return Err(format!("timeout (5s) executing {}", binary_path.display()));
+            return Err(format!("timeout (30s) executing {}", binary_path.display()));
         }
     };
 
