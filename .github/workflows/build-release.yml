@@ -1,27 +1,58 @@
 name: Build & Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version (e.g. 0.1.0)"
-        required: true
-        default: "0.1.0"
-      branch:
-        description: "Branch to build"
-        required: true
-        default: "main"
-      release:
-        description: "Create GitHub Release"
-        required: true
-        type: boolean
-        default: true
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      should_release: ${{ steps.bump.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next minor version
+        id: bump
+        run: |
+          # Skip if this commit already has a release tag
+          CURRENT_TAGS=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          if [ -n "$CURRENT_TAGS" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Commit already tagged: $CURRENT_TAGS — skipping"
+            exit 0
+          fi
+
+          # Get latest semver tag
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+          fi
+
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "Bumping ${LATEST_TAG} → v${NEW_VERSION}"
+
   build:
+    needs: get-version
+    if: needs.get-version.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -43,8 +74,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
 
       - name: Install Linux dependencies
         if: matrix.name == 'linux'
@@ -90,16 +119,14 @@ jobs:
       - name: Set version
         shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ needs.get-version.outputs.version }}
         run: |
           # package.json
-          jq --arg v "$INPUT_VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
-
+          jq --arg v "$RELEASE_VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
           # tauri.conf.json
-          jq --arg v "$INPUT_VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
-
-          # Cargo.toml — update version in [package] section
-          sed -i.bak "s/^version = \".*\"/version = \"$INPUT_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
+          jq --arg v "$RELEASE_VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          # Cargo.toml
+          sed -i.bak "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -124,14 +151,11 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    needs: build
-    if: inputs.release
+    needs: [get-version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -144,22 +168,20 @@ jobs:
 
       - name: Create tag
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.get-version.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${INPUT_VERSION}" -m "Release v${INPUT_VERSION}"
-          git push origin "v${INPUT_VERSION}"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
         with:
-          tag_name: "v${{ inputs.version }}"
-          name: "v${{ inputs.version }}"
+          tag_name: ${{ needs.get-version.outputs.tag }}
+          name: ${{ needs.get-version.outputs.tag }}
           body: |
-            ## Modern YT-DLP GUI v${{ inputs.version }}
+            ## Modern YT-DLP GUI ${{ needs.get-version.outputs.tag }}
 
             ### Downloads
             | Platform | File |
