@@ -123,7 +123,13 @@ impl DownloadStatus {
             "completed" => DownloadStatus::Completed,
             "failed" => DownloadStatus::Failed,
             "cancelled" => DownloadStatus::Cancelled,
-            _ => DownloadStatus::Pending,
+            _ => {
+                crate::modules::logger::warn(&format!(
+                    "Unknown download status '{}' from database; defaulting to 'pending'",
+                    s
+                ));
+                DownloadStatus::Pending
+            }
         }
     }
 }
