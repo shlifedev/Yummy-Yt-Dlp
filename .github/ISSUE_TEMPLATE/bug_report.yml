@@ -1,0 +1,100 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us investigate.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App Version
+      description: "You can find this in Settings or the title bar (e.g. v1.0.0)"
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 10
+        - Windows 11
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Linux (Ubuntu/Debian)
+        - Linux (Fedora/RHEL)
+        - Linux (Arch)
+        - Other (please specify in additional context)
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: "e.g. Windows 11 23H2, macOS 15.2, Ubuntu 24.04"
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: false
+
+  - type: input
+    id: ytdlp-version
+    attributes:
+      label: yt-dlp Version
+      description: "Run `yt-dlp --version` in your terminal"
+      placeholder: "2024.12.23"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug
+      placeholder: "Describe what happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+      placeholder: "Describe what you expected..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Enter '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error logs / Screenshots
+      description: If applicable, paste any error messages or attach screenshots
+      placeholder: "Paste error logs or drag & drop screenshots here..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other information that might help (e.g. video URL, network setup, proxy)
+      placeholder: "Any additional context..."
+    validations:
+      required: false

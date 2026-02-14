@@ -435,18 +435,22 @@
       const qualityLabel = quality === "best" ? "Best" : quality
       let skippedQueue = 0
 
+      let queued = 0
       for (const entry of entries) {
         if (!downloadingAll) break
 
         // Skip if already in queue
         try {
           const dupResult = await commands.checkDuplicate(entry.videoId)
+          if (!downloadingAll) break
           if (dupResult.status === "ok" && dupResult.data?.inQueue) {
             skippedQueue++
             batchProgress = { current: batchProgress.current + 1, total: totalCount }
             continue
           }
         } catch (e) { /* proceed on error */ }
+
+        if (!downloadingAll) break
 
         const request = {
           videoUrl: entry.url,
@@ -459,8 +463,11 @@
         }
 
         const result = await commands.addToQueue(request)
+        if (!downloadingAll) break
         if (result.status === "error") {
           console.error(`Failed to queue ${entry.title}:`, extractError(result.error))
+        } else {
+          queued++
         }
 
         batchProgress = { current: batchProgress.current + 1, total: totalCount }
@@ -469,7 +476,9 @@
       if (skippedQueue > 0) {
         error = t("download.skippedQueue", { count: skippedQueue })
       }
-      window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: totalCount - skippedQueue } }))
+      if (queued > 0) {
+        window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: queued } }))
+      }
       url = ""
       videoInfo = null
       playlistResult = null
@@ -505,18 +514,22 @@
       const qualityLabel = quality === "best" ? "Best" : quality
       let skippedQueue = 0
 
+      let queued = 0
       for (const entry of allEntries) {
         if (!downloadingAll) break // cancelled by user
 
         // Skip if already in queue
         try {
           const dupResult = await commands.checkDuplicate(entry.videoId)
+          if (!downloadingAll) break
           if (dupResult.status === "ok" && dupResult.data?.inQueue) {
             skippedQueue++
             batchProgress = { current: batchProgress.current + 1, total: totalCount }
             continue
           }
         } catch (e) { /* proceed on error */ }
+
+        if (!downloadingAll) break
 
         const request = {
           videoUrl: entry.url,
@@ -529,8 +542,11 @@
         }
 
         const result = await commands.addToQueue(request)
+        if (!downloadingAll) break
         if (result.status === "error") {
           console.error(`Failed to queue ${entry.title}:`, extractError(result.error))
+        } else {
+          queued++
         }
 
         batchProgress = { current: batchProgress.current + 1, total: totalCount }
@@ -539,7 +555,9 @@
       if (skippedQueue > 0) {
         error = t("download.skippedQueue", { count: skippedQueue })
       }
-      window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: totalCount - skippedQueue } }))
+      if (queued > 0) {
+        window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: queued } }))
+      }
       url = ""
       videoInfo = null
       playlistResult = null

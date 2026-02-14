@@ -159,8 +159,18 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
         // Immediately start download
         db_state.update_download_status(task_id, &DownloadStatus::Downloading, None)?;
         let app_clone = app.clone();
+        let app_panic_guard = app.clone();
         tokio::spawn(async move {
-            execute_download(app_clone, task_id).await;
+            let result = tokio::spawn(async move {
+                execute_download(app_clone, task_id).await;
+            })
+            .await;
+            if let Err(e) = result {
+                eprintln!("Download task panicked: {:?}", e);
+                let manager = app_panic_guard.state::<Arc<DownloadManager>>();
+                manager.release();
+                process_next_pending(app_panic_guard);
+            }
         });
     }
     // Otherwise, task stays in pending status until a slot becomes available
@@ -454,11 +464,8 @@ async fn execute_download(app: AppHandle, task_id: u64) {
             .map(|m| m.len())
             .unwrap_or(0);
 
-        // Mark as completed in DB
+        // Mark as completed and insert history in a single transaction
         let completed_at = chrono::Utc::now().timestamp();
-        let _ = db_state.mark_completed(task_id, completed_at);
-
-        // Insert into history
         let history_item = HistoryItem {
             id: 0,
             video_url: task.video_url.clone(),
@@ -471,7 +478,7 @@ async fn execute_download(app: AppHandle, task_id: u64) {
             downloaded_at: completed_at,
         };
 
-        let _ = db_state.insert_history(&history_item);
+        let _ = db_state.complete_and_record(task_id, completed_at, &history_item);
 
         // Send completion event
         let _ = app.emit(
@@ -551,9 +558,19 @@ fn process_next_pending(app: AppHandle) {
                     continue;
                 }
                 let app_clone = app.clone();
+                let app_panic_guard = app.clone();
                 let task_id = task.id;
                 tokio::spawn(async move {
-                    execute_download(app_clone, task_id).await;
+                    let result = tokio::spawn(async move {
+                        execute_download(app_clone, task_id).await;
+                    })
+                    .await;
+                    if let Err(e) = result {
+                        eprintln!("Download task panicked: {:?}", e);
+                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
+                        manager.release();
+                        process_next_pending(app_panic_guard);
+                    }
                 });
             }
             _ => {

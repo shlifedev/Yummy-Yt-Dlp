@@ -174,7 +174,10 @@ impl Database {
         let conn = self.conn();
 
         let deleted = conn
-            .execute("DELETE FROM downloads WHERE status = 'completed'", [])
+            .execute(
+                "DELETE FROM downloads WHERE status IN ('completed', 'cancelled', 'failed')",
+                [],
+            )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(deleted as u32)
@@ -209,6 +212,45 @@ impl Database {
         Ok(())
     }
 
+    pub fn complete_and_record(
+        &self,
+        id: u64,
+        completed_at: i64,
+        history: &HistoryItem,
+    ) -> Result<(), AppError> {
+        let mut conn = self.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        tx.execute(
+            "UPDATE downloads SET status = 'completed', completed_at = ?1, progress = 100.0 WHERE id = ?2",
+            params![completed_at, id],
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        tx.execute(
+            "INSERT INTO history (video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                history.video_url,
+                history.video_id,
+                history.title,
+                history.quality_label,
+                history.format,
+                history.file_path,
+                history.file_size,
+                history.downloaded_at,
+            ],
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        tx.commit()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub fn insert_history(&self, item: &HistoryItem) -> Result<u64, AppError> {
         let conn = self.conn();
 
@@ -239,7 +281,11 @@ impl Database {
         let conn = self.conn();
 
         let (where_clause, search_param) = if let Some(s) = search {
-            ("WHERE title LIKE ?1", format!("%{}%", s))
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            ("WHERE title LIKE ?1 ESCAPE '\\'", format!("%{}%", escaped))
         } else {
             ("", String::new())
         };

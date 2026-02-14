@@ -122,6 +122,15 @@ jobs:
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }}
 
+      - name: Rename portable exe
+        if: matrix.name == 'windows'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          cp "src-tauri/target/${{ matrix.target }}/release/modern-ytdlp-gui.exe" \
+             "src-tauri/target/${{ matrix.target }}/release/bundle/Modern-YT-DLP-GUI_${RELEASE_VERSION}_portable.exe"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -134,6 +143,7 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/*portable*.exe
           if-no-files-found: ignore
 
   release:
@@ -173,6 +183,7 @@ jobs:
             | Platform | File |
             |----------|------|
             | Windows (installer) | `.exe` |
+            | Windows (portable) | `_portable.exe` |
             | Windows (MSI) | `.msi` |
             | macOS (Universal) | `.dmg` |
             | Linux (AppImage) | `.AppImage` |
@@ -180,6 +191,7 @@ jobs:
             | Linux (rpm) | `.rpm` |
           files: |
             artifacts/**/*.exe
+            artifacts/**/*portable*.exe
             artifacts/**/*.msi
             artifacts/**/*.dmg
             artifacts/**/*.app.tar.gz
