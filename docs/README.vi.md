@@ -12,12 +12,14 @@ Một ứng dụng máy tính để bàn hiện đại, đa nền tảng để t
 ## Các tính năng
 
 - Tải xuống video & danh sách phát với lựa chọn định dạng và chất lượng
-- Hàng đợi tải xuống song song với tính năng tạm dừng, hủy và thử lại
+- Hàng đợi tải xuống song song với tính năng hủy và thử lại
 - Lịch sử tải xuống với tính năng tìm kiếm và quản lý
-- Phát hiện và cài đặt tự động các phần phụ thuộc yt-dlp và FFmpeg
+- Phát hiện tự động các phần phụ thuộc yt-dlp và FFmpeg với hướng dẫn cài đặt
 - Tùy chỉnh mẫu tên tệp (chế độ đơn giản & nâng cao)
 - Hỗ trợ cookie cho nội dung xác thực
 - Phát hiện tải xuống trùng lặp
+- Hỗ trợ đa ngôn ngữ (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- 4 chủ đề màu sắc (Dark, Violet, Red, Light)
 - Hỗ trợ đa nền tảng (Windows, macOS, Linux)
 
 ## Giấy phép

@@ -12,12 +12,14 @@ Gebaut mit Tauri 2.0 (Rust) und SvelteKit, bietet eine saubere und intuitive Ben
 ## Funktionen
 
 - Video- und Playlist-Download mit Format- und Qualitätsauswahl
-- Gleichzeitige Download-Warteschlange mit Pause-, Abbruch- und Wiederholungsfunktion
+- Gleichzeitige Download-Warteschlange mit Abbruch- und Wiederholungsfunktion
 - Download-Verlauf mit Suche und Verwaltung
-- Automatische Erkennung und Installation von yt-dlp und FFmpeg Abhängigkeiten
+- Automatische Erkennung von yt-dlp und FFmpeg Abhängigkeiten mit Installationsanleitung
 - Anpassung der Dateinamenvorlage (einfacher & erweiterter Modus)
 - Cookie-Unterstützung für authentifizierte Inhalte
 - Duplikat-Download-Erkennung
+- Mehrsprachige Unterstützung (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- 4 Farbthemen (Dark, Violet, Red, Light)
 - Plattformübergreifende Unterstützung (Windows, macOS, Linux)
 
 ## Lizenz

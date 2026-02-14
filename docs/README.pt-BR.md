@@ -12,12 +12,14 @@ Construído com Tauri 2.0 (Rust) e SvelteKit, fornecendo uma interface limpa e i
 ## Recursos
 
 - Download de vídeos e playlists com seleção de formato e qualidade
-- Fila de downloads concorrentes com pausa, cancelamento e repetição
+- Fila de downloads concorrentes com cancelamento e repetição
 - Histórico de downloads com pesquisa e gerenciamento
-- Detecção automática de dependências yt-dlp e FFmpeg e instalação
+- Detecção automática de dependências yt-dlp e FFmpeg com guia de instalação
 - Personalização de template de nome de arquivo (modos simples e avançado)
 - Suporte a cookies para conteúdo autenticado
 - Detecção de downloads duplicados
+- Suporte multilíngue (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- 4 temas de cores (Dark, Violet, Red, Light)
 - Suporte multiplataforma (Windows, macOS, Linux)
 
 ## Licença

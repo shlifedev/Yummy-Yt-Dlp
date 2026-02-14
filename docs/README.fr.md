@@ -12,12 +12,14 @@ Construite avec Tauri 2.0 (Rust) et SvelteKit, offrant une interface propre et i
 ## Fonctionnalités
 
 - Téléchargement de vidéos et de listes de lecture avec sélection du format et de la qualité
-- File d'attente de téléchargement concurrente avec pause, annulation et nouvelle tentative
+- File d'attente de téléchargement concurrente avec annulation et nouvelle tentative
 - Historique de téléchargement avec recherche et gestion
-- Détection et installation automatiques des dépendances yt-dlp et FFmpeg
+- Détection automatique des dépendances yt-dlp et FFmpeg avec guide d'installation
 - Personnalisation du modèle de nom de fichier (modes simple et avancé)
 - Support des cookies pour les contenus authentifiés
 - Détection des téléchargements en double
+- Support multilingue (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- 4 thèmes de couleurs (Dark, Violet, Red, Light)
 - Support multiplateforme (Windows, macOS, Linux)
 
 ## Licence
