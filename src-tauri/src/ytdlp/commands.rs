@@ -71,8 +71,14 @@ pub async fn retry_download(
                 super::download::process_next_pending_public(app_panic_guard);
             }
         });
+    } else {
+        // add_to_queue와 동일하게 pending 큐 확인을 한 번 트리거해서
+        // 레이스 타이밍에서 retry 작업이 영구 pending으로 남지 않도록 한다.
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            super::download::process_next_pending_public(app_clone);
+        });
     }
-    // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
     Ok(())
 }
