@@ -239,7 +239,7 @@
       alternative: "pip install yt-dlp",
     },
     windows: {
-      recommended: "winget install yt-dlp.yt-dlp && winget install Gyan.FFmpeg",
+      recommended: "winget install yt-dlp; winget install Gyan.FFmpeg",
       alternative: "scoop install yt-dlp ffmpeg",
     },
     linux: {
