@@ -1,9 +1,8 @@
-mod command;
 mod ytdlp;
 
 #[cfg(debug_assertions)]
 use specta_typescript::{BigIntExportBehavior, Typescript};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tauri_specta::{collect_commands, collect_events};
 
@@ -14,8 +13,6 @@ pub mod modules {
     pub mod types;
 }
 
-pub struct AppState {}
-
 pub type DbState = Arc<ytdlp::db::Database>;
 pub type DownloadManagerState = Arc<ytdlp::download::DownloadManager>;
 pub type LogDbState = Arc<modules::log_db::LogDatabase>;
@@ -24,7 +21,6 @@ pub type LogDbState = Arc<modules::log_db::LogDatabase>;
 pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new()
         .commands(collect_commands![
-            command::increment_counter,
             ytdlp::commands::check_dependencies,
             ytdlp::commands::update_ytdlp,
             ytdlp::commands::get_download_queue,
@@ -86,7 +82,6 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
-        .manage(Mutex::new(AppState {}))
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle()

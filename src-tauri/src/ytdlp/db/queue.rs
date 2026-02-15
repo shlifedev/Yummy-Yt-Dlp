@@ -12,7 +12,7 @@ fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
         format_id: row.get(4)?,
         quality_label: row.get(5)?,
         output_path: row.get(6)?,
-        status: DownloadStatus::from_str(&row.get::<_, String>(7)?),
+        status: DownloadStatus::parse(&row.get::<_, String>(7)?),
         progress: row.get(8)?,
         speed: row.get(9)?,
         eta: row.get(10)?,

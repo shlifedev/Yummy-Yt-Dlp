@@ -105,9 +105,21 @@ pub fn get_available_browsers() -> Vec<String> {
             }
         }
     } else {
-        // Linux - check if commands exist using which
-        for name in &["chrome", "chromium", "firefox", "brave"] {
-            browsers.push(name.to_string());
+        // Linux - check common installation paths
+        let checks = vec![
+            ("chrome", "/usr/bin/google-chrome-stable"),
+            ("chrome", "/usr/bin/google-chrome"),
+            ("chromium", "/usr/bin/chromium-browser"),
+            ("chromium", "/usr/bin/chromium"),
+            ("firefox", "/usr/bin/firefox"),
+            ("brave", "/usr/bin/brave-browser"),
+            ("edge", "/usr/bin/microsoft-edge"),
+        ];
+
+        for (name, path) in checks {
+            if std::path::Path::new(path).exists() && !browsers.contains(&name.to_string()) {
+                browsers.push(name.to_string());
+            }
         }
     }
 
