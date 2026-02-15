@@ -436,7 +436,6 @@ pub async fn resolve_deno_path(app: &AppHandle) -> Option<PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -461,7 +460,6 @@ pub async fn check_deno_version(deno_path: &Path) -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -529,7 +527,6 @@ async fn quick_binary_exists(name: &str) -> bool {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -608,7 +605,6 @@ async fn check_dep_ffmpeg(app: &AppHandle) -> DepInfo {
                 cmd.arg("-version");
                 #[cfg(target_os = "windows")]
                 {
-                    use std::os::windows::process::CommandExt;
                     cmd.creation_flags(0x08000000);
                 }
                 if let Ok(Ok(output)) =
@@ -715,7 +711,6 @@ pub fn warmup_ytdlp(app: AppHandle) {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
