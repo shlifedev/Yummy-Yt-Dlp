@@ -75,8 +75,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(AppState {}))
         .setup(move |app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             builder.mount_events(app);
             let app_data_dir = app
                 .path()

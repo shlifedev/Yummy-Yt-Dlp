@@ -152,6 +152,20 @@ const zhTW: Record<string, string> = {
   "tray.quit": "退出",
   "settings.minimizeToTray": "最小化到系統匣",
   "settings.minimizeToTrayDesc": "關閉視窗時最小化到系統匣",
+
+  // Update
+  "update.checkUpdate": "檢查更新",
+  "update.available": "有可用更新",
+  "update.downloading": "正在下載更新...",
+  "update.install": "更新並重啟",
+  "update.restart": "重啟以更新",
+  "update.version": "v{version} 可用",
+  "update.releaseNotes": "發行說明",
+  "update.later": "稍後",
+  "update.upToDate": "已是最新版本",
+  "update.checking": "正在檢查更新...",
+  "update.downloadProgress": "已下載 {percent}%",
+  "update.readyToInstall": "準備安裝",
 }
 
 export default zhTW

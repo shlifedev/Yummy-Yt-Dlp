@@ -152,6 +152,20 @@ const fr: Record<string, string> = {
   "tray.quit": "Quitter",
   "settings.minimizeToTray": "Minimiser dans la barre",
   "settings.minimizeToTrayDesc": "Minimiser dans la barre système lors de la fermeture",
+
+  // Update
+  "update.checkUpdate": "Vérifier les mises à jour",
+  "update.available": "Mise à jour disponible",
+  "update.downloading": "Téléchargement de la mise à jour...",
+  "update.install": "Mettre à jour et redémarrer",
+  "update.restart": "Redémarrer pour mettre à jour",
+  "update.version": "v{version} disponible",
+  "update.releaseNotes": "Notes de version",
+  "update.later": "Plus tard",
+  "update.upToDate": "Vous êtes à jour",
+  "update.checking": "Recherche de mises à jour...",
+  "update.downloadProgress": "{percent}% téléchargé",
+  "update.readyToInstall": "Prêt à installer",
 }
 
 export default fr

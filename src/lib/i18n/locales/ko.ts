@@ -152,6 +152,20 @@ const ko: Record<string, string> = {
   "tray.quit": "종료",
   "settings.minimizeToTray": "트레이로 최소화",
   "settings.minimizeToTrayDesc": "창을 닫을 때 시스템 트레이로 최소화",
+
+  // Update
+  "update.checkUpdate": "업데이트 확인",
+  "update.available": "업데이트 가능",
+  "update.downloading": "업데이트 다운로드 중...",
+  "update.install": "업데이트 후 재시작",
+  "update.restart": "재시작하여 업데이트",
+  "update.version": "v{version} 사용 가능",
+  "update.releaseNotes": "릴리스 노트",
+  "update.later": "나중에",
+  "update.upToDate": "최신 버전입니다",
+  "update.checking": "업데이트 확인 중...",
+  "update.downloadProgress": "{percent}% 다운로드됨",
+  "update.readyToInstall": "설치 준비 완료",
 }
 
 export default ko

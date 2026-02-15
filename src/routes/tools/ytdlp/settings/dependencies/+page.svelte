@@ -47,6 +47,28 @@
   async function handleInstallDep(depName: string) {
     installingDep = depName
     depActionResult = null
+
+    let unlistenFn: (() => void) | null = null
+    try {
+      unlistenFn = await listen("dep-install-event", (event: any) => {
+        const data = event.payload as DepInstallEvent
+        // Immediately mark dep as installed when Completing stage is received
+        if (data.stage === "Completing" && data.depName === depName && depStatus) {
+          const depKey = depName === "yt-dlp" ? "ytdlp" : depName as "ffmpeg" | "deno"
+          depStatus = {
+            ...depStatus,
+            [depKey]: {
+              ...depStatus[depKey],
+              installed: true,
+              source: "AppManaged",
+            },
+          }
+        }
+      })
+    } catch (e) {
+      console.error("Failed to listen for dep install events:", e)
+    }
+
     try {
       const result = await commands.installDependency(depName)
       if (result.status === "ok") {
@@ -58,6 +80,7 @@
       depActionResult = { dep: depName, success: false, message: e?.message || String(e) }
     } finally {
       installingDep = null
+      if (unlistenFn) unlistenFn()
       await loadDepStatus(true)
     }
   }
@@ -77,6 +100,19 @@
           message: data.message ?? null,
         }
         installProgress = { ...installProgress }
+
+        // Immediately mark dep as installed when Completing stage is received
+        if (data.stage === "Completing" && depStatus) {
+          const depKey = data.depName === "yt-dlp" ? "ytdlp" : data.depName as "ffmpeg" | "deno"
+          depStatus = {
+            ...depStatus,
+            [depKey]: {
+              ...depStatus[depKey],
+              installed: true,
+              source: "AppManaged",
+            },
+          }
+        }
       })
     } catch (e) {
       console.error("Failed to listen for dep install events:", e)

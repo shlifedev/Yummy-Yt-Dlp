@@ -160,6 +160,20 @@ const en: Record<string, string> = {
   "tray.quit": "Quit",
   "settings.minimizeToTray": "Minimize to Tray",
   "settings.minimizeToTrayDesc": "Minimize to system tray when closing the window",
+
+  // Update
+  "update.checkUpdate": "Check for Updates",
+  "update.available": "Update Available",
+  "update.downloading": "Downloading update...",
+  "update.install": "Update & Restart",
+  "update.restart": "Restart to Update",
+  "update.version": "v{version} available",
+  "update.releaseNotes": "Release Notes",
+  "update.later": "Later",
+  "update.upToDate": "You're up to date",
+  "update.checking": "Checking for updates...",
+  "update.downloadProgress": "{percent}% downloaded",
+  "update.readyToInstall": "Ready to install",
 }
 
 export default en

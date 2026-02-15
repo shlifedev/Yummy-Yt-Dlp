@@ -9,13 +9,14 @@
   import { openUrl } from "@tauri-apps/plugin-opener"
   import { t, initLocale } from "$lib/i18n/index.svelte"
   import { initTheme } from "$lib/theme/index.svelte"
+  import { check, type Update } from "@tauri-apps/plugin-updater"
+  import { relaunch } from "@tauri-apps/plugin-process"
 
   let { children } = $props()
 
   import type { FullDependencyStatus, DepInstallEvent } from "$lib/bindings"
 
   let checking = $state(true)
-  let depsInstalled = $derived(fullDepStatus?.ytdlp?.installed ?? false)
   let ytdlpInstalled = $state(false)
   let ytdlpVersion = $state<string | null>(null)
   let ffmpegInstalled = $state(false)
@@ -30,6 +31,11 @@
 
   // Auto-install state
   let fullDepStatus = $state<FullDependencyStatus | null>(null)
+  let depsInstalled = $derived(
+    fullDepStatus
+      ? fullDepStatus.ytdlp.installed && fullDepStatus.ffmpeg.installed && fullDepStatus.deno.installed
+      : false
+  )
   let installing = $state(false)
   let installProgress = $state<Record<string, { stage: string, percent: number, message: string | null }>>({})
   let installError = $state<string | null>(null)
@@ -50,6 +56,16 @@
   let toastIcon = $state("check_circle")
   let toastType = $state<"success" | "error">("success")
   let toastTimeout: ReturnType<typeof setTimeout> | null = null
+
+  // Update state
+  let updateAvailable = $state(false)
+  let updateInfo = $state<Update | null>(null)
+  let showUpdateDialog = $state(false)
+  let updateDownloading = $state(false)
+  let updateProgress = $state(0)
+  let updateTotalSize = $state(0)
+  let updateDownloaded = $state(0)
+  let updateReady = $state(false)
 
   // Debug command menu state (F9)
   let showDebugCmd = $state(false)
@@ -222,6 +238,9 @@
 
     try { appVersion = await getVersion() } catch { appVersion = "0.0.0" }
 
+    // Check for updates in background
+    checkForUpdate()
+
     await checkDeps()
 
     // Initialize i18n and theme from saved settings
@@ -344,7 +363,6 @@
         ytdlpVersion = fullResult.data.ytdlp.version ?? null
         ffmpegInstalled = fullResult.data.ffmpeg.installed
         ffmpegVersion = fullResult.data.ffmpeg.version ?? null
-        depsInstalled = fullResult.data.ytdlp.installed
         // Build debug info
         ytdlpDebug = `yt-dlp: ${fullResult.data.ytdlp.installed ? fullResult.data.ytdlp.version : "not found"} (${fullResult.data.ytdlp.source})\nffmpeg: ${fullResult.data.ffmpeg.installed ? fullResult.data.ffmpeg.version : "not found"} (${fullResult.data.ffmpeg.source})\ndeno: ${fullResult.data.deno.installed ? fullResult.data.deno.version : "not found"} (${fullResult.data.deno.source})`
       }
@@ -358,7 +376,6 @@
           ytdlpVersion = result.data.ytdlpVersion ?? null
           ffmpegInstalled = result.data.ffmpegInstalled
           ffmpegVersion = result.data.ffmpegVersion ?? null
-          depsInstalled = result.data.ytdlpInstalled
           ytdlpDebug = result.data.ytdlpDebug ?? ""
         }
       } catch (e2) {
@@ -447,6 +464,44 @@
     },
   }
 
+  async function checkForUpdate() {
+    try {
+      const update = await check()
+      if (update) {
+        updateAvailable = true
+        updateInfo = update
+      }
+    } catch {
+      // Silently fail in dev mode or when updater is not configured
+    }
+  }
+
+  async function handleUpdate() {
+    if (!updateInfo) return
+    updateDownloading = true
+    updateDownloaded = 0
+    updateTotalSize = 0
+    updateProgress = 0
+    try {
+      await updateInfo.downloadAndInstall((progress) => {
+        if (progress.event === "Started" && progress.data.contentLength) {
+          updateTotalSize = progress.data.contentLength
+        } else if (progress.event === "Progress") {
+          updateDownloaded += progress.data.chunkLength
+          if (updateTotalSize > 0) {
+            updateProgress = Math.round((updateDownloaded / updateTotalSize) * 100)
+          }
+        } else if (progress.event === "Finished") {
+          updateReady = true
+        }
+      })
+      await relaunch()
+    } catch (e) {
+      console.error("Update failed:", e)
+      updateDownloading = false
+    }
+  }
+
   let platformCommands = $derived(installCommands[currentPlatform] || installCommands.macos)
 
   let copiedCmdTimeout: ReturnType<typeof setTimeout> | null = null
@@ -506,6 +561,20 @@
       >
         <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         <span>GitHub</span>
+      </button>
+    </div>
+
+    <!-- Update Button -->
+    <div class="px-3 mb-1">
+      <button
+        onclick={() => { showUpdateDialog = true }}
+        class="flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium text-yt-text-secondary hover:bg-yt-overlay hover:text-yt-text w-full"
+      >
+        <span class="material-symbols-outlined text-[20px]">system_update</span>
+        <span>{t("update.checkUpdate")}</span>
+        {#if updateAvailable}
+          <span class="ml-auto w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-yt-surface animate-pulse"></span>
+        {/if}
       </button>
     </div>
 
@@ -752,6 +821,89 @@
       <div class="flex items-center gap-4 bg-yt-surface border border-yt-border border-l-4 {toastType === 'error' ? 'border-l-yt-error' : 'border-l-yt-success'} text-yt-text px-6 py-4 rounded-lg shadow-2xl">
         <span class="material-symbols-outlined text-[24px] {toastType === 'error' ? 'text-yt-error' : 'text-yt-success'}">{toastIcon}</span>
         <span class="text-base font-medium">{toastMessage}</span>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Update Dialog -->
+  {#if showUpdateDialog}
+    <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm">
+      <div class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 animate-scale-in">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-lg bg-yt-primary/10 flex items-center justify-center">
+            <span class="material-symbols-outlined text-yt-primary text-2xl">system_update</span>
+          </div>
+          <div>
+            <h3 class="font-display font-semibold text-lg text-yt-text">
+              {updateAvailable ? t("update.available") : t("update.checkUpdate")}
+            </h3>
+            {#if updateAvailable && updateInfo}
+              <p class="text-xs text-yt-text-secondary">{t("update.version", { version: updateInfo.version })}</p>
+            {/if}
+          </div>
+        </div>
+
+        {#if updateAvailable && updateInfo}
+          {#if updateInfo.body}
+            <div class="mb-4">
+              <p class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider mb-2">{t("update.releaseNotes")}</p>
+              <div class="bg-yt-bg border border-yt-border rounded-lg p-3 max-h-40 overflow-y-auto">
+                <p class="text-xs text-yt-text-secondary whitespace-pre-wrap">{updateInfo.body}</p>
+              </div>
+            </div>
+          {/if}
+
+          {#if updateDownloading}
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs text-yt-text-secondary">
+                  {updateReady ? t("update.readyToInstall") : t("update.downloading")}
+                </p>
+                <p class="text-xs font-mono text-yt-text-secondary">{updateProgress}%</p>
+              </div>
+              <div class="h-2 bg-yt-border rounded-full overflow-hidden">
+                <div
+                  class="h-full bg-yt-primary transition-all duration-300 rounded-full"
+                  style="width: {updateProgress}%"
+                ></div>
+              </div>
+            </div>
+          {/if}
+
+          <div class="flex gap-3">
+            {#if !updateDownloading}
+              <button
+                onclick={() => { showUpdateDialog = false }}
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
+              >
+                {t("update.later")}
+              </button>
+              <button
+                onclick={handleUpdate}
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]">download</span>
+                {t("update.install")}
+              </button>
+            {:else}
+              <button
+                disabled
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight text-yt-text-secondary text-sm font-medium cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                {t("update.downloading")}
+              </button>
+            {/if}
+          </div>
+        {:else}
+          <p class="text-sm text-yt-text-secondary mb-4">{t("update.upToDate")}</p>
+          <button
+            onclick={() => { showUpdateDialog = false }}
+            class="w-full px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
+          >
+            {t("update.later")}
+          </button>
+        {/if}
       </div>
     </div>
   {/if}

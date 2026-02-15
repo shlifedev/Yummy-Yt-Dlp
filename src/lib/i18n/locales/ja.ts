@@ -152,6 +152,20 @@ const ja: Record<string, string> = {
   "tray.quit": "終了",
   "settings.minimizeToTray": "トレイに最小化",
   "settings.minimizeToTrayDesc": "ウィンドウを閉じる時にシステムトレイに最小化",
+
+  // Update
+  "update.checkUpdate": "アップデートを確認",
+  "update.available": "アップデート可能",
+  "update.downloading": "アップデートをダウンロード中...",
+  "update.install": "アップデートして再起動",
+  "update.restart": "再起動してアップデート",
+  "update.version": "v{version} が利用可能",
+  "update.releaseNotes": "リリースノート",
+  "update.later": "後で",
+  "update.upToDate": "最新バージョンです",
+  "update.checking": "アップデートを確認中...",
+  "update.downloadProgress": "{percent}% ダウンロード済み",
+  "update.readyToInstall": "インストール準備完了",
 }
 
 export default ja
