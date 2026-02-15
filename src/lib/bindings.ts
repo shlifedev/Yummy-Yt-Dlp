@@ -5,9 +5,6 @@
 
 
 export const commands = {
-async incrementCounter(current: number) : Promise<number> {
-    return await TAURI_INVOKE("increment_counter", { current });
-},
 async checkDependencies() : Promise<Result<DependencyStatus, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_dependencies") };
@@ -270,7 +267,10 @@ async deleteAppManagedDep(depName: string) : Promise<Result<string, AppError>> {
 }
 },
 /**
- * Full factory reset: delete settings, app-managed binaries, databases, and caches.
+ * Full factory reset: clear settings, databases (via live connections), binaries, and caches.
+ * 
+ * Databases are cleared through their live connections rather than deleting files,
+ * which would leave orphaned in-memory connections and cause silent data loss.
  */
 async resetAllData() : Promise<Result<string[], AppError>> {
     try {
@@ -325,7 +325,7 @@ newLogEvent: "new-log-event"
 
 /** user-defined types **/
 
-export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string } | { DependencyInstallError: string } | { ChecksumError: string }
+export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string } | { DependencyInstallError: string } | { ChecksumError: string } | { NotImplemented: string }
 export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null; minimizeToTray: boolean | null; 
 /**
  * Dependency resolution mode: "external" (app-managed) or "system" (system PATH only)
