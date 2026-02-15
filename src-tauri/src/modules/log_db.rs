@@ -227,6 +227,17 @@ impl LogDatabase {
         Ok(deleted as u64)
     }
 
+    /// Delete all log data (used by factory reset).
+    /// Uses the live connection instead of deleting the DB file.
+    pub fn clear_all_data(&self) -> Result<(), AppError> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM logs", [])
+            .map_err(|e| AppError::DatabaseError(format!("Failed to clear logs: {}", e)))?;
+        conn.execute_batch("VACUUM;")
+            .map_err(|e| AppError::DatabaseError(format!("Failed to vacuum logs: {}", e)))?;
+        Ok(())
+    }
+
     pub fn cleanup_old_logs(&self, max_age_days: u32, max_entries: u64) -> Result<u64, AppError> {
         let conn = self.conn();
         let mut total_deleted = 0u64;

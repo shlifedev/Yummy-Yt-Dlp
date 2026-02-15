@@ -128,7 +128,7 @@ impl std::fmt::Display for DownloadStatus {
 }
 
 impl DownloadStatus {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "pending" => DownloadStatus::Pending,
             "downloading" => DownloadStatus::Downloading,
@@ -136,7 +136,13 @@ impl DownloadStatus {
             "completed" => DownloadStatus::Completed,
             "failed" => DownloadStatus::Failed,
             "cancelled" => DownloadStatus::Cancelled,
-            _ => DownloadStatus::Pending,
+            unknown => {
+                eprintln!(
+                    "[DownloadStatus] Unknown status '{}', defaulting to Pending",
+                    unknown
+                );
+                DownloadStatus::Pending
+            }
         }
     }
 }

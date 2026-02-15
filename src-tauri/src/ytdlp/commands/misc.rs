@@ -49,7 +49,10 @@ pub fn get_recent_logs() -> String {
     logger::read_recent_logs(200)
 }
 
-/// Full factory reset: delete settings, app-managed binaries, databases, and caches.
+/// Full factory reset: clear settings, databases (via live connections), binaries, and caches.
+///
+/// Databases are cleared through their live connections rather than deleting files,
+/// which would leave orphaned in-memory connections and cause silent data loss.
 #[tauri::command]
 #[specta::specta]
 pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
@@ -59,7 +62,11 @@ pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
         .app_data_dir()
         .map_err(|e| AppError::Custom(format!("Failed to get app data dir: {}", e)))?;
 
-    // 1. Clear settings store
+    // 1. Cancel all active downloads first
+    let manager = app.state::<Arc<DownloadManager>>();
+    manager.cancel_all();
+
+    // 2. Clear settings store
     match app.store("settings.json") {
         Ok(store) => {
             store.clear();
@@ -72,7 +79,7 @@ pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
         Err(e) => results.push(format!("settings: error - {}", e)),
     }
 
-    // 2. Delete app-managed binaries (bin/ directory)
+    // 3. Delete app-managed binaries (bin/ directory)
     let bin_dir = app_data_dir.join("bin");
     if bin_dir.exists() {
         match tokio::fs::remove_dir_all(&bin_dir).await {
@@ -83,38 +90,21 @@ pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
         results.push("bin/: not found (skip)".to_string());
     }
 
-    // 3. Delete main database (ytdlp.db)
-    let db_path = app_data_dir.join("ytdlp.db");
-    if db_path.exists() {
-        match tokio::fs::remove_file(&db_path).await {
-            Ok(_) => results.push("ytdlp.db: deleted".to_string()),
-            Err(e) => results.push(format!("ytdlp.db: delete failed - {}", e)),
-        }
-    }
-    // Also delete WAL/SHM files if present
-    for suffix in &["-wal", "-shm"] {
-        let wal_path = app_data_dir.join(format!("ytdlp.db{}", suffix));
-        if wal_path.exists() {
-            let _ = tokio::fs::remove_file(&wal_path).await;
-        }
+    // 4. Clear main database via live connection (not file deletion)
+    let db = app.state::<crate::DbState>();
+    match db.clear_all_data() {
+        Ok(()) => results.push("ytdlp.db: cleared".to_string()),
+        Err(e) => results.push(format!("ytdlp.db: clear failed - {}", e)),
     }
 
-    // 4. Delete log database (logs.db)
-    let log_db_path = app_data_dir.join("logs.db");
-    if log_db_path.exists() {
-        match tokio::fs::remove_file(&log_db_path).await {
-            Ok(_) => results.push("logs.db: deleted".to_string()),
-            Err(e) => results.push(format!("logs.db: delete failed - {}", e)),
-        }
-    }
-    for suffix in &["-wal", "-shm"] {
-        let wal_path = app_data_dir.join(format!("logs.db{}", suffix));
-        if wal_path.exists() {
-            let _ = tokio::fs::remove_file(&wal_path).await;
-        }
+    // 5. Clear log database via live connection (not file deletion)
+    let log_db = app.state::<crate::LogDbState>();
+    match log_db.clear_all_data() {
+        Ok(()) => results.push("logs.db: cleared".to_string()),
+        Err(e) => results.push(format!("logs.db: clear failed - {}", e)),
     }
 
-    // 5. Delete dep cache store
+    // 6. Delete dep cache store
     let dep_cache_path = app_data_dir.join("dep-cache.json");
     if dep_cache_path.exists() {
         match tokio::fs::remove_file(&dep_cache_path).await {
@@ -123,7 +113,7 @@ pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
         }
     }
 
-    // 6. Invalidate in-memory caches
+    // 7. Invalidate in-memory caches
     binary::invalidate_dep_cache();
     results.push("memory cache: invalidated".to_string());
 

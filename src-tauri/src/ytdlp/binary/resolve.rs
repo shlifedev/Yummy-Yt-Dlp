@@ -11,6 +11,7 @@ pub(super) async fn try_get_version(binary_path: &Path) -> Result<String, String
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -106,6 +107,7 @@ pub async fn check_ffmpeg() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -131,6 +133,7 @@ pub async fn resolve_ffmpeg_path() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -151,6 +154,7 @@ pub async fn resolve_ffmpeg_path() -> Option<String> {
 
         #[cfg(target_os = "windows")]
         {
+            use std::os::windows::process::CommandExt;
             which.creation_flags(0x08000000);
         }
 
@@ -301,7 +305,7 @@ pub async fn resolve_deno_path(app: &AppHandle) -> Option<PathBuf> {
 
 /// Check deno version from a path.
 pub async fn check_deno_version(deno_path: &Path) -> Option<String> {
-    let mut cmd = tokio::process::Command::new(deno_path);
+    let mut cmd = super::path::command_with_path(deno_path.to_str().unwrap_or("deno"));
     cmd.arg("--version");
 
     #[cfg(target_os = "windows")]
@@ -333,6 +337,7 @@ pub async fn update_ytdlp() -> Result<String, AppError> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 

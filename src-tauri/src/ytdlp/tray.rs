@@ -12,8 +12,13 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
     let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
 
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or("No default window icon configured")?;
+
     TrayIconBuilder::new()
-        .icon(app.default_window_icon().cloned().expect("no default icon"))
+        .icon(icon)
         .tooltip("Modern YT-DLP GUI")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
