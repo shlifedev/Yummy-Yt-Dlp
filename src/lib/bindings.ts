@@ -140,6 +140,17 @@ async fetchPlaylistInfo(url: string, page: number, pageSize: number) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Fetch quick metadata via YouTube oEmbed API (~200ms vs ~12s for yt-dlp)
+ */
+async fetchQuickMetadata(url: string) : Promise<Result<QuickMetadata, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_quick_metadata", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startDownload(request: DownloadRequest) : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_download", { request }) };
@@ -257,6 +268,30 @@ async deleteAppManagedDep(depName: string) : Promise<Result<string, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getLogs(page: number, pageSize: number, level: string | null, category: string | null, search: string | null, since: number | null) : Promise<Result<LogQueryResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_logs", { page, pageSize, level, category, search, since }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getLogStats() : Promise<Result<LogStats, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_log_stats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearLogs(beforeTimestamp: number | null) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_logs", { beforeTimestamp }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -265,10 +300,12 @@ async deleteAppManagedDep(depName: string) : Promise<Result<string, AppError>> {
 
 export const events = __makeEvents__<{
 depInstallEvent: DepInstallEvent,
-globalDownloadEvent: GlobalDownloadEvent
+globalDownloadEvent: GlobalDownloadEvent,
+newLogEvent: NewLogEvent
 }>({
 depInstallEvent: "dep-install-event",
-globalDownloadEvent: "global-download-event"
+globalDownloadEvent: "global-download-event",
+newLogEvent: "new-log-event"
 })
 
 /** user-defined constants **/
@@ -302,10 +339,15 @@ export type FullDependencyStatus = { ytdlp: DepInfo; ffmpeg: DepInfo; deno: DepI
 export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null }
 export type HistoryItem = { id: number; videoUrl: string; videoId: string; title: string; qualityLabel: string; format: string; filePath: string; fileSize: number | null; downloadedAt: number }
 export type HistoryResult = { items: HistoryItem[]; totalCount: number; page: number; pageSize: number }
+export type LogEntry = { id: number; timestamp: number; level: string; category: string; message: string; details: string | null }
+export type LogQueryResult = { items: LogEntry[]; totalCount: number; page: number; pageSize: number }
+export type LogStats = { totalCount: number; errorCount: number; warnCount: number; infoCount: number }
+export type NewLogEvent = { entry: LogEntry }
 export type PlaylistEntry = { url: string; videoId: string; title: string | null; duration: number | null; thumbnail: string | null }
 export type PlaylistResult = { playlistId: string; title: string; url: string; videoCount: number | null; channelName: string | null; entries: PlaylistEntry[] }
+export type QuickMetadata = { videoId: string; title: string; channel: string; channelUrl: string; thumbnail: string }
 export type UrlType = "video" | "channel" | "playlist" | "unknown"
-export type UrlValidation = { valid: boolean; urlType: UrlType; normalizedUrl: string | null }
+export type UrlValidation = { valid: boolean; urlType: UrlType; normalizedUrl: string | null; videoId: string | null }
 export type VideoInfo = { url: string; videoId: string; title: string; thumbnail: string; duration: number; uploadDate: string; channel: string; channelUrl: string; formats: FormatInfo[]; filesizeApprox: number | null }
 
 /** tauri-specta globals **/

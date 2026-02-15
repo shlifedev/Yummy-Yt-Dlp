@@ -2,6 +2,7 @@ const zhCN: Record<string, string> = {
   "nav.downloader": "下载器",
   "nav.queueHistory": "队列与历史",
   "nav.settings": "设置",
+  "nav.logs": "日志",
   "nav.queue": "队列",
   "nav.activeDownloads": "下载状态",
 
@@ -43,6 +44,7 @@ const zhCN: Record<string, string> = {
   "download.invalidUrl": "无效的YouTube URL",
   "download.alreadyInQueue": "该视频已在下载队列中。",
   "download.analyzing": "正在获取元数据...",
+  "download.loadingFormats": "正在加载视频格式...",
   "download.urlPlaceholder": "在此粘贴YouTube、Twitch或视频URL...",
   "download.download": "下载",
   "download.downloadAll": "全部下载",
@@ -166,6 +168,18 @@ const zhCN: Record<string, string> = {
   "update.checking": "正在检查更新...",
   "update.downloadProgress": "已下载 {percent}%",
   "update.readyToInstall": "准备安装",
+
+  // Logs
+  "logs.title": "日志",
+  "logs.subtitle": "应用程序日志查看器",
+  "logs.searchPlaceholder": "搜索日志...",
+  "logs.empty": "暂无日志",
+  "logs.live": "实时",
+  "logs.clearLogs": "清除",
+  "logs.clearConfirm": "清除所有日志？",
+  "logs.cleared": "日志已清除",
+  "logs.allLevels": "全部",
+  "logs.allCategories": "全部",
 }
 
 export default zhCN

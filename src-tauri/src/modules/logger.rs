@@ -2,9 +2,13 @@ use chrono::Local;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+
+use super::log_db::LogDatabase;
 
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static LOG_DB: OnceLock<Arc<LogDatabase>> = OnceLock::new();
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 /// Maximum log file size before rotation (5 MB)
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
@@ -13,6 +17,16 @@ const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
 pub fn init(app_data_dir: PathBuf) {
     let log_path = app_data_dir.join("log.txt");
     let _ = LOG_PATH.set(log_path);
+}
+
+/// Initialize the log database for structured logging
+pub fn init_db(log_db: Arc<LogDatabase>) {
+    let _ = LOG_DB.set(log_db);
+}
+
+/// Initialize the app handle for event emission
+pub fn init_app_handle(handle: tauri::AppHandle) {
+    let _ = APP_HANDLE.set(handle);
 }
 
 /// Get the log file path
@@ -31,37 +45,65 @@ fn maybe_rotate(log_path: &PathBuf) {
     }
 }
 
-/// Write a log entry to the log file
-fn write_log(level: &str, message: &str) {
-    let Some(log_path) = get_log_path() else {
-        eprintln!("[Logger] Not initialized: {}", message);
-        return;
-    };
+/// Core log function with category support
+fn write_log_with_category(level: &str, category: &str, message: &str, details: Option<&str>) {
+    let now = Local::now();
+    let timestamp_millis = chrono::Utc::now().timestamp_millis();
 
-    // Ensure parent directory exists
-    if let Some(parent) = log_path.parent() {
-        let _ = create_dir_all(parent);
+    // 1. File logging (crash fallback)
+    let log_path = get_log_path();
+    if let Some(log_path) = log_path {
+        if let Some(parent) = log_path.parent() {
+            let _ = create_dir_all(parent);
+        }
+        maybe_rotate(log_path);
+
+        let timestamp = now.format("%Y-%m-%d %H:%M:%S%.3f");
+        let log_entry = format!("[{}] [{}] [{}] {}\n", timestamp, level, category, message);
+
+        match OpenOptions::new().create(true).append(true).open(log_path) {
+            Ok(mut file) => {
+                let _ = file.write_all(log_entry.as_bytes());
+            }
+            Err(e) => {
+                eprintln!("[Logger] Failed to write log: {}", e);
+            }
+        }
+
+        eprint!("{}", log_entry);
+    } else {
+        eprintln!("[Logger] Not initialized: [{}] [{}] {}", level, category, message);
     }
 
-    // Rotate if too large
-    maybe_rotate(log_path);
-
-    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    let log_entry = format!("[{}] [{}] {}\n", timestamp, level, message);
-
-    // Append to log file
-    match OpenOptions::new().create(true).append(true).open(log_path) {
-        Ok(mut file) => {
-            let _ = file.write_all(log_entry.as_bytes());
-        }
-        Err(e) => {
-            eprintln!("[Logger] Failed to write log: {}", e);
+    // 2. DB logging
+    if let Some(db) = LOG_DB.get() {
+        if let Ok(id) = db.insert_log(timestamp_millis, level, category, message, details) {
+            // 3. Event emission for live updates
+            if let Some(app) = APP_HANDLE.get() {
+                use tauri::Emitter;
+                let entry = crate::ytdlp::types::LogEntry {
+                    id,
+                    timestamp: timestamp_millis,
+                    level: level.to_string(),
+                    category: category.to_string(),
+                    message: message.to_string(),
+                    details: details.map(|s| s.to_string()),
+                };
+                let _ = app.emit(
+                    "new-log-event",
+                    crate::ytdlp::types::NewLogEvent { entry },
+                );
+            }
         }
     }
-
-    // Also print to stderr for debugging
-    eprint!("{}", log_entry);
 }
+
+/// Write a log entry (backward compatible - uses "app" category)
+fn write_log(level: &str, message: &str) {
+    write_log_with_category(level, "app", message, None);
+}
+
+// === Backward-compatible functions (category defaults to "app") ===
 
 /// Log an error message
 pub fn error(message: &str) {
@@ -81,6 +123,29 @@ pub fn warn(message: &str) {
 /// Log an info message
 pub fn info(message: &str) {
     write_log("INFO", message);
+}
+
+// === Category-aware functions ===
+
+/// Log with explicit category and optional details
+pub fn log(level: &str, category: &str, message: &str, details: Option<&str>) {
+    write_log_with_category(level, category, message, details);
+}
+
+pub fn info_cat(category: &str, message: &str) {
+    write_log_with_category("INFO", category, message, None);
+}
+
+pub fn error_cat(category: &str, message: &str) {
+    write_log_with_category("ERROR", category, message, None);
+}
+
+pub fn warn_cat(category: &str, message: &str) {
+    write_log_with_category("WARN", category, message, None);
+}
+
+pub fn debug_cat(category: &str, message: &str) {
+    write_log_with_category("DEBUG", category, message, None);
 }
 
 /// Read the last N lines from the log file using tail-style reading.

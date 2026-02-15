@@ -2,6 +2,7 @@ const ko: Record<string, string> = {
   "nav.downloader": "다운로더",
   "nav.queueHistory": "대기열 및 기록",
   "nav.settings": "설정",
+  "nav.logs": "로그",
   "nav.queue": "대기열",
   "nav.activeDownloads": "다운로드 현황",
 
@@ -43,6 +44,7 @@ const ko: Record<string, string> = {
   "download.invalidUrl": "유효하지 않은 YouTube URL입니다",
   "download.alreadyInQueue": "이미 다운로드 큐에 있는 영상입니다.",
   "download.analyzing": "메타데이터를 조회하는 중...",
+  "download.loadingFormats": "비디오 형식을 불러오는 중...",
   "download.urlPlaceholder": "YouTube, Twitch 또는 영상 URL을 붙여넣으세요...",
   "download.download": "다운로드",
   "download.downloadAll": "전체 다운로드",
@@ -166,6 +168,18 @@ const ko: Record<string, string> = {
   "update.checking": "업데이트 확인 중...",
   "update.downloadProgress": "{percent}% 다운로드됨",
   "update.readyToInstall": "설치 준비 완료",
+
+  // Logs
+  "logs.title": "로그",
+  "logs.subtitle": "애플리케이션 로그 뷰어",
+  "logs.searchPlaceholder": "로그 검색...",
+  "logs.empty": "로그가 없습니다",
+  "logs.live": "실시간",
+  "logs.clearLogs": "삭제",
+  "logs.clearConfirm": "모든 로그를 삭제하시겠습니까?",
+  "logs.cleared": "로그가 삭제되었습니다",
+  "logs.allLevels": "전체",
+  "logs.allCategories": "전체",
 }
 
 export default ko

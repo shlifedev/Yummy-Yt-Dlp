@@ -54,6 +54,18 @@ pub struct PlaylistEntry {
     pub thumbnail: Option<String>,
 }
 
+// === Quick Metadata (oEmbed) ===
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickMetadata {
+    pub video_id: String,
+    pub title: String,
+    pub channel: String,
+    pub channel_url: String,
+    pub thumbnail: String,
+}
+
 // === URL Validation ===
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -62,6 +74,7 @@ pub struct UrlValidation {
     pub valid: bool,
     pub url_type: UrlType,
     pub normalized_url: Option<String>,
+    pub video_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -313,4 +326,41 @@ pub struct DepUpdateInfo {
     pub current_version: Option<String>,
     pub latest_version: String,
     pub update_available: bool,
+}
+
+// === Logs ===
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEntry {
+    pub id: i64,
+    pub timestamp: i64,
+    pub level: String,
+    pub category: String,
+    pub message: String,
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogQueryResult {
+    pub items: Vec<LogEntry>,
+    pub total_count: u64,
+    pub page: u32,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogStats {
+    pub total_count: u64,
+    pub error_count: u64,
+    pub warn_count: u64,
+    pub info_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct NewLogEvent {
+    pub entry: LogEntry,
 }

@@ -95,6 +95,8 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
         binary::invalidate_dep_cache();
     }
 
+    logger::info_cat("settings", "Settings updated");
+
     Ok(())
 }
 
@@ -275,7 +277,12 @@ pub async fn check_full_dependencies(
     if force.unwrap_or(false) {
         binary::invalidate_dep_cache();
     }
-    Ok(binary::check_full_dependencies(&app).await)
+    let status = binary::check_full_dependencies(&app).await;
+    logger::info_cat("dependency", &format!(
+        "Dependency check: yt-dlp={}, ffmpeg={}, deno={}",
+        status.ytdlp.installed, status.ffmpeg.installed, status.deno.installed
+    ));
+    Ok(status)
 }
 
 #[tauri::command]

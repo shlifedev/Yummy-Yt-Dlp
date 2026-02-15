@@ -2,6 +2,7 @@ const fr: Record<string, string> = {
   "nav.downloader": "Téléchargeur",
   "nav.queueHistory": "File d'attente et historique",
   "nav.settings": "Paramètres",
+  "nav.logs": "Journaux",
   "nav.queue": "File d'attente",
   "nav.activeDownloads": "Téléchargements actifs",
 
@@ -43,6 +44,7 @@ const fr: Record<string, string> = {
   "download.invalidUrl": "URL YouTube invalide",
   "download.alreadyInQueue": "Cette vidéo est déjà dans la file d'attente.",
   "download.analyzing": "Récupération des métadonnées...",
+  "download.loadingFormats": "Chargement des formats vidéo...",
   "download.urlPlaceholder": "Collez l'URL YouTube, Twitch ou vidéo ici...",
   "download.download": "Télécharger",
   "download.downloadAll": "Tout télécharger",
@@ -166,6 +168,18 @@ const fr: Record<string, string> = {
   "update.checking": "Recherche de mises à jour...",
   "update.downloadProgress": "{percent}% téléchargé",
   "update.readyToInstall": "Prêt à installer",
+
+  // Logs
+  "logs.title": "Journaux",
+  "logs.subtitle": "Visualiseur de journaux d'application",
+  "logs.searchPlaceholder": "Rechercher dans les journaux...",
+  "logs.empty": "Aucun journal",
+  "logs.live": "En direct",
+  "logs.clearLogs": "Effacer",
+  "logs.clearConfirm": "Effacer tous les journaux ?",
+  "logs.cleared": "Journaux effacés",
+  "logs.allLevels": "Tous",
+  "logs.allCategories": "Toutes",
 }
 
 export default fr

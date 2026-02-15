@@ -2,6 +2,7 @@ const ja: Record<string, string> = {
   "nav.downloader": "ダウンローダー",
   "nav.queueHistory": "キューと履歴",
   "nav.settings": "設定",
+  "nav.logs": "ログ",
   "nav.queue": "キュー",
   "nav.activeDownloads": "ダウンロード状況",
 
@@ -43,6 +44,7 @@ const ja: Record<string, string> = {
   "download.invalidUrl": "無効なYouTube URLです",
   "download.alreadyInQueue": "この動画はすでにダウンロードキューにあります。",
   "download.analyzing": "メタデータを取得中...",
+  "download.loadingFormats": "動画形式を読み込み中...",
   "download.urlPlaceholder": "YouTube、Twitch、または動画のURLを貼り付けてください...",
   "download.download": "ダウンロード",
   "download.downloadAll": "すべてダウンロード",
@@ -166,6 +168,18 @@ const ja: Record<string, string> = {
   "update.checking": "アップデートを確認中...",
   "update.downloadProgress": "{percent}% ダウンロード済み",
   "update.readyToInstall": "インストール準備完了",
+
+  // Logs
+  "logs.title": "ログ",
+  "logs.subtitle": "アプリケーションログビューア",
+  "logs.searchPlaceholder": "ログを検索...",
+  "logs.empty": "ログがありません",
+  "logs.live": "リアルタイム",
+  "logs.clearLogs": "削除",
+  "logs.clearConfirm": "すべてのログを削除しますか？",
+  "logs.cleared": "ログが削除されました",
+  "logs.allLevels": "すべて",
+  "logs.allCategories": "すべて",
 }
 
 export default ja

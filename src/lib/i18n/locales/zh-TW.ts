@@ -2,6 +2,7 @@ const zhTW: Record<string, string> = {
   "nav.downloader": "下載器",
   "nav.queueHistory": "佇列與歷史",
   "nav.settings": "設定",
+  "nav.logs": "日誌",
   "nav.queue": "佇列",
   "nav.activeDownloads": "下載狀態",
 
@@ -43,6 +44,7 @@ const zhTW: Record<string, string> = {
   "download.invalidUrl": "無效的YouTube URL",
   "download.alreadyInQueue": "此影片已在下載佇列中。",
   "download.analyzing": "正在取得中繼資料...",
+  "download.loadingFormats": "正在載入影片格式...",
   "download.urlPlaceholder": "在此貼上YouTube、Twitch或影片URL...",
   "download.download": "下載",
   "download.downloadAll": "全部下載",
@@ -166,6 +168,18 @@ const zhTW: Record<string, string> = {
   "update.checking": "正在檢查更新...",
   "update.downloadProgress": "已下載 {percent}%",
   "update.readyToInstall": "準備安裝",
+
+  // Logs
+  "logs.title": "日誌",
+  "logs.subtitle": "應用程式日誌檢視器",
+  "logs.searchPlaceholder": "搜尋日誌...",
+  "logs.empty": "尚無日誌",
+  "logs.live": "即時",
+  "logs.clearLogs": "清除",
+  "logs.clearConfirm": "清除所有日誌？",
+  "logs.cleared": "日誌已清除",
+  "logs.allLevels": "全部",
+  "logs.allCategories": "全部",
 }
 
 export default zhTW

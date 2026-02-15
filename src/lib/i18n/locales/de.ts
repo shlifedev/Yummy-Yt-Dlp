@@ -2,6 +2,7 @@ const de: Record<string, string> = {
   "nav.downloader": "Downloader",
   "nav.queueHistory": "Warteschlange & Verlauf",
   "nav.settings": "Einstellungen",
+  "nav.logs": "Protokoll",
   "nav.queue": "Warteschlange",
   "nav.activeDownloads": "Aktive Downloads",
 
@@ -43,6 +44,7 @@ const de: Record<string, string> = {
   "download.invalidUrl": "Ungültige YouTube-URL",
   "download.alreadyInQueue": "Dieses Video befindet sich bereits in der Warteschlange.",
   "download.analyzing": "Metadaten werden abgerufen...",
+  "download.loadingFormats": "Videoformate werden geladen...",
   "download.urlPlaceholder": "YouTube-, Twitch- oder Video-URL hier einfügen...",
   "download.download": "Herunterladen",
   "download.downloadAll": "Alle herunterladen",
@@ -166,6 +168,18 @@ const de: Record<string, string> = {
   "update.checking": "Suche nach Updates...",
   "update.downloadProgress": "{percent}% heruntergeladen",
   "update.readyToInstall": "Bereit zur Installation",
+
+  // Logs
+  "logs.title": "Protokoll",
+  "logs.subtitle": "Anwendungsprotokoll-Viewer",
+  "logs.searchPlaceholder": "Protokoll durchsuchen...",
+  "logs.empty": "Keine Protokolle vorhanden",
+  "logs.live": "Live",
+  "logs.clearLogs": "Löschen",
+  "logs.clearConfirm": "Alle Protokolle löschen?",
+  "logs.cleared": "Protokolle gelöscht",
+  "logs.allLevels": "Alle",
+  "logs.allCategories": "Alle",
 }
 
 export default de

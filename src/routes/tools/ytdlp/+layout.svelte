@@ -115,6 +115,7 @@
   const navItems = [
     { href: "/tools/ytdlp", icon: "download", labelKey: "nav.downloader", exact: true },
     { href: "/tools/ytdlp/queue", icon: "toc", labelKey: "nav.queueHistory" }, // explicit queue page link
+    { href: "/tools/ytdlp/logs", icon: "terminal", labelKey: "nav.logs" },
     { href: "/tools/ytdlp/settings", icon: "settings", labelKey: "nav.settings" },
   ]
 

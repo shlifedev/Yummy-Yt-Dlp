@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { commands, type PlaylistResult, type DuplicateCheckResult } from "$lib/bindings"
+  import { commands, type PlaylistResult, type DuplicateCheckResult, type QuickMetadata } from "$lib/bindings"
   import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
   import { onMount, onDestroy } from "svelte"
@@ -11,6 +11,8 @@
   let url = $state("")
   let analyzing = $state(false)
   let videoInfo = $state<any>(null)
+  let quickInfo = $state<QuickMetadata | null>(null)
+  let loadingFormats = $state(false)
   let error = $state<string | null>(null)
   let playlistResult = $state<PlaylistResult | null>(null)
   let playlistPage = $state(0)
@@ -287,6 +289,8 @@
   function handleCancelAnalyze() {
     analyzeGeneration++ // invalidate in-flight requests
     analyzing = false
+    quickInfo = null
+    loadingFormats = false
     stopAnalyzeTimer()
   }
 
@@ -296,6 +300,8 @@
     analyzing = true
     error = null
     videoInfo = null
+    quickInfo = null
+    loadingFormats = false
     playlistResult = null
     playlistPage = 0
     selectedEntries = new Set()
@@ -318,13 +324,37 @@
       const normalized = valResult.data.normalizedUrl || url
 
       if (valResult.data.urlType === "video") {
-        const infoResult = await commands.fetchVideoInfo(normalized)
+        // Phase 1: Quick metadata via oEmbed (~200ms)
+        // Phase 2: Full video info via yt-dlp (~12s) in parallel
+        loadingFormats = true
+
+        // Fire both requests in parallel
+        const quickPromise = commands.fetchQuickMetadata(normalized)
+        const fullPromise = commands.fetchVideoInfo(normalized)
+
+        // Handle quick metadata (Phase 1)
+        quickPromise.then((quickResult) => {
+          if (currentGeneration !== analyzeGeneration) return
+          if (quickResult.status === "ok") {
+            quickInfo = quickResult.data
+            analyzing = false
+            stopAnalyzeTimer()
+          }
+          // If oEmbed fails, we just wait for yt-dlp (Phase 2)
+        }).catch(() => {
+          // oEmbed failure is non-fatal
+        })
+
+        // Await full video info (Phase 2)
+        const infoResult = await fullPromise
         if (currentGeneration !== analyzeGeneration) return
         if (infoResult.status === "error") {
           error = extractError(infoResult.error)
           return
         }
         videoInfo = infoResult.data
+        quickInfo = null // Replace quick preview with full info
+        loadingFormats = false
       } else if (valResult.data.urlType === "channel" || valResult.data.urlType === "playlist") {
         const plResult = await commands.fetchPlaylistInfo(normalized, 0, 50)
         if (currentGeneration !== analyzeGeneration) return
@@ -340,6 +370,7 @@
     } finally {
       if (currentGeneration === analyzeGeneration) {
         analyzing = false
+        loadingFormats = false
         stopAnalyzeTimer()
       }
     }
@@ -799,8 +830,8 @@
     <div class="flex-1 overflow-y-auto px-6 pb-6">
        <div class="max-w-3xl mx-auto w-full">
          
-         <!-- Analyzing Skeleton / Progress -->
-    {#if analyzing}
+         <!-- Analyzing Skeleton / Progress (only when no quickInfo yet) -->
+    {#if analyzing && !quickInfo}
       <div class="flex-1 flex items-center justify-center p-8 animate-fade-in">
          <div class="max-w-md w-full bg-yt-surface border border-yt-border rounded-2xl p-6 shadow-xl relative overflow-hidden">
              <!-- Shimmer Overlay -->
@@ -820,6 +851,25 @@
                    {#if analyzeElapsed > 0}<span class="font-mono opacity-70">({analyzeElapsed}s)</span>{/if}
                 </div>
              </div>
+         </div>
+      </div>
+    {/if}
+
+    <!-- Quick Preview Card (oEmbed result, while formats are loading) -->
+    {#if quickInfo && !videoInfo}
+      <div class="bg-yt-surface border border-yt-border rounded-xl overflow-hidden shadow-sm animate-scale-in">
+         <div class="p-4 flex gap-4">
+            <img src={quickInfo.thumbnail} alt="" class="w-48 h-28 rounded-lg object-cover shadow-sm bg-black/5" />
+            <div class="flex-1 min-w-0 flex flex-col justify-between py-1">
+               <div>
+                  <h3 class="font-display font-semibold text-lg text-yt-text leading-tight mb-1">{quickInfo.title}</h3>
+                  <p class="text-sm text-yt-text-secondary">{quickInfo.channel}</p>
+               </div>
+               <div class="flex items-center gap-2 text-xs text-yt-primary font-medium mt-2">
+                  <span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                  <span>{t("download.loadingFormats")}</span>
+               </div>
+            </div>
          </div>
       </div>
     {:else if videoInfo}
@@ -923,7 +973,7 @@
          {/if}
          
          <!-- Empty State (No URL, No Info) -->
-         {#if !videoInfo && !playlistResult && !url}
+         {#if !videoInfo && !quickInfo && !playlistResult && !url}
             <div class="flex flex-col items-center justify-center py-20 opacity-50 select-none">
                <span class="material-symbols-outlined text-6xl text-yt-text-border mb-4">download_for_offline</span>
                <p class="text-yt-text-secondary text-sm">{t("download.emptyState")}</p>

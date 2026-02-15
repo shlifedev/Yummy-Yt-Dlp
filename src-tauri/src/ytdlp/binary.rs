@@ -357,7 +357,10 @@ pub async fn resolve_ytdlp_path_with_app(app: &AppHandle) -> Result<String, AppE
                 "yt-dlp"
             };
             let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() && try_get_version(&app_binary).await.is_ok() {
+            if app_binary.exists() {
+                // check_dep_ytdlp과 일관성 유지: 바이너리 존재만 확인
+                // PyInstaller 첫 실행 추출 타임아웃, Gatekeeper 등으로 버전 체크가 실패할 수 있으나
+                // 실제 다운로드 명령은 정상 동작할 수 있음
                 return Ok(app_binary.to_string_lossy().to_string());
             }
         }
@@ -696,6 +699,29 @@ pub fn get_cached_dep_status(app: &AppHandle) -> Option<FullDependencyStatus> {
     let store = app.store(DEP_CACHE_STORE).ok()?;
     let val = store.get("depStatus")?;
     serde_json::from_value(val).ok()
+}
+
+/// Warmup yt-dlp by running `--version` in the background.
+/// PyInstaller `--onefile` binaries need to extract the Python runtime on each run;
+/// triggering this early primes the OS file cache so subsequent invocations are faster.
+pub fn warmup_ytdlp(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let path = match resolve_ytdlp_path_with_app(&app).await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let mut cmd = command_with_path_app(&path, &app);
+        cmd.arg("--version");
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        // Result is intentionally ignored; this is purely for OS file cache priming.
+        let _ = tokio::time::timeout(Duration::from_secs(30), cmd.output()).await;
+    });
 }
 
 /// Update yt-dlp using --update flag

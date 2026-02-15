@@ -3,6 +3,7 @@ const en: Record<string, string> = {
   "nav.downloader": "Downloader",
   "nav.queueHistory": "Queue & History",
   "nav.settings": "Settings",
+  "nav.logs": "Logs",
   "nav.queue": "Queue",
   "nav.activeDownloads": "Active Downloads",
 
@@ -46,6 +47,7 @@ const en: Record<string, string> = {
   "download.invalidUrl": "Invalid YouTube URL",
   "download.alreadyInQueue": "This video is already in the download queue.",
   "download.analyzing": "Fetching metadata...",
+  "download.loadingFormats": "Loading video formats...",
   "download.urlPlaceholder": "Paste YouTube, Twitch, or video URL here...",
   "download.download": "Download",
   "download.downloadAll": "Download All",
@@ -174,6 +176,18 @@ const en: Record<string, string> = {
   "update.checking": "Checking for updates...",
   "update.downloadProgress": "{percent}% downloaded",
   "update.readyToInstall": "Ready to install",
+
+  // Logs
+  "logs.title": "Logs",
+  "logs.subtitle": "Application log viewer",
+  "logs.searchPlaceholder": "Search logs...",
+  "logs.empty": "No logs yet",
+  "logs.live": "Live",
+  "logs.clearLogs": "Clear",
+  "logs.clearConfirm": "Clear all logs?",
+  "logs.cleared": "Logs cleared",
+  "logs.allLevels": "All",
+  "logs.allCategories": "All",
 }
 
 export default en

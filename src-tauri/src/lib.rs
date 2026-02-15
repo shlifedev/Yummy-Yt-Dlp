@@ -8,6 +8,8 @@ use tauri::{Emitter, Manager};
 use tauri_specta::{collect_commands, collect_events};
 
 pub mod modules {
+    pub mod log_commands;
+    pub mod log_db;
     pub mod logger;
     pub mod types;
 }
@@ -16,6 +18,7 @@ pub struct AppState {}
 
 pub type DbState = Arc<ytdlp::db::Database>;
 pub type DownloadManagerState = Arc<ytdlp::download::DownloadManager>;
+pub type LogDbState = Arc<modules::log_db::LogDatabase>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +41,7 @@ pub fn run() {
             ytdlp::metadata::validate_url,
             ytdlp::metadata::fetch_video_info,
             ytdlp::metadata::fetch_playlist_info,
+            ytdlp::metadata::fetch_quick_metadata,
             ytdlp::download::start_download,
             ytdlp::download::add_to_queue,
             ytdlp::download::cancel_download,
@@ -53,10 +57,14 @@ pub fn run() {
             ytdlp::commands::check_dependency_update,
             ytdlp::commands::update_dependency,
             ytdlp::commands::delete_app_managed_dep,
+            modules::log_commands::get_logs,
+            modules::log_commands::get_log_stats,
+            modules::log_commands::clear_logs,
         ])
         .events(collect_events![
             ytdlp::types::GlobalDownloadEvent,
             ytdlp::types::DepInstallEvent,
+            ytdlp::types::NewLogEvent,
         ]);
 
     #[cfg(debug_assertions)]
@@ -90,12 +98,27 @@ pub fn run() {
 
             modules::logger::init(app_data_dir.clone());
 
+            // Initialize log database (separate logs.db file)
+            let log_db = modules::log_db::LogDatabase::new(&app_data_dir)
+                .expect("Failed to initialize log database");
+            let log_db = Arc::new(log_db);
+            modules::logger::init_db(Arc::clone(&log_db));
+            modules::logger::init_app_handle(app.handle().clone());
+            app.manage(log_db.clone());
+
+            // Cleanup old logs on startup (30 days, 50k max)
+            if let Err(e) = log_db.cleanup_old_logs(30, 50000) {
+                eprintln!("Failed to cleanup old logs: {}", e);
+            }
+
+            modules::logger::info_cat("app", "Application started");
+
             let db =
                 ytdlp::db::Database::new(&app_data_dir).expect("Failed to initialize database");
             // Reset stale downloads left in 'downloading' state from previous session
             if let Ok(count) = db.reset_stale_downloads() {
                 if count > 0 {
-                    modules::logger::info(&format!(
+                    modules::logger::info_cat("app", &format!(
                         "Reset {} stale downloads from previous session",
                         count
                     ));
@@ -123,6 +146,9 @@ pub fn run() {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                 ytdlp::download::process_next_pending_public(handle);
             });
+
+            // Warmup yt-dlp in background to prime OS file cache (PyInstaller cold start mitigation)
+            ytdlp::binary::warmup_ytdlp(app.handle().clone());
 
             Ok(())
         })

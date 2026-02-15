@@ -1,5 +1,6 @@
 use super::binary;
 use super::types::*;
+use crate::modules::logger;
 use crate::modules::types::AppError;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -47,6 +48,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
                 valid: true,
                 url_type: UrlType::Video,
                 normalized_url: Some(normalized),
+                video_id: Some(video_id.to_string()),
             });
         }
     }
@@ -59,6 +61,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
             valid: true,
             url_type: UrlType::Playlist,
             normalized_url: Some(normalized),
+            video_id: None,
         });
     }
 
@@ -69,6 +72,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
                 valid: true,
                 url_type: UrlType::Channel,
                 normalized_url: Some(url.to_string()),
+                video_id: None,
             });
         }
     }
@@ -78,6 +82,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
         valid: false,
         url_type: UrlType::Unknown,
         normalized_url: None,
+        video_id: None,
     })
 }
 
@@ -85,6 +90,7 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, AppError> {
+    logger::info_cat("metadata", &format!("Fetching video info: {}", url));
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
     let settings = super::settings::get_settings(&app).unwrap_or_default();
 
@@ -113,6 +119,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        logger::error_cat("metadata", &format!("fetch_video_info failed: {}", stderr));
 
         if stderr.contains("Private video") || stderr.contains("Sign in") {
             return Err(AppError::MetadataError(
@@ -225,6 +232,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
         })
         .collect();
 
+    logger::info_cat("metadata", &format!("Video info fetched: {} ({})", title, video_id));
+
     Ok(VideoInfo {
         url: webpage_url,
         video_id,
@@ -248,6 +257,7 @@ pub async fn fetch_playlist_info(
     page: u32,
     page_size: u32,
 ) -> Result<PlaylistResult, AppError> {
+    logger::info_cat("metadata", &format!("Fetching playlist info: {} (page {})", url, page));
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
     let settings = super::settings::get_settings(&app).unwrap_or_default();
 
@@ -454,5 +464,75 @@ pub async fn fetch_playlist_info(
         video_count,
         channel_name,
         entries: playlist_entries,
+    })
+}
+
+/// Fetch quick metadata via YouTube oEmbed API (~200ms vs ~12s for yt-dlp)
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_quick_metadata(url: String) -> Result<QuickMetadata, AppError> {
+    logger::info_cat("metadata", &format!("Fetching quick metadata (oEmbed): {}", url));
+
+    // Extract video_id from url
+    let video_id = VIDEO_PATTERNS
+        .iter()
+        .find_map(|p| p.captures(&url).and_then(|c| c.get(1).map(|m| m.as_str().to_string())))
+        .ok_or_else(|| AppError::InvalidUrl("Could not extract video ID".to_string()))?;
+
+    let oembed_url = format!(
+        "https://www.youtube.com/oembed?url={}&format=json",
+        urlencoding::encode(&url)
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| AppError::NetworkError(format!("HTTP client error: {}", e)))?;
+
+    let resp = client
+        .get(&oembed_url)
+        .send()
+        .await
+        .map_err(|e| AppError::NetworkError(format!("oEmbed request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(AppError::MetadataError(format!(
+            "oEmbed returned status {}",
+            resp.status()
+        )));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::MetadataError(format!("Failed to parse oEmbed JSON: {}", e)))?;
+
+    let title = json["title"]
+        .as_str()
+        .unwrap_or("Unknown")
+        .to_string();
+    let channel = json["author_name"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let channel_url = json["author_url"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Use high-quality thumbnail from YouTube
+    let thumbnail = format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id);
+
+    logger::info_cat(
+        "metadata",
+        &format!("Quick metadata fetched: {} ({})", title, video_id),
+    );
+
+    Ok(QuickMetadata {
+        video_id,
+        title,
+        channel,
+        channel_url,
+        thumbnail,
     })
 }
