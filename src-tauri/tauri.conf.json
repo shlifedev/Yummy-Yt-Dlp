@@ -5,7 +5,7 @@
   "identifier": "com.modern-ytdlp-gui.app",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:10000",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../build"
   },
