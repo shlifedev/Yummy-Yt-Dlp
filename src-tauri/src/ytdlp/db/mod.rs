@@ -93,6 +93,18 @@ impl Database {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Delete all data from downloads and history tables (used by factory reset).
+    /// Uses the live connection instead of deleting DB files to avoid stale state.
+    pub fn clear_all_data(&self) -> Result<(), AppError> {
+        let conn = self.conn();
+        conn.execute_batch("DELETE FROM downloads; DELETE FROM history;")
+            .map_err(|e| AppError::DatabaseError(format!("Failed to clear database: {}", e)))?;
+        // Reclaim disk space
+        conn.execute_batch("VACUUM;")
+            .map_err(|e| AppError::DatabaseError(format!("Failed to vacuum database: {}", e)))?;
+        Ok(())
+    }
+
     fn create_tables(conn: &Connection) -> Result<(), AppError> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS downloads (
