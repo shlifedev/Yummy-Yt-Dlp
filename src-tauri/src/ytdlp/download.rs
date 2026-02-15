@@ -307,6 +307,10 @@ async fn execute_download(app: AppHandle, task_id: u64) {
     args.push("--no-playlist".to_string());
     args.push("--no-overwrites".to_string());
 
+    // Force UTF-8 encoding inside yt-dlp (fixes cp949 crash on Korean Windows)
+    args.push("--encoding".to_string());
+    args.push("UTF-8".to_string());
+
     // Sanitize filenames for Windows forbidden characters
     #[cfg(target_os = "windows")]
     {
@@ -400,13 +404,20 @@ async fn execute_download(app: AppHandle, task_id: u64) {
     // 1-3: Save JoinHandle for stdout reader task
     // Returns the actual output file path parsed from yt-dlp stdout
     let stdout_handle: tokio::task::JoinHandle<Option<String>> = tokio::spawn(async move {
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
+        let mut reader = BufReader::new(stdout);
+        let mut buf = Vec::new();
         let mut last_progress_percent: Option<f32> = None;
         let mut last_progress_update = tokio::time::Instant::now() - Duration::from_secs(1);
         let mut actual_file_path: Option<String> = None;
 
-        while let Ok(Some(line)) = lines.next_line().await {
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
+                Err(_) => continue, // non-fatal read error, keep going
+            }
+            let line = String::from_utf8_lossy(&buf).trim_end().to_string();
             // Capture actual file path from yt-dlp output lines:
             // "[download] Destination: /path/to/file.mp4"
             // "[Merger] Merging formats into "/path/to/file.mkv""
@@ -472,13 +483,21 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         actual_file_path
     });
 
-    // Collect stderr for error messages
+    // Collect stderr for error messages (byte-level reader for non-UTF-8 resilience)
     let stderr_handle = tokio::spawn(async move {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
+        let mut reader = BufReader::new(stderr);
+        let mut buf = Vec::new();
         let mut output = String::new();
-        while let Ok(Some(line)) = lines.next_line().await {
-            append_limited(&mut output, &line, STDERR_BUFFER_LIMIT_BYTES);
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&buf).trim_end().to_string();
+                    append_limited(&mut output, &line, STDERR_BUFFER_LIMIT_BYTES);
+                }
+                Err(_) => continue,
+            }
         }
         output
     });
@@ -631,6 +650,28 @@ async fn execute_download(app: AppHandle, task_id: u64) {
                     "네트워크 연결 문제입니다. 인터넷 연결을 확인하세요.\n\n[stderr]: {}",
                     stderr_output
                 ),
+                120 => {
+                    // Exit code 120: often a Windows encoding crash (cp949/cp932)
+                    let is_encoding_error = stderr_output.contains("cp949")
+                        || stderr_output.contains("cp932")
+                        || stderr_output.contains("TextIOWrapper")
+                        || stderr_output.contains("Errno 22")
+                        || stderr_output.contains("UnicodeEncodeError");
+                    if is_encoding_error {
+                        format!(
+                            "인코딩 오류로 다운로드에 실패했습니다.\n\n\
+                            Windows 설정 → 시간 및 언어 → 관리 언어 설정 → \
+                            시스템 로캘 변경 → 'Beta: 세계 언어 지원을 위해 Unicode UTF-8 사용'을 \
+                            활성화한 후 재시작하세요.\n\n[stderr]: {}",
+                            stderr_output
+                        )
+                    } else {
+                        format!(
+                            "yt-dlp exited with code: 120\n\n[stderr]: {}",
+                            stderr_output
+                        )
+                    }
+                }
                 _ => format!(
                     "yt-dlp exited with code: {}\n\n[stderr]: {}",
                     code, stderr_output

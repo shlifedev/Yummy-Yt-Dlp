@@ -91,6 +91,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
     // Run yt-dlp with --dump-json
     let mut cmd = super::binary::command_with_path(&ytdlp_path);
     cmd.arg("--dump-json").arg("--no-playlist");
+    cmd.arg("--encoding").arg("UTF-8");
     if let Some(browser) = &settings.cookie_browser {
         cmd.arg("--cookies-from-browser").arg(browser);
     }
@@ -248,6 +249,7 @@ pub async fn fetch_playlist_info(
     // Run yt-dlp with --flat-playlist --dump-json
     let mut cmd = super::binary::command_with_path(&ytdlp_path);
     cmd.arg("--flat-playlist").arg("--dump-json");
+    cmd.arg("--encoding").arg("UTF-8");
     // Server-side pagination: yt-dlp -I START:END (1-indexed)
     // page_size >= 99999 means "Download All", so skip -I
     if page_size < 99999 {

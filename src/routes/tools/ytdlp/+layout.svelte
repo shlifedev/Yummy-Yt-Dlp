@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core"
   import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
+  import { getVersion } from "@tauri-apps/api/app"
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
   import { t, initLocale } from "$lib/i18n/index.svelte"
@@ -22,6 +23,7 @@
   let logsCopied = $state(false)
   let currentPlatform = $state<string>("macos")
   let copiedCmd = $state<string | null>(null)
+  let appVersion = $state("...")
 
   // Popup state
   let popupOpen = $state(false)
@@ -170,6 +172,8 @@
       else if (p === "linux") currentPlatform = "linux"
       else currentPlatform = "macos"
     } catch { currentPlatform = "macos" }
+
+    try { appVersion = await getVersion() } catch { appVersion = "0.0.0" }
 
     await checkDeps()
 
@@ -338,7 +342,7 @@
         </div>
         <div>
           <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Modern YT-DLP</h1>
-          <p class="text-[10px] text-yt-text-secondary font-mono">v0.1.0</p>
+          <p class="text-[10px] text-yt-text-secondary font-mono">v{appVersion}</p>
         </div>
        </div>
     </div>

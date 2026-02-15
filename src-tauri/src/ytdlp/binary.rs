@@ -72,6 +72,11 @@ pub fn command_with_path(program: &str) -> tokio::process::Command {
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PYTHONUNBUFFERED", "1");
+    // pip-installed yt-dlp (system Python): LANG forces UTF-8 locale on Windows
+    #[cfg(target_os = "windows")]
+    {
+        cmd.env("LANG", "en_US.UTF-8");
+    }
     cmd
 }
 
