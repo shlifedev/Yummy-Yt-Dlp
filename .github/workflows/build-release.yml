@@ -158,6 +158,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -167,6 +169,85 @@ jobs:
 
       - name: List artifacts
         run: find artifacts -type f | head -50
+
+      - name: Generate changelog
+        env:
+          RELEASE_TAG: ${{ needs.get-version.outputs.tag }}
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          echo "Generating changelog for range: ${RANGE}"
+
+          # Collect commits by category (exclude merge commits)
+          FEATURES=""
+          FIXES=""
+          REFACTORS=""
+          PERFORMANCE=""
+          OTHERS=""
+
+          while IFS= read -r line; do
+            # Skip empty lines
+            [ -z "$line" ] && continue
+
+            # Extract prefix and message
+            if echo "$line" | grep -qE '^feat(\(.+\))?!?:'; then
+              msg=$(echo "$line" | sed -E 's/^feat(\([^)]*\))?!?:[[:space:]]*//')
+              FEATURES="${FEATURES}- ${msg}\n"
+            elif echo "$line" | grep -qE '^fix(\(.+\))?!?:'; then
+              msg=$(echo "$line" | sed -E 's/^fix(\([^)]*\))?!?:[[:space:]]*//')
+              FIXES="${FIXES}- ${msg}\n"
+            elif echo "$line" | grep -qE '^refactor(\(.+\))?!?:'; then
+              msg=$(echo "$line" | sed -E 's/^refactor(\([^)]*\))?!?:[[:space:]]*//')
+              REFACTORS="${REFACTORS}- ${msg}\n"
+            elif echo "$line" | grep -qE '^perf(\(.+\))?!?:'; then
+              msg=$(echo "$line" | sed -E 's/^perf(\([^)]*\))?!?:[[:space:]]*//')
+              PERFORMANCE="${PERFORMANCE}- ${msg}\n"
+            elif echo "$line" | grep -qE '^(chore|ci|docs|build|style|test)(\(.+\))?!?:'; then
+              msg=$(echo "$line" | sed -E 's/^(chore|ci|docs|build|style|test)(\([^)]*\))?!?:[[:space:]]*//')
+              OTHERS="${OTHERS}- ${msg}\n"
+            fi
+          done < <(git log --no-merges --pretty=format:"%s" "$RANGE")
+
+          # Build changelog entry
+          TODAY=$(date -u +"%Y-%m-%d")
+          ENTRY="## ${RELEASE_TAG} (${TODAY})"
+
+          if [ -n "$FEATURES" ]; then
+            ENTRY="${ENTRY}\n\n### Features\n${FEATURES}"
+          fi
+          if [ -n "$FIXES" ]; then
+            ENTRY="${ENTRY}\n\n### Bug Fixes\n${FIXES}"
+          fi
+          if [ -n "$REFACTORS" ]; then
+            ENTRY="${ENTRY}\n\n### Refactoring\n${REFACTORS}"
+          fi
+          if [ -n "$PERFORMANCE" ]; then
+            ENTRY="${ENTRY}\n\n### Performance\n${PERFORMANCE}"
+          fi
+          if [ -n "$OTHERS" ]; then
+            ENTRY="${ENTRY}\n\n### Other Changes\n${OTHERS}"
+          fi
+
+          # Squeeze consecutive blank lines into one
+          ENTRY=$(echo -e "$ENTRY" | cat -s)
+
+          echo -e "$ENTRY" > changelog_entry.md
+          echo "Generated changelog entry:"
+          cat changelog_entry.md
+
+          # Save to GITHUB_OUTPUT using delimiter
+          {
+            echo "changelog_entry<<CHANGELOG_EOF"
+            cat changelog_entry.md
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+        id: changelog
 
       - name: Generate latest.json for updater
         shell: bash
@@ -244,33 +325,66 @@ jobs:
           echo "Generated latest.json:"
           cat latest.json
 
+      - name: Update CHANGELOG.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Prepend changelog entry after the header line
+          if [ -f CHANGELOG.md ]; then
+            # Split: keep header (first 2 lines), insert entry, then rest
+            head -n 2 CHANGELOG.md > CHANGELOG_new.md
+            echo "" >> CHANGELOG_new.md
+            cat changelog_entry.md >> CHANGELOG_new.md
+            # Append remaining content (after header)
+            tail -n +3 CHANGELOG.md >> CHANGELOG_new.md
+            mv CHANGELOG_new.md CHANGELOG.md
+          else
+            echo -e "# Changelog\n\nAll notable changes to this project will be documented in this file.\n" > CHANGELOG.md
+            cat changelog_entry.md >> CHANGELOG.md
+          fi
+
+          git add CHANGELOG.md
+          git commit -m "docs: update CHANGELOG.md [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:main
+
       - name: Create tag
         env:
           RELEASE_TAG: ${{ needs.get-version.outputs.tag }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
+
+      - name: Prepare release body
+        run: |
+          {
+            cat changelog_entry.md
+            cat << 'TABLE_EOF'
+
+          ---
+
+          ### Downloads
+          | Platform | File |
+          |----------|------|
+          | Windows (installer) | `.exe` |
+          | Windows (portable) | `_portable.exe` |
+          | Windows (MSI) | `.msi` |
+          | macOS (Universal) | `.dmg` |
+          | Linux (AppImage) | `.AppImage` |
+          | Linux (deb) | `.deb` |
+          | Linux (rpm) | `.rpm` |
+          TABLE_EOF
+          } > release_body.md
+
+          echo "Release body:"
+          cat release_body.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.get-version.outputs.tag }}
           name: ${{ needs.get-version.outputs.tag }}
-          body: |
-            ## Modern YT-DLP GUI ${{ needs.get-version.outputs.tag }}
-
-            ### Downloads
-            | Platform | File |
-            |----------|------|
-            | Windows (installer) | `.exe` |
-            | Windows (portable) | `_portable.exe` |
-            | Windows (MSI) | `.msi` |
-            | macOS (Universal) | `.dmg` |
-            | Linux (AppImage) | `.AppImage` |
-            | Linux (deb) | `.deb` |
-            | Linux (rpm) | `.rpm` |
+          body_path: release_body.md
           files: |
             artifacts/**/*.exe
             artifacts/**/*.msi
