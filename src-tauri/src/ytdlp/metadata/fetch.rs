@@ -1,90 +1,14 @@
-use super::binary;
-use super::types::*;
+use super::map_stderr_error;
+use super::validation::{PLAYLIST_PATTERN, VIDEO_PATTERNS};
 use crate::modules::logger;
 use crate::modules::types::AppError;
-use once_cell::sync::Lazy;
-use regex::Regex;
+use crate::ytdlp::binary;
+use crate::ytdlp::types::*;
 use std::time::Duration;
 use tauri::AppHandle;
 
 /// Timeout for metadata fetch operations (2 minutes)
 const METADATA_TIMEOUT: Duration = Duration::from_secs(120);
-
-// Regex patterns for YouTube URL validation
-static VIDEO_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
-    vec![
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})").unwrap(),
-    ]
-});
-
-static PLAYLIST_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^https?://(?:www\.)?youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)").unwrap()
-});
-
-static CHANNEL_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
-    vec![
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/channel/([a-zA-Z0-9_-]+)").unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/@([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)")
-            .unwrap(),
-        Regex::new(r"^https?://(?:www\.)?youtube\.com/c/([a-zA-Z0-9_.%\x{0080}-\x{FFFF}-]+)")
-            .unwrap(),
-    ]
-});
-
-/// Validate if a URL is a valid YouTube URL
-#[tauri::command]
-#[specta::specta]
-pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
-    let url = url.trim();
-
-    // Check for video URLs
-    for pattern in VIDEO_PATTERNS.iter() {
-        if let Some(captures) = pattern.captures(url) {
-            let video_id = captures.get(1).unwrap().as_str();
-            let normalized = format!("https://www.youtube.com/watch?v={}", video_id);
-            return Ok(UrlValidation {
-                valid: true,
-                url_type: UrlType::Video,
-                normalized_url: Some(normalized),
-                video_id: Some(video_id.to_string()),
-            });
-        }
-    }
-
-    // Check for playlist URL
-    if let Some(captures) = PLAYLIST_PATTERN.captures(url) {
-        let playlist_id = captures.get(1).unwrap().as_str();
-        let normalized = format!("https://www.youtube.com/playlist?list={}", playlist_id);
-        return Ok(UrlValidation {
-            valid: true,
-            url_type: UrlType::Playlist,
-            normalized_url: Some(normalized),
-            video_id: None,
-        });
-    }
-
-    // Check for channel URLs
-    for pattern in CHANNEL_PATTERNS.iter() {
-        if pattern.is_match(url) {
-            return Ok(UrlValidation {
-                valid: true,
-                url_type: UrlType::Channel,
-                normalized_url: Some(url.to_string()),
-                video_id: None,
-            });
-        }
-    }
-
-    // No match found
-    Ok(UrlValidation {
-        valid: false,
-        url_type: UrlType::Unknown,
-        normalized_url: None,
-        video_id: None,
-    })
-}
 
 /// Fetch video metadata using yt-dlp --dump-json
 #[tauri::command]
@@ -92,10 +16,10 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
 pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, AppError> {
     logger::info_cat("metadata", &format!("Fetching video info: {}", url));
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
-    let settings = super::settings::get_settings(&app).unwrap_or_default();
+    let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
 
     // Run yt-dlp with --dump-json
-    let mut cmd = super::binary::command_with_path_app(&ytdlp_path, &app);
+    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
     cmd.arg("--dump-json").arg("--no-playlist");
     cmd.arg("--encoding").arg("UTF-8");
     if let Some(browser) = &settings.cookie_browser {
@@ -120,47 +44,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         logger::error_cat("metadata", &format!("fetch_video_info failed: {}", stderr));
-
-        if stderr.contains("Private video") || stderr.contains("Sign in") {
-            return Err(AppError::MetadataError(
-                "비공개 비디오입니다. 접근할 수 없습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("Video unavailable") || stderr.contains("not available") {
-            return Err(AppError::MetadataError(
-                "이 비디오는 사용할 수 없습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("is not a valid URL") || stderr.contains("Unsupported URL") {
-            return Err(AppError::InvalidUrl(
-                "지원하지 않는 URL 형식입니다.".to_string(),
-            ));
-        }
-        if stderr.contains("HTTP Error 429") || stderr.contains("Too Many Requests") {
-            return Err(AppError::NetworkError(
-                "요청이 너무 많습니다. 잠시 후 다시 시도하세요.".to_string(),
-            ));
-        }
-        if stderr.contains("No video formats found") {
-            return Err(AppError::MetadataError(
-                "비디오 형식을 찾을 수 없습니다. 라이브 스트림일 수 있습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("age") || stderr.contains("confirm your age") {
-            return Err(AppError::MetadataError(
-                "연령 제한 콘텐츠입니다. 설정에서 쿠키 브라우저를 설정하세요.".to_string(),
-            ));
-        }
-        if stderr.contains("Could not copy") && stderr.contains("cookie") {
-            return Err(AppError::MetadataError(
-                "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나, Firefox 쿠키를 사용하세요.".to_string(),
-            ));
-        }
-
-        return Err(AppError::MetadataError(format!(
-            "yt-dlp 오류: {}",
-            stderr.lines().last().unwrap_or(&stderr)
-        )));
+        return Err(map_stderr_error(&stderr));
     }
 
     // Parse JSON output
@@ -265,10 +149,10 @@ pub async fn fetch_playlist_info(
         &format!("Fetching playlist info: {} (page {})", url, page),
     );
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
-    let settings = super::settings::get_settings(&app).unwrap_or_default();
+    let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
 
     // Run yt-dlp with --flat-playlist --dump-json
-    let mut cmd = super::binary::command_with_path_app(&ytdlp_path, &app);
+    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
     cmd.arg("--flat-playlist").arg("--dump-json");
     cmd.arg("--encoding").arg("UTF-8");
     // Server-side pagination: yt-dlp -I START:END (1-indexed)
@@ -302,47 +186,7 @@ pub async fn fetch_playlist_info(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        if stderr.contains("Private video") || stderr.contains("Sign in") {
-            return Err(AppError::MetadataError(
-                "비공개 비디오입니다. 접근할 수 없습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("Video unavailable") || stderr.contains("not available") {
-            return Err(AppError::MetadataError(
-                "이 비디오는 사용할 수 없습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("is not a valid URL") || stderr.contains("Unsupported URL") {
-            return Err(AppError::InvalidUrl(
-                "지원하지 않는 URL 형식입니다.".to_string(),
-            ));
-        }
-        if stderr.contains("HTTP Error 429") || stderr.contains("Too Many Requests") {
-            return Err(AppError::NetworkError(
-                "요청이 너무 많습니다. 잠시 후 다시 시도하세요.".to_string(),
-            ));
-        }
-        if stderr.contains("No video formats found") {
-            return Err(AppError::MetadataError(
-                "비디오 형식을 찾을 수 없습니다. 라이브 스트림일 수 있습니다.".to_string(),
-            ));
-        }
-        if stderr.contains("age") || stderr.contains("confirm your age") {
-            return Err(AppError::MetadataError(
-                "연령 제한 콘텐츠입니다. 설정에서 쿠키 브라우저를 설정하세요.".to_string(),
-            ));
-        }
-        if stderr.contains("Could not copy") && stderr.contains("cookie") {
-            return Err(AppError::MetadataError(
-                "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나, Firefox 쿠키를 사용하세요.".to_string(),
-            ));
-        }
-
-        return Err(AppError::MetadataError(format!(
-            "yt-dlp 오류: {}",
-            stderr.lines().last().unwrap_or(&stderr)
-        )));
+        return Err(map_stderr_error(&stderr));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

@@ -1,17 +1,12 @@
-use super::binary;
-use super::progress;
-use super::settings;
-use super::types::*;
+use super::manager::DownloadManager;
 use crate::modules::logger;
-use crate::modules::types::AppError;
-use std::collections::HashMap;
+use crate::ytdlp::types::*;
+use crate::ytdlp::{binary, progress, settings};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::watch;
 
 const STDERR_BUFFER_LIMIT_BYTES: usize = 64 * 1024;
 
@@ -49,7 +44,7 @@ fn handle_download_failure(
     process_next_pending(app.clone());
 }
 
-fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
+pub(super) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
     if !buffer.is_empty() {
         buffer.push('\n');
     }
@@ -72,186 +67,12 @@ fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
     }
 }
 
-pub struct DownloadManager {
-    active_count: AtomicU32,
-    max_concurrent: AtomicU32,
-    cancel_senders: Mutex<HashMap<u64, watch::Sender<bool>>>,
-}
-
-impl DownloadManager {
-    pub fn new(max_concurrent: u32) -> Self {
-        Self {
-            active_count: AtomicU32::new(0),
-            max_concurrent: AtomicU32::new(max_concurrent.clamp(1, 20)),
-            cancel_senders: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub fn active_count(&self) -> u32 {
-        self.active_count.load(Ordering::SeqCst)
-    }
-
-    pub fn max_concurrent(&self) -> u32 {
-        self.max_concurrent.load(Ordering::SeqCst)
-    }
-
-    // Clamp max_concurrent to [1, 20] to prevent resource exhaustion
-    pub fn set_max_concurrent(&self, val: u32) {
-        self.max_concurrent
-            .store(val.clamp(1, 20), Ordering::SeqCst);
-    }
-
-    // 1-1: CAS loop to fix TOCTOU race condition
-    pub fn try_acquire(&self) -> bool {
-        loop {
-            let current = self.active_count.load(Ordering::SeqCst);
-            if current >= self.max_concurrent.load(Ordering::SeqCst) {
-                return false;
-            }
-            if self
-                .active_count
-                .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-            {
-                return true;
-            }
-        }
-    }
-
-    pub fn release(&self) {
-        let _ = self
-            .active_count
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                Some(count.saturating_sub(1))
-            });
-    }
-
-    /// Synchronize active_count with the actual DB state.
-    /// Used after cancel_all to correct any drift between the atomic counter
-    /// and the real number of downloading tasks.
-    pub fn sync_active_count(&self, count: u32) {
-        self.active_count.store(count, Ordering::SeqCst);
-    }
-
-    // 1-2: Cancel support methods
-    fn register_cancel(&self, task_id: u64) -> watch::Receiver<bool> {
-        let (tx, rx) = watch::channel(false);
-        let mut senders = self
-            .cancel_senders
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        senders.insert(task_id, tx);
-        rx
-    }
-
-    pub fn send_cancel(&self, task_id: u64) {
-        let mut senders = self
-            .cancel_senders
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(tx) = senders.remove(&task_id) {
-            let _ = tx.send(true);
-        }
-    }
-
-    fn unregister_cancel(&self, task_id: u64) {
-        let mut senders = self
-            .cancel_senders
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        senders.remove(&task_id);
-    }
-
-    /// 앱 종료 시 모든 활성 다운로드 취소. 동기적으로 cancel signal만 전송.
-    pub fn cancel_all(&self) {
-        let mut senders = self
-            .cancel_senders
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        for (_task_id, tx) in senders.drain() {
-            let _ = tx.send(true);
-        }
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u64, AppError> {
-    // Get settings for download path and filename template
-    let settings = settings::get_settings(&app)?;
-
-    // Determine output directory
-    let output_dir = request
-        .output_dir
-        .as_deref()
-        .unwrap_or(&settings.download_path);
-
-    // Build output template using OS-native path separators
-    let output_template = std::path::Path::new(output_dir)
-        .join(&settings.filename_template)
-        .to_string_lossy()
-        .to_string();
-
-    // Get database from state
-    let db_state = app.state::<crate::DbState>();
-
-    // Insert download record into DB with pending status
-    let task_id = db_state.insert_download(&request, &output_template)?;
-
-    // Try to acquire a download slot
-    let manager = app.state::<Arc<DownloadManager>>();
-    if manager.try_acquire() {
-        // Immediately start download - ensure release() on DB update failure
-        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None) {
-            Ok(()) => {
-                let app_clone = app.clone();
-                let app_panic_guard = app.clone();
-                tokio::spawn(async move {
-                    let result = tokio::spawn(async move {
-                        execute_download(app_clone, task_id).await;
-                    })
-                    .await;
-                    if let Err(e) = result {
-                        logger::error_cat(
-                            "download",
-                            &format!("[download:{}] task panicked: {:?}", task_id, e),
-                        );
-                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                        manager.release();
-                        process_next_pending(app_panic_guard);
-                    }
-                });
-            }
-            Err(e) => {
-                logger::error_cat(
-                    "download",
-                    &format!(
-                        "[download:{}] failed to update status to downloading: {}",
-                        task_id, e
-                    ),
-                );
-                manager.release();
-            }
-        }
-    } else {
-        // No slot available - schedule a check for pending items
-        // This handles the case where all concurrent downloads finish before
-        // batch add_to_queue calls complete, leaving pending items with no trigger.
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            process_next_pending(app_clone);
-        });
-    }
-
-    Ok(task_id)
-}
-
 /// Public wrapper for execute_download (used by retry_download in commands.rs)
 pub async fn execute_download_public(app: AppHandle, task_id: u64) {
     execute_download(app, task_id).await;
 }
 
-async fn execute_download(app: AppHandle, task_id: u64) {
+pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     let db_state = app.state::<crate::DbState>();
     let manager = app.state::<Arc<DownloadManager>>();
 
@@ -320,7 +141,7 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         },
     );
 
-    // 1-2: Register cancel receiver before spawning process
+    // Register cancel receiver before spawning process
     let mut cancel_rx = manager.register_cancel(task_id);
 
     // Build yt-dlp args in a Vec for logging before passing to Command
@@ -411,7 +232,7 @@ async fn execute_download(app: AppHandle, task_id: u64) {
     let db_state_clone = db_state.inner().clone();
     let app_clone = app.clone();
 
-    // 1-3: Save JoinHandle for stdout reader task
+    // Save JoinHandle for stdout reader task
     // Returns the actual output file path parsed from yt-dlp stdout
     let stdout_handle: tokio::task::JoinHandle<Option<String>> = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
@@ -512,7 +333,7 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         output
     });
 
-    // 1-2: Wait for process with cancel support via tokio::select!
+    // Wait for process with cancel support via tokio::select!
     let status = tokio::select! {
         result = child.wait() => {
             match result {
@@ -553,7 +374,7 @@ async fn execute_download(app: AppHandle, task_id: u64) {
         }
     };
 
-    // 1-3, 1-4: Await both stdout and stderr handles before checking result
+    // Await both stdout and stderr handles before checking result
     let actual_file_path = stdout_handle.await.ok().flatten();
     let stderr_output = stderr_handle.await.unwrap_or_default();
 
@@ -708,7 +529,7 @@ pub fn process_next_pending_public(app: AppHandle) {
     process_next_pending(app);
 }
 
-fn process_next_pending(app: AppHandle) {
+pub(super) fn process_next_pending(app: AppHandle) {
     let db_state = app.state::<crate::DbState>();
     let manager = app.state::<Arc<DownloadManager>>();
 
@@ -743,70 +564,6 @@ fn process_next_pending(app: AppHandle) {
             }
         }
     }
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn start_download(app: AppHandle, request: DownloadRequest) -> Result<u64, AppError> {
-    // Backward compatibility: delegate to add_to_queue
-    add_to_queue(app, request).await
-}
-
-// 1-2: Proper cancel implementation that kills the actual yt-dlp process
-#[tauri::command]
-#[specta::specta]
-pub async fn cancel_download(app: AppHandle, task_id: u64) -> Result<(), AppError> {
-    let db_state = app.state::<crate::DbState>();
-
-    // Only cancel if task is still in a cancellable state (pending/downloading).
-    // This prevents overwriting a 'completed' status if the download finished
-    // between the user clicking cancel and this code executing.
-    let was_cancelled = db_state.cancel_if_active(task_id)?;
-
-    if was_cancelled {
-        // Send cancel signal to kill the actual yt-dlp process (no-op if not running)
-        let manager = app.state::<Arc<DownloadManager>>();
-        manager.send_cancel(task_id);
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
-    let db_state = app.state::<crate::DbState>();
-    let manager = app.state::<Arc<DownloadManager>>();
-
-    let ids = db_state.get_cancellable_ids()?;
-    let mut cancelled = 0u32;
-
-    for id in ids {
-        if db_state.cancel_if_active(id).unwrap_or(false) {
-            manager.send_cancel(id);
-            cancelled += 1;
-        }
-    }
-
-    // Sync active_count with actual DB state to correct any drift.
-    // Cancel signals are processed asynchronously, so the DB may still show
-    // some tasks as 'downloading' briefly. We sync to the current DB truth.
-    let actual_active = db_state.get_active_count().unwrap_or(0);
-    manager.sync_active_count(actual_active);
-
-    Ok(cancelled)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn pause_download(_app: AppHandle, _task_id: u64) -> Result<(), AppError> {
-    Err(AppError::Custom("Not yet implemented".to_string()))
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn resume_download(_app: AppHandle, _task_id: u64) -> Result<(), AppError> {
-    Err(AppError::Custom("Not yet implemented".to_string()))
 }
 
 #[cfg(test)]
