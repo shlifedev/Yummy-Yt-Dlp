@@ -579,8 +579,11 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             &format!("[download:{}] failed: {}", task_id, error_message),
         );
         let sanitized_error = security::sanitize_error_message(&error_message);
-        let _ =
-            db_state.update_download_status(task_id, &DownloadStatus::Failed, Some(&sanitized_error));
+        let _ = db_state.update_download_status(
+            task_id,
+            &DownloadStatus::Failed,
+            Some(&sanitized_error),
+        );
         emit_download_error(&app, task_id, sanitized_error);
     }
 

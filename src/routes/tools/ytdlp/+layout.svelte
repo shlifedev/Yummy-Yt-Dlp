@@ -137,30 +137,32 @@
   let unlisten: (() => void) | null = null
   let loadDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-  async function loadActiveDownloads() {
+  async function loadQueueSummary() {
     try {
-      const result = await commands.getActiveDownloads()
+      const result = await commands.getQueueSummary()
       if (result.status === "ok") {
-        activeDownloads = result.data.map((item: any) => {
+        const data = result.data
+        activeDownloads = data.activeItems.map((item: any) => {
           const cached = progressCache.get(item.id)
           if (cached && item.status === "downloading") {
             return { ...item, ...cached }
           }
           return item
         })
+        recentCompleted = data.recentCompleted
         // 더 이상 활성이 아닌 다운로드의 캐시 정리
-        const activeIds = new Set(result.data.map((d: any) => d.id))
+        const activeIds = new Set(data.activeItems.map((d: any) => d.id))
         for (const id of progressCache.keys()) {
           if (!activeIds.has(id)) progressCache.delete(id)
         }
       }
-    } catch (e) { console.error("Failed to load active downloads:", e) }
+    } catch (e) { console.error("Failed to load queue summary:", e) }
   }
 
-  function debouncedLoadActiveDownloads() {
+  function debouncedLoadQueueSummary() {
     if (loadDebounceTimer) clearTimeout(loadDebounceTimer)
     loadDebounceTimer = setTimeout(() => {
-      loadActiveDownloads()
+      loadQueueSummary()
     }, 150)
   }
 
@@ -168,30 +170,19 @@
     try {
       const result = await commands.cancelAllDownloads()
       if (result.status === "ok") {
-        await activeDownloadsPromise
+        await queueSummaryPromise
       }
     } catch (e) { console.error("Failed to cancel all downloads:", e) }
     // Refresh immediately
-    loadActiveDownloads()
+    loadQueueSummary()
   }
 
-  const activeDownloadsPromise = loadActiveDownloads()
-
-  async function loadRecentCompleted() {
-    try {
-      const result = await commands.getDownloadQueue()
-      if (result.status === "ok") {
-        recentCompleted = result.data.filter((d: any) => d.status === "completed").slice(0, 5)
-      }
-    } catch (e) { console.error("Failed to load recent completed:", e) }
-  }
+  const queueSummaryPromise = loadQueueSummary()
 
   function startPopupRefresh() {
-    loadActiveDownloads()
-    loadRecentCompleted()
+    loadQueueSummary()
     popupInterval = setInterval(() => {
-      loadActiveDownloads()
-      loadRecentCompleted()
+      loadQueueSummary()
     }, 2000)
   }
 
@@ -233,7 +224,7 @@
     requestAnimationFrame(() => { queueFlash = true })
     setTimeout(() => { queueFlash = false }, 400)
 
-    debouncedLoadActiveDownloads()
+    debouncedLoadQueueSummary()
   }
 
   onMount(async () => {
@@ -317,13 +308,13 @@
             const title = activeDownloads.find(d => d.id === data.taskId)?.title
             showToast(t("layout.downloadComplete", { title: title || "video" }), "download_done")
           }
-          debouncedLoadActiveDownloads()
+          debouncedLoadQueueSummary()
         }
       })
       unlisten = unlistenFn
     } catch (e) { console.error("Failed to listen for download events:", e) }
 
-    loadActiveDownloads()
+    loadQueueSummary()
 
     window.addEventListener("queue-added", handleQueueAdded)
 

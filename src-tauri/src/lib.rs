@@ -34,6 +34,8 @@ pub fn run() {
             ytdlp::commands::check_duplicate,
             ytdlp::commands::delete_history_item,
             ytdlp::commands::get_active_downloads,
+            ytdlp::commands::get_download_queue_paginated,
+            ytdlp::commands::get_queue_summary,
             ytdlp::metadata::validate_url,
             ytdlp::metadata::fetch_video_info,
             ytdlp::metadata::fetch_playlist_info,

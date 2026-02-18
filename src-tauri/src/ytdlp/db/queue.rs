@@ -319,6 +319,171 @@ impl Database {
         Ok(rows as u32)
     }
 
+    pub fn get_download_queue_paginated(
+        &self,
+        page: u32,
+        page_size: u32,
+        status_filter: Option<&str>,
+    ) -> Result<QueueResult, AppError> {
+        let page_size = page_size.clamp(1, 100);
+        let offset = (page as u64) * (page_size as u64);
+        let conn = self.conn();
+
+        // Get status counts in one query
+        let mut count_stmt = conn
+            .prepare("SELECT status, COUNT(*) FROM downloads GROUP BY status")
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let mut active_count: u64 = 0;
+        let mut pending_count: u64 = 0;
+        let mut completed_count: u64 = 0;
+        let mut failed_count: u64 = 0;
+        let mut cancelled_count: u64 = 0;
+
+        let rows = count_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        for row in rows {
+            let (status, count) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            match status.as_str() {
+                "downloading" => active_count = count,
+                "pending" => pending_count = count,
+                "completed" => completed_count = count,
+                "failed" => failed_count = count,
+                "cancelled" => cancelled_count = count,
+                _ => {}
+            }
+        }
+
+        // Get filtered total count and items
+        let (total_count, items) = if let Some(filter) = status_filter {
+            let total: u64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM downloads WHERE status = ?1",
+                    params![filter],
+                    |row| row.get(0),
+                )
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT {} FROM downloads WHERE status = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+                    DOWNLOAD_COLUMNS
+                ))
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            let tasks = stmt
+                .query_map(params![filter, page_size, offset], map_download_row)
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            (total, tasks)
+        } else {
+            let total: u64 = conn
+                .query_row("SELECT COUNT(*) FROM downloads", [], |row| row.get(0))
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT {} FROM downloads ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+                    DOWNLOAD_COLUMNS
+                ))
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            let tasks = stmt
+                .query_map(params![page_size, offset], map_download_row)
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+            (total, tasks)
+        };
+
+        Ok(QueueResult {
+            items,
+            total_count,
+            page,
+            page_size,
+            active_count,
+            pending_count,
+            completed_count,
+            failed_count,
+            cancelled_count,
+        })
+    }
+
+    pub fn get_queue_summary(&self, recent_completed_limit: u32) -> Result<QueueSummary, AppError> {
+        let conn = self.conn();
+
+        // Get status counts
+        let mut count_stmt = conn
+            .prepare("SELECT status, COUNT(*) FROM downloads GROUP BY status")
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let mut active_count: u64 = 0;
+        let mut pending_count: u64 = 0;
+        let mut completed_count: u64 = 0;
+        let mut total_count: u64 = 0;
+
+        let rows = count_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        for row in rows {
+            let (status, count) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            total_count += count;
+            match status.as_str() {
+                "downloading" => active_count = count,
+                "pending" => pending_count = count,
+                "completed" => completed_count = count,
+                _ => {}
+            }
+        }
+
+        // Get active items (downloading + pending)
+        let mut active_stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM downloads WHERE status IN ('downloading', 'pending') ORDER BY created_at ASC",
+                DOWNLOAD_COLUMNS
+            ))
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let active_items = active_stmt
+            .query_map([], map_download_row)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        // Get recent completed
+        let mut completed_stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM downloads WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?1",
+                DOWNLOAD_COLUMNS
+            ))
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let recent_completed = completed_stmt
+            .query_map(params![recent_completed_limit], map_download_row)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Ok(QueueSummary {
+            active_items,
+            recent_completed,
+            active_count,
+            pending_count,
+            completed_count,
+            total_count,
+        })
+    }
+
     pub fn get_active_downloads(&self) -> Result<Vec<DownloadTaskInfo>, AppError> {
         let conn = self.conn();
         let mut stmt = conn

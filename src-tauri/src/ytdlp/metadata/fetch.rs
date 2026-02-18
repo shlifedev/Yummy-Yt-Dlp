@@ -47,7 +47,13 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        logger::error_cat("metadata", &format!("fetch_video_info failed: {}", security::sanitize_error_message(&stderr)));
+        logger::error_cat(
+            "metadata",
+            &format!(
+                "fetch_video_info failed: {}",
+                security::sanitize_error_message(&stderr)
+            ),
+        );
         return Err(map_stderr_error(&stderr));
     }
 

@@ -218,6 +218,33 @@ pub struct HistoryResult {
     pub page_size: u32,
 }
 
+// === Queue Pagination ===
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueResult {
+    pub items: Vec<DownloadTaskInfo>,
+    pub total_count: u64,
+    pub page: u32,
+    pub page_size: u32,
+    pub active_count: u64,
+    pub pending_count: u64,
+    pub completed_count: u64,
+    pub failed_count: u64,
+    pub cancelled_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueSummary {
+    pub active_items: Vec<DownloadTaskInfo>,
+    pub recent_completed: Vec<DownloadTaskInfo>,
+    pub active_count: u64,
+    pub pending_count: u64,
+    pub completed_count: u64,
+    pub total_count: u64,
+}
+
 // === Duplicate Check ===
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]

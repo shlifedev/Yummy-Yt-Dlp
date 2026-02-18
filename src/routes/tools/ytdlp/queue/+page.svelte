@@ -2,15 +2,25 @@
   import { commands } from "$lib/bindings"
   import { onMount, onDestroy } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
-  import { slide, fade } from "svelte/transition"
-  import { flip } from "svelte/animate"
-  import { formatSize } from "$lib/utils/format"
+  import { fade } from "svelte/transition"
 
   let queue = $state<any[]>([])
+  let totalCount = $state(0)
+  let currentPage = $state(0)
+  let pageSize = $state(20)
+  let statusFilter = $state<string | null>(null)
   let firstLoad = $state(true)
   let expandedErrors = $state<Set<number>>(new Set())
 
-  // 5-4: Consolidated single onMount with interval after initial load
+  // Server-side counts
+  let activeCount = $state(0)
+  let pendingCount = $state(0)
+  let completedCount = $state(0)
+  let failedCount = $state(0)
+  let cancelledCount = $state(0)
+
+  let totalPages = $derived(Math.ceil(totalCount / pageSize))
+
   let interval: ReturnType<typeof setInterval>
   onMount(async () => {
     await loadQueue()
@@ -22,16 +32,22 @@
 
   async function loadQueue() {
     try {
-      const result = await commands.getDownloadQueue()
+      const result = await commands.getDownloadQueuePaginated(currentPage, pageSize, statusFilter)
       if (result.status === "ok") {
-        queue = result.data
+        const data = result.data
+        queue = data.items
+        totalCount = data.totalCount
+        activeCount = data.activeCount
+        pendingCount = data.pendingCount
+        completedCount = data.completedCount
+        failedCount = data.failedCount
+        cancelledCount = data.cancelledCount
       }
     } catch (e) {
       console.error("Failed to load queue:", e)
     }
   }
 
-  // 4-1: Add try/catch to prevent unhandled errors
   async function handleClearCompleted() {
     try {
       const result = await commands.clearCompleted()
@@ -50,10 +66,6 @@
     }
   }
 
-  let activeCount = $derived(queue.filter(q => q.status === "downloading").length)
-  let pendingCount = $derived(queue.filter(q => q.status === "pending").length)
-  let completedCount = $derived(queue.filter(q => q.status === "completed").length)
-
   async function handleCancelAll() {
     try {
       const result = await commands.cancelAllDownloads()
@@ -70,6 +82,25 @@
     expandedErrors = next
   }
 
+  function setFilter(filter: string | null) {
+    statusFilter = filter
+    currentPage = 0
+    loadQueue()
+  }
+
+  function goToPage(page: number) {
+    if (page < 0 || page >= totalPages) return
+    currentPage = page
+    loadQueue()
+  }
+
+  const statusFilters = [
+    { key: null, labelKey: "queue.total", countFn: () => activeCount + pendingCount + completedCount + failedCount + cancelledCount },
+    { key: "downloading", labelKey: "queue.active", countFn: () => activeCount, color: "bg-yt-primary" },
+    { key: "pending", labelKey: "queue.pendingStatus", countFn: () => pendingCount, color: "bg-yellow-500" },
+    { key: "completed", labelKey: "queue.completed", countFn: () => completedCount, color: "bg-yt-success" },
+    { key: "failed", labelKey: "queue.failed", countFn: () => failedCount, color: "bg-yt-error" },
+  ]
 </script>
 
 <div class="flex-1 flex flex-col h-full bg-yt-bg">
@@ -111,9 +142,22 @@
       </div>
       <div class="flex items-center gap-2">
          <span class="w-2 h-2 rounded-full bg-yt-text-muted"></span>
-        <span class="text-xs font-medium text-yt-text">{queue.length}</span>
+        <span class="text-xs font-medium text-yt-text">{totalCount}</span>
         <span class="text-xs text-yt-text-secondary">{t("queue.total")}</span>
       </div>
+    </div>
+
+    <!-- Status Filter Tabs -->
+    <div class="flex gap-1 mt-4">
+      {#each statusFilters as filter}
+        <button
+          class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors {statusFilter === filter.key ? 'bg-yt-primary text-white' : 'bg-yt-surface hover:bg-yt-highlight border border-yt-border text-yt-text-secondary'}"
+          onclick={() => setFilter(filter.key)}
+        >
+          {t(filter.labelKey)}
+          <span class="ml-1 opacity-70">{filter.countFn()}</span>
+        </button>
+      {/each}
     </div>
   </header>
 
@@ -130,10 +174,8 @@
     {:else}
       <div class="divide-y divide-yt-border/50">
         {#each queue as item (item.id)}
-          <div 
-            class="group flex items-center gap-4 px-6 py-3 hover:bg-yt-highlight/30 transition-all duration-200 hover:scale-[1.002] active:scale-[0.998]"
-            transition:slide|local={{ duration: 200 }}
-            animate:flip={{ duration: 300 }}
+          <div
+            class="group flex items-center gap-4 px-6 py-3 hover:bg-yt-highlight/30 transition-colors"
           >
             <!-- Icon/Status -->
             <div class="shrink-0">
@@ -162,7 +204,7 @@
                   <h4 class="font-medium text-yt-text text-sm truncate pr-4">{item.title}</h4>
                   <span class="text-[10px] px-1.5 py-0.5 rounded bg-yt-surface border border-yt-border text-yt-text-secondary whitespace-nowrap">{item.qualityLabel || "N/A"}</span>
                </div>
-               
+
                <div class="flex items-center justify-between">
                   <div class="flex items-center gap-3 text-xs text-yt-text-secondary">
                      {#if item.status === "downloading"}
@@ -179,7 +221,7 @@
                         <span>{t("queue.pendingStatus")}</span>
                      {/if}
                   </div>
-                  
+
                   {#if item.status === "downloading"}
                     <div class="w-32 bg-yt-surface rounded-full h-1.5 border border-yt-border/50 overflow-hidden relative">
                        <div class="bg-yt-primary h-full transition-all duration-300 relative overflow-hidden" style="width: {item.progress || 0}%">
@@ -188,7 +230,7 @@
                     </div>
                   {/if}
                </div>
-               
+
                {#if item.status === "failed" && item.errorMessage && expandedErrors.has(item.id)}
                  <div class="mt-2 text-xs text-yt-error bg-yt-error/5 p-2 rounded border border-yt-error/10 font-mono whitespace-pre-wrap">
                     {item.errorMessage}
@@ -199,7 +241,7 @@
             <!-- Actions -->
             <div class="shrink-0 pl-2">
                {#if item.status === "downloading" || item.status === "pending"}
-                 <button 
+                 <button
                   class="p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors"
                   onclick={() => handleCancel(item.id)}
                   title="Cancel"
@@ -211,6 +253,29 @@
           </div>
         {/each}
       </div>
+
+      <!-- Pagination -->
+      {#if totalPages > 1}
+        <div class="flex items-center justify-center gap-2 py-4 border-t border-yt-border">
+          <button
+            class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-highlight border border-yt-border text-yt-text text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 0}
+          >
+            <span class="material-symbols-outlined text-[16px]">chevron_left</span>
+          </button>
+          <span class="text-xs text-yt-text-secondary px-2">
+            {currentPage + 1} / {totalPages}
+          </span>
+          <button
+            class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-highlight border border-yt-border text-yt-text text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={() => goToPage(currentPage + 1)}
+            disabled={currentPage >= totalPages - 1}
+          >
+            <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+          </button>
+        </div>
+      {/if}
     {/if}
   </div>
 </div>

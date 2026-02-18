@@ -62,3 +62,22 @@ pub async fn get_active_downloads(app: AppHandle) -> Result<Vec<DownloadTaskInfo
     let db = app.state::<crate::DbState>();
     db.get_active_downloads()
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_download_queue_paginated(
+    app: AppHandle,
+    page: u32,
+    page_size: u32,
+    status_filter: Option<String>,
+) -> Result<QueueResult, AppError> {
+    let db = app.state::<crate::DbState>();
+    db.get_download_queue_paginated(page, page_size, status_filter.as_deref())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_queue_summary(app: AppHandle) -> Result<QueueSummary, AppError> {
+    let db = app.state::<crate::DbState>();
+    db.get_queue_summary(5)
+}

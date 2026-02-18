@@ -11,7 +11,7 @@ pub struct Database {
 }
 
 /// Current schema version. Increment when adding new migrations.
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 impl Database {
     pub fn new(app_data_dir: &Path) -> Result<Self, AppError> {
@@ -78,8 +78,14 @@ impl Database {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 
-        // Future migrations go here:
-        // if current < 3 { ... }
+        if current < 3 {
+            // v3: Add indexes for queue pagination performance
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_downloads_completed_at ON downloads(completed_at);
+                 CREATE INDEX IF NOT EXISTS idx_downloads_created_at ON downloads(created_at);",
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
 
         if current < SCHEMA_VERSION {
             Self::set_schema_version(conn, SCHEMA_VERSION)?;

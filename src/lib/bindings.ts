@@ -104,6 +104,22 @@ async getActiveDownloads() : Promise<Result<DownloadTaskInfo[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getDownloadQueuePaginated(page: number, pageSize: number, statusFilter: string | null) : Promise<Result<QueueResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_download_queue_paginated", { page, pageSize, statusFilter }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getQueueSummary() : Promise<Result<QueueSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_queue_summary") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Validate if a URL is a valid YouTube URL
  */
@@ -360,6 +376,8 @@ export type LogStats = { totalCount: number; errorCount: number; warnCount: numb
 export type NewLogEvent = { entry: LogEntry }
 export type PlaylistEntry = { url: string; videoId: string; title: string | null; duration: number | null; thumbnail: string | null }
 export type PlaylistResult = { playlistId: string; title: string; url: string; videoCount: number | null; channelName: string | null; entries: PlaylistEntry[] }
+export type QueueResult = { items: DownloadTaskInfo[]; totalCount: number; page: number; pageSize: number; activeCount: number; pendingCount: number; completedCount: number; failedCount: number; cancelledCount: number }
+export type QueueSummary = { activeItems: DownloadTaskInfo[]; recentCompleted: DownloadTaskInfo[]; activeCount: number; pendingCount: number; completedCount: number; totalCount: number }
 export type QuickMetadata = { videoId: string; title: string; channel: string; channelUrl: string; thumbnail: string }
 export type UrlType = "video" | "channel" | "playlist" | "unknown"
 export type UrlValidation = { valid: boolean; urlType: UrlType; normalizedUrl: string | null; videoId: string | null }
