@@ -442,6 +442,7 @@
       qualityLabel: quality === "best" ? "Best" : quality,
       outputDir: null,
       cookieBrowser: null,
+      audioFormat: format === "mp3" ? "mp3" : null,
     }
 
     // Check for duplicates if we have a video ID
@@ -576,6 +577,7 @@
         qualityLabel,
         outputDir: null,
         cookieBrowser: null,
+        audioFormat: format === "mp3" ? "mp3" : null,
       }
 
       const result = await commands.addToQueue(request)

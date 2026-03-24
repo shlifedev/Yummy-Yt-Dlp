@@ -19,10 +19,11 @@ fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
         error_message: row.get(11)?,
         created_at: row.get(12)?,
         completed_at: row.get(13)?,
+        audio_format: row.get(14)?,
     })
 }
 
-const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at";
+const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format";
 
 impl Database {
     pub fn insert_download(
@@ -34,8 +35,8 @@ impl Database {
         let created_at = chrono::Utc::now().timestamp();
 
         conn.execute(
-            "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, created_at, audio_format)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 req.video_url,
                 req.video_id,
@@ -44,6 +45,7 @@ impl Database {
                 req.quality_label,
                 output_path,
                 created_at,
+                req.audio_format,
             ],
         ).map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
@@ -65,8 +67,8 @@ impl Database {
 
         for (req, output_path) in items {
             tx.execute(
-                "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, created_at, audio_format)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     req.video_url,
                     req.video_id,
@@ -75,6 +77,7 @@ impl Database {
                     req.quality_label,
                     output_path,
                     created_at,
+                    req.audio_format,
                 ],
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;

@@ -361,9 +361,9 @@ export type DependencyStatus = { ytdlpInstalled: boolean; ytdlpVersion: string |
  * Diagnostic info when ytdlp check fails (path tried, error reason)
  */
 ytdlpDebug: string | null }
-export type DownloadRequest = { videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputDir: string | null; cookieBrowser: string | null }
+export type DownloadRequest = { videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputDir: string | null; cookieBrowser: string | null; audioFormat: string | null }
 export type DownloadStatus = "pending" | "downloading" | "paused" | "completed" | "failed" | "cancelled"
-export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; createdAt: number; completedAt: number | null }
+export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; createdAt: number; completedAt: number | null; audioFormat: string | null }
 export type DuplicateCheckResult = { inHistory: boolean; inQueue: boolean; historyItem: HistoryItem | null; fileExists: boolean }
 export type FormatInfo = { formatId: string; ext: string; resolution: string | null; qualityLabel: string | null; filesize: number | null; vcodec: string | null; acodec: string | null; hasVideo: boolean; hasAudio: boolean }
 export type FullDependencyStatus = { ytdlp: DepInfo; ffmpeg: DepInfo; deno: DepInfo }
