@@ -83,6 +83,7 @@ const zhTW: Record<string, string> = {
   "download.loading": "載入中...",
   "download.format": "格式",
   "download.quality": "畫質",
+  "download.lossless": "無損",
   "download.subtitles": "字幕",
   "download.filename": "檔案名稱",
   "download.bestAvailable": "最佳畫質",

@@ -19,9 +19,14 @@
   let loadingMore = $state(false)
 
   // Download options
-  let format = $state<"mp4" | "mkv" | "mp3">("mp4")
+  let format = $state<"mp4" | "mkv" | "mp3" | "flac" | "opus" | "wav">("mp4")
   let quality = $state("best")
+  let audioQuality = $state("0")
   let embedSubs = $state(true)
+
+  const audioFormats = ["mp3", "flac", "opus", "wav"] as const
+  const isAudioFormat = $derived((audioFormats as readonly string[]).includes(format))
+  const isLosslessFormat = $derived(format === "flac" || format === "wav")
 
   // Filename template state
   let filenameExpanded = $state(true)
@@ -419,7 +424,7 @@
   }
 
   function buildFormatString(): string {
-    if (format === "mp3") return "bestaudio/best"
+    if (isAudioFormat) return "bestaudio/best"
     let h = ""
     if (quality === "1080p") h = "[height<=1080]"
     else if (quality === "720p") h = "[height<=720]"
@@ -439,10 +444,11 @@
       videoId: videoInfo?.videoId || "",
       title: videoInfo?.title || url,
       formatId: buildFormatString(),
-      qualityLabel: quality === "best" ? "Best" : quality,
+      qualityLabel: isAudioFormat ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`) : (quality === "best" ? "Best" : quality),
       outputDir: null,
       cookieBrowser: null,
-      audioFormat: format === "mp3" ? "mp3" : null,
+      audioFormat: isAudioFormat ? format : null,
+      audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
     }
 
     // Check for duplicates if we have a video ID
@@ -542,7 +548,7 @@
     const totalCount = entries.length
     batchProgress = { current: 0, total: totalCount }
     const formatStr = buildFormatString()
-    const qualityLabel = quality === "best" ? "Best" : quality
+    const qualityLabel = isAudioFormat ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`) : (quality === "best" ? "Best" : quality)
     let skippedQueue = 0
     let skippedExists = 0
     let queued = 0
@@ -577,7 +583,8 @@
         qualityLabel,
         outputDir: null,
         cookieBrowser: null,
-        audioFormat: format === "mp3" ? "mp3" : null,
+        audioFormat: isAudioFormat ? format : null,
+        audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
       }
 
       const result = await commands.addToQueue(request)
@@ -761,16 +768,31 @@
              <div class="flex items-center gap-2 shrink-0 bg-yt-bg border border-yt-border rounded px-2 py-1">
                 <select bind:value={format} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-16">
                   <option value="mp4">MP4</option>
-                  <option value="mp3">MP3</option>
                   <option value="mkv">MKV</option>
+                  <option value="mp3">MP3</option>
+                  <option value="flac">FLAC</option>
+                  <option value="opus">OPUS</option>
+                  <option value="wav">WAV</option>
                 </select>
                 <div class="h-3 w-px bg-yt-border"></div>
-                <select bind:value={quality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
-                  <option value="best">Best</option>
-                  <option value="1080p">1080p</option>
-                  <option value="720p">720p</option>
-                  <option value="480p">480p</option>
-                </select>
+                {#if isLosslessFormat}
+                  <span class="text-xs text-yt-text font-medium px-1 w-20">{t("download.lossless")}</span>
+                {:else if isAudioFormat}
+                  <select bind:value={audioQuality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
+                    <option value="0">Best</option>
+                    <option value="320K">320K</option>
+                    <option value="256K">256K</option>
+                    <option value="192K">192K</option>
+                    <option value="128K">128K</option>
+                  </select>
+                {:else}
+                  <select bind:value={quality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
+                    <option value="best">Best</option>
+                    <option value="1080p">1080p</option>
+                    <option value="720p">720p</option>
+                    <option value="480p">480p</option>
+                  </select>
+                {/if}
              </div>
           </div>
 

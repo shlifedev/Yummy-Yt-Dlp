@@ -102,6 +102,7 @@ pub struct DownloadRequest {
     pub output_dir: Option<String>,
     pub cookie_browser: Option<String>,
     pub audio_format: Option<String>,
+    pub audio_quality: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -166,6 +167,7 @@ pub struct DownloadTaskInfo {
     pub created_at: i64,
     pub completed_at: Option<i64>,
     pub audio_format: Option<String>,
+    pub audio_quality: Option<String>,
 }
 
 // Global download event for app-wide event emission

@@ -86,6 +86,7 @@ const en: Record<string, string> = {
   "download.loading": "Loading...",
   "download.format": "Format",
   "download.quality": "Quality",
+  "download.lossless": "Lossless",
   "download.subtitles": "Subtitles",
   "download.filename": "Filename",
   "download.bestAvailable": "Best Available",

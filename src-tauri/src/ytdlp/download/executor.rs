@@ -193,10 +193,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     args.push("--no-playlist".to_string());
     args.push("--no-overwrites".to_string());
 
-    // Add audio extraction flags if audio_format is specified (e.g. mp3)
+    // Add audio extraction flags if audio_format is specified (e.g. mp3, flac, opus, wav)
     if let Some(audio_fmt) = &task.audio_format {
         args.push("--extract-audio".to_string());
         args.extend(["--audio-format".to_string(), audio_fmt.clone()]);
+        if let Some(audio_quality) = &task.audio_quality {
+            args.extend(["--audio-quality".to_string(), audio_quality.clone()]);
+        }
     }
 
     // Force UTF-8 encoding inside yt-dlp (fixes cp949 crash on Korean Windows)

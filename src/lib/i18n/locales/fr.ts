@@ -83,6 +83,7 @@ const fr: Record<string, string> = {
   "download.loading": "Chargement...",
   "download.format": "Format",
   "download.quality": "Qualité",
+  "download.lossless": "Sans perte",
   "download.subtitles": "Sous-titres",
   "download.filename": "Nom de fichier",
   "download.bestAvailable": "Meilleure qualité",

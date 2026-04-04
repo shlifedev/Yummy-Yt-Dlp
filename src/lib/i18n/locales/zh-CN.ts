@@ -83,6 +83,7 @@ const zhCN: Record<string, string> = {
   "download.loading": "加载中...",
   "download.format": "格式",
   "download.quality": "画质",
+  "download.lossless": "无损",
   "download.subtitles": "字幕",
   "download.filename": "文件名",
   "download.bestAvailable": "最佳画质",

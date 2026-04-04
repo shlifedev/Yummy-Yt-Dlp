@@ -83,6 +83,7 @@ const ko: Record<string, string> = {
   "download.loading": "불러오는 중...",
   "download.format": "형식",
   "download.quality": "화질",
+  "download.lossless": "무손실",
   "download.subtitles": "자막",
   "download.filename": "파일명",
   "download.bestAvailable": "최고 화질",

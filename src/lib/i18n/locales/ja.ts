@@ -83,6 +83,7 @@ const ja: Record<string, string> = {
   "download.loading": "読み込み中...",
   "download.format": "形式",
   "download.quality": "画質",
+  "download.lossless": "ロスレス",
   "download.subtitles": "字幕",
   "download.filename": "ファイル名",
   "download.bestAvailable": "最高画質",

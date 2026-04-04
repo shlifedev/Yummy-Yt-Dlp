@@ -11,7 +11,7 @@ pub struct Database {
 }
 
 /// Current schema version. Increment when adding new migrations.
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 impl Database {
     pub fn new(app_data_dir: &Path) -> Result<Self, AppError> {
@@ -90,6 +90,12 @@ impl Database {
         if current < 4 {
             // v4: Add audio_format column for audio extraction (e.g. mp3)
             conn.execute_batch("ALTER TABLE downloads ADD COLUMN audio_format TEXT;")
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
+
+        if current < 5 {
+            // v5: Add audio_quality column for audio bitrate/quality selection
+            conn.execute_batch("ALTER TABLE downloads ADD COLUMN audio_quality TEXT;")
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 
