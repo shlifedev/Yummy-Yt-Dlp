@@ -57,13 +57,6 @@ impl DownloadManager {
             });
     }
 
-    /// Synchronize active_count with the actual DB state.
-    /// Used after cancel_all to correct any drift between the atomic counter
-    /// and the real number of downloading tasks.
-    pub fn sync_active_count(&self, count: u32) {
-        self.active_count.store(count, Ordering::SeqCst);
-    }
-
     // Cancel support methods
     pub(super) fn register_cancel(&self, task_id: u64) -> watch::Receiver<bool> {
         let (tx, rx) = watch::channel(false);

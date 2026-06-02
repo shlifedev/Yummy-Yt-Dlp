@@ -126,11 +126,12 @@ pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
         }
     }
 
-    // Sync active_count with actual DB state to correct any drift.
-    // Cancel signals are processed asynchronously, so the DB may still show
-    // some tasks as 'downloading' briefly. We sync to the current DB truth.
-    let actual_active = db_state.get_active_count().unwrap_or(0);
-    manager.sync_active_count(actual_active);
+    // Do NOT force active_count here. Each running executor owns its slot and
+    // releases it exactly once when its cancel branch fires (after kill_process_tree
+    // returns). Overwriting the counter with a DB-derived value while those kills are
+    // still in flight would let a concurrent add_to_queue acquire a slot that the
+    // outgoing executors then release, drifting the count below reality and silently
+    // permitting more than max_concurrent processes. The atomic is self-maintaining.
 
     Ok(cancelled)
 }

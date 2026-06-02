@@ -35,21 +35,41 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
     // Try to acquire a slot and start the download immediately if possible
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
-        db.update_download_status(task_id, &DownloadStatus::Downloading, None)?;
-        let app_clone = app.clone();
-        let app_panic_guard = app.clone();
-        tokio::spawn(async move {
-            let result = tokio::spawn(async move {
-                crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
-            })
-            .await;
-            if let Err(e) = result {
-                eprintln!("Download task panicked: {:?}", e);
-                let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                manager.release();
-                crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+        // Mirror add_to_queue: release the acquired slot if the DB write fails,
+        // otherwise the slot leaks permanently and slowly starves concurrency.
+        match db.update_download_status(task_id, &DownloadStatus::Downloading, None) {
+            Ok(()) => {
+                let app_clone = app.clone();
+                let app_panic_guard = app.clone();
+                tokio::spawn(async move {
+                    let result = tokio::spawn(async move {
+                        crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
+                    })
+                    .await;
+                    if let Err(e) = result {
+                        crate::modules::logger::error_cat(
+                            "download",
+                            &format!("[download:{}] task panicked: {:?}", task_id, e),
+                        );
+                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
+                        manager.release();
+                        crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+                    }
+                });
             }
-        });
+            Err(e) => {
+                crate::modules::logger::error_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] failed to update status to downloading on retry: {}",
+                        task_id, e
+                    ),
+                );
+                manager.release();
+                // Task was already reset to Pending above, so it stays queued and will
+                // be picked up by process_next_pending when a slot frees.
+            }
+        }
     }
     // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
