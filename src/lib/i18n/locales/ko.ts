@@ -204,6 +204,10 @@ const ko: Record<string, string> = {
   "logs.cleared": "로그가 삭제되었습니다",
   "logs.allLevels": "전체",
   "logs.allCategories": "전체",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "진행 중·대기 중인 다운로드를 모두 취소할까요?",
+  "queue.clearCompletedConfirm": "완료된 항목을 모두 지울까요?",
+  "layout.stopAllConfirm": "진행 중·대기 중인 다운로드를 모두 중지할까요?",
 }
 
 export default ko

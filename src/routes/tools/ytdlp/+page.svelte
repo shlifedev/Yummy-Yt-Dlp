@@ -766,7 +766,7 @@
              
              <!-- Format & Quality -->
              <div class="flex items-center gap-2 shrink-0 bg-yt-bg border border-yt-border rounded px-2 py-1">
-                <select bind:value={format} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-16">
+                <select aria-label={t("download.format")} bind:value={format} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-16">
                   <option value="mp4">MP4</option>
                   <option value="mkv">MKV</option>
                   <option value="mp3">MP3</option>
@@ -778,7 +778,7 @@
                 {#if isLosslessFormat}
                   <span class="text-xs text-yt-text font-medium px-1 w-20">{t("download.lossless")}</span>
                 {:else if isAudioFormat}
-                  <select bind:value={audioQuality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
+                  <select aria-label={t("download.quality")} bind:value={audioQuality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
                     <option value="0">Best</option>
                     <option value="320K">320K</option>
                     <option value="256K">256K</option>
@@ -786,7 +786,7 @@
                     <option value="128K">128K</option>
                   </select>
                 {:else}
-                  <select bind:value={quality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
+                  <select aria-label={t("download.quality")} bind:value={quality} class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-pointer w-20">
                     <option value="best">Best</option>
                     <option value="1080p">1080p</option>
                     <option value="720p">720p</option>
@@ -825,6 +825,7 @@
                   onmouseleave={hideTooltip}
                 >{t("download.cookie")}</span>
                 <select
+                  aria-label={t("download.cookie")}
                   class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-default"
                   bind:value={cookieBrowser}
                   onchange={() => autoSaveSettings({ cookieBrowser })}
@@ -853,6 +854,7 @@
                 >{t("download.concurrent")}</span>
                 <input
                   type="range"
+                  aria-label={t("download.concurrent")}
                   class="flex-1 max-w-24 accent-yt-primary h-1"
                   min="1" max="10"
                   bind:value={maxConcurrent}
@@ -965,6 +967,7 @@
                        <div class="shrink-0 pl-1">
                           <input
                             type="checkbox"
+                            aria-label={entry.title || t("download.noTitle")}
                             checked={selectedEntries.has(entry.videoId)}
                             onchange={() => toggleSelect(entry.videoId)}
                             class="w-4 h-4 rounded border-yt-border text-yt-primary focus:ring-yt-primary cursor-pointer"

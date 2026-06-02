@@ -19,7 +19,8 @@
   /* Semantic status colors */
   --color-yt-success: #34c759;
   --color-yt-error: #ff3b30;
-  --color-yt-warning: #ffcc00;
+  /* amber-700: 4.5:1+ on light surfaces (WCAG AA) as foreground text and behind white. */
+  --color-yt-warning: #b45309;
 
   /* Overlay/surface colors */
   --color-yt-overlay-subtle: rgba(0, 0, 0, 0.02);
@@ -108,6 +109,10 @@ html[data-theme="dark"] {
   --color-yt-overlay-subtle: rgba(255, 255, 255, 0.03);
   --color-yt-overlay: rgba(255, 255, 255, 0.06);
   --color-yt-overlay-strong: rgba(255, 255, 255, 0.1);
+
+  /* Keep bright amber on dark bg; the light default (#b45309) is too dark here.
+     This also covers data-theme="dark" when the OS is in light mode. */
+  --color-yt-warning: #ffd60a;
 }
 
 /* Force Red Theme override */
@@ -147,6 +152,7 @@ html[data-theme="light"] {
   --color-yt-text: #1a1a1a;
   --color-yt-text-secondary: #6b7280;
   --color-yt-border: #e5e7eb;
+  --color-yt-warning: #b45309;
 }
 
 .hide-scrollbar::-webkit-scrollbar {

@@ -204,6 +204,10 @@ const fr: Record<string, string> = {
   "logs.cleared": "Journaux effacés",
   "logs.allLevels": "Tous",
   "logs.allCategories": "Toutes",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "Annuler tous les téléchargements actifs et en attente ?",
+  "queue.clearCompletedConfirm": "Effacer toutes les entrées terminées ?",
+  "layout.stopAllConfirm": "Arrêter tous les téléchargements actifs et en attente ?",
 }
 
 export default fr

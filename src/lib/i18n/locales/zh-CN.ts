@@ -204,6 +204,10 @@ const zhCN: Record<string, string> = {
   "logs.cleared": "日志已清除",
   "logs.allLevels": "全部",
   "logs.allCategories": "全部",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "取消所有进行中和等待中的下载？",
+  "queue.clearCompletedConfirm": "清除所有已完成的条目？",
+  "layout.stopAllConfirm": "停止所有进行中和等待中的下载？",
 }
 
 export default zhCN

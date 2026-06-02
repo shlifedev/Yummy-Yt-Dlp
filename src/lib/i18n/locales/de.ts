@@ -204,6 +204,10 @@ const de: Record<string, string> = {
   "logs.cleared": "Protokolle gelöscht",
   "logs.allLevels": "Alle",
   "logs.allCategories": "Alle",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "Alle aktiven und ausstehenden Downloads abbrechen?",
+  "queue.clearCompletedConfirm": "Alle abgeschlossenen Einträge löschen?",
+  "layout.stopAllConfirm": "Alle aktiven und ausstehenden Downloads stoppen?",
 }
 
 export default de

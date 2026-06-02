@@ -212,6 +212,10 @@ const en: Record<string, string> = {
   "logs.cleared": "Logs cleared",
   "logs.allLevels": "All",
   "logs.allCategories": "All",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "Cancel all active and pending downloads?",
+  "queue.clearCompletedConfirm": "Clear all completed entries?",
+  "layout.stopAllConfirm": "Stop all active and pending downloads?",
 }
 
 export default en

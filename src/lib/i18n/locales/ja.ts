@@ -204,6 +204,10 @@ const ja: Record<string, string> = {
   "logs.cleared": "ログが削除されました",
   "logs.allLevels": "すべて",
   "logs.allCategories": "すべて",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "実行中・待機中のダウンロードをすべてキャンセルしますか？",
+  "queue.clearCompletedConfirm": "完了した項目をすべて削除しますか？",
+  "layout.stopAllConfirm": "実行中・待機中のダウンロードをすべて停止しますか？",
 }
 
 export default ja
