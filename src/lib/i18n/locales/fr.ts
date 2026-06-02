@@ -51,6 +51,10 @@ const fr: Record<string, string> = {
   "welcome.appManaged": "Géré par l'app",
   "welcome.appManagedTag": "Recommandé",
   "welcome.appManagedDesc": "L'application télécharge et gère automatiquement tous les outils nécessaires. Aucune configuration manuelle requise.",
+  "welcome.hybrid": "Hybride",
+  "welcome.hybridDesc": "Utilise les outils disponibles sur votre système si possible, sinon l'application les télécharge et les gère automatiquement.",
+  "welcome.bundled": "Intégré",
+  "welcome.bundledDesc": "L'application télécharge et gère ses propres copies de tous les outils requis, en ignorant les installations système.",
   "welcome.systemPath": "PATH système",
   "welcome.systemPathDesc": "Utilise les outils déjà installés sur votre système. Vous devez installer yt-dlp, ffmpeg et deno manuellement.",
   "welcome.start": "Commencer",
@@ -160,6 +164,10 @@ const fr: Record<string, string> = {
   "settings.updating": "Mise à jour...",
   "settings.depMode": "Mode de dépendances",
   "settings.depModeExternal": "Externe (géré par l'app)",
+  "settings.depModeHybrid": "Hybride",
+  "settings.depModeHybridDesc": "Préfère les outils sur votre PATH système, avec repli sur les copies gérées par l'application. Recommandé pour la plupart des utilisateurs.",
+  "settings.depModeBundled": "Intégré",
+  "settings.depModeBundledDesc": "Utilise toujours les copies intégrées de yt-dlp, ffmpeg et deno, en ignorant les installations système.",
   "settings.depModeSystem": "PATH système",
   "settings.depModeExternalDesc": "L'application télécharge et gère automatiquement yt-dlp, ffmpeg et deno. Recommandé pour la plupart des utilisateurs.",
   "settings.depModeSystemDesc": "Utilise les binaires installés dans le PATH système. Installation manuelle requise.",
@@ -204,6 +212,12 @@ const fr: Record<string, string> = {
   "logs.cleared": "Journaux effacés",
   "logs.allLevels": "Tous",
   "logs.allCategories": "Toutes",
+
+  // About / licenses
+  "settings.about": "À propos",
+  "settings.licensesDesc": "Cette application intègre ou télécharge les outils open source suivants :",
+  "settings.ffmpegGplNotice": "FFmpeg est distribué sous licence GPLv3 ; la version GPL fournie et son code source sont disponibles via les liens de projet ci-dessus.",
+  "settings.openLocation": "Ouvrir l'emplacement du fichier",
 }
 
 export default fr

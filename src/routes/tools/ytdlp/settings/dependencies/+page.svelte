@@ -3,6 +3,7 @@
   import type { FullDependencyStatus, DepInstallEvent } from "$lib/bindings"
   import { onMount } from "svelte"
   import { listen } from "@tauri-apps/api/event"
+  import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { t } from "$lib/i18n/index.svelte"
 
   let settings = $state({
@@ -19,11 +20,19 @@
     language: null as string | null,
     theme: null as string | null,
     minimizeToTray: null as boolean | null,
-    depMode: "external",
+    depMode: "hybrid",
     setupCompleted: true,
   })
 
   let loading = $state(true)
+
+  // Normalize the stored mode for display: the legacy "external" value is shown
+  // as "bundled" so the matching card lights up.
+  let activeDepMode = $derived(
+    settings.depMode === "bundled" || settings.depMode === "external" ? "bundled" : "hybrid"
+  )
+  // Both hybrid and bundled manage app-side binaries, so install/update stays available.
+  let usesAppBin = $derived(true)
 
   // Dependency management state
   let depStatus = $state<FullDependencyStatus | null>(null)
@@ -170,6 +179,14 @@
     await loadDepStatus(true)
   }
 
+  async function handleRevealPath(path: string) {
+    try {
+      await revealItemInDir(path)
+    } catch (e) {
+      console.error("Failed to reveal path:", e)
+    }
+  }
+
   let missingCount = $derived(
     depStatus
       ? [depStatus.ytdlp, depStatus.ffmpeg, depStatus.deno].filter(d => !d.installed).length
@@ -198,32 +215,32 @@
       <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider mb-4 px-1">{t("settings.depMode")}</h3>
       <p class="text-xs text-yt-text-secondary mb-4 px-1">{t("settings.depModeLabel")}</p>
       <div class="grid grid-cols-2 gap-3">
-        <!-- External Mode -->
+        <!-- Hybrid Mode (recommended) -->
         <button
-          onclick={() => handleDepModeChange("external")}
-          class="text-left p-4 rounded-lg border-2 transition-all {settings.depMode === 'external'
+          onclick={() => handleDepModeChange("hybrid")}
+          class="text-left p-4 rounded-lg border-2 transition-all {activeDepMode === 'hybrid'
             ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary'
             : 'border-yt-border bg-yt-surface hover:bg-yt-highlight'}"
         >
           <div class="flex items-center gap-2 mb-2">
-            <span class="material-symbols-outlined text-[20px] {settings.depMode === 'external' ? 'text-yt-primary' : 'text-yt-text-secondary'}">cloud_download</span>
-            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeExternal")}</span>
+            <span class="material-symbols-outlined text-[20px] {activeDepMode === 'hybrid' ? 'text-yt-primary' : 'text-yt-text-secondary'}">auto_awesome</span>
+            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeHybrid")}</span>
           </div>
-          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeExternalDesc")}</p>
+          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeHybridDesc")}</p>
         </button>
 
-        <!-- System Mode -->
+        <!-- Bundled Mode -->
         <button
-          onclick={() => handleDepModeChange("system")}
-          class="text-left p-4 rounded-lg border-2 transition-all {settings.depMode === 'system'
+          onclick={() => handleDepModeChange("bundled")}
+          class="text-left p-4 rounded-lg border-2 transition-all {activeDepMode === 'bundled'
             ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary'
             : 'border-yt-border bg-yt-surface hover:bg-yt-highlight'}"
         >
           <div class="flex items-center gap-2 mb-2">
-            <span class="material-symbols-outlined text-[20px] {settings.depMode === 'system' ? 'text-yt-primary' : 'text-yt-text-secondary'}">terminal</span>
-            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeSystem")}</span>
+            <span class="material-symbols-outlined text-[20px] {activeDepMode === 'bundled' ? 'text-yt-primary' : 'text-yt-text-secondary'}">package_2</span>
+            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeBundled")}</span>
           </div>
-          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeSystemDesc")}</p>
+          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeBundledDesc")}</p>
         </button>
       </div>
     </section>
@@ -232,7 +249,7 @@
     <section>
       <div class="flex items-center justify-between mb-4 px-1">
         <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider">{t("settings.dependencies")}</h3>
-        {#if settings.depMode === "external" && missingCount > 0 && !installingAll}
+        {#if usesAppBin && missingCount > 0 && !installingAll}
           <button
             onclick={handleInstallAll}
             class="px-3 py-1.5 text-xs font-medium bg-yt-primary hover:bg-yt-primary-hover text-white rounded-md transition-colors flex items-center gap-1"
@@ -270,6 +287,17 @@
                       {t("settings.notInstalled")}
                     {/if}
                   </p>
+                  {#if dep.info.installed && dep.info.path}
+                    <button
+                      onclick={() => handleRevealPath(dep.info.path!)}
+                      class="mt-1 flex items-center gap-1 text-[10px] text-yt-text-muted hover:text-yt-primary transition-colors max-w-full"
+                      title={dep.info.path}
+                      aria-label={t("settings.openLocation")}
+                    >
+                      <span class="material-symbols-outlined text-[12px] shrink-0">folder_open</span>
+                      <span class="font-mono truncate">{dep.info.path}</span>
+                    </button>
+                  {/if}
                   <!-- Install progress -->
                   {#if installingAll && installProgress[dep.key]}
                     <div class="mt-2">
@@ -292,7 +320,7 @@
                 </div>
               </div>
               <div class="flex gap-2 shrink-0">
-                {#if settings.depMode === "external"}
+                {#if usesAppBin}
                   {#if !dep.info.installed}
                     <button
                       onclick={() => handleInstallDep(dep.key)}

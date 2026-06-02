@@ -122,5 +122,33 @@
       </div>
     </section>
 
+    <!-- About / Licenses -->
+    <section>
+      <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider mb-4 px-1">{t("settings.about")}</h3>
+      <div class="bg-yt-surface border border-yt-border rounded-lg overflow-hidden">
+         <div class="p-4 space-y-3">
+            <p class="text-xs text-yt-text-secondary">{t("settings.licensesDesc")}</p>
+            <ul class="space-y-2 text-xs">
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">yt-dlp</span>
+                  <span class="text-yt-text-secondary">The Unlicense</span>
+                  <span class="text-yt-text-secondary/70">github.com/yt-dlp/yt-dlp</span>
+               </li>
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">FFmpeg</span>
+                  <span class="text-yt-text-secondary">GPL v3</span>
+                  <span class="text-yt-text-secondary/70">github.com/BtbN/FFmpeg-Builds · github.com/vanloctech/ffmpeg-macos</span>
+               </li>
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">Deno</span>
+                  <span class="text-yt-text-secondary">MIT</span>
+                  <span class="text-yt-text-secondary/70">github.com/denoland/deno</span>
+               </li>
+            </ul>
+            <p class="text-[10px] text-yt-text-secondary/80 leading-relaxed">{t("settings.ffmpegGplNotice")}</p>
+         </div>
+      </div>
+    </section>
+
   </div>
 {/if}

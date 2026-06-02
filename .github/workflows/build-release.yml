@@ -114,6 +114,86 @@ jobs:
           # Cargo.toml
           sed -i.bak "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
 
+      # Sidecar binaries (yt-dlp, ffmpeg, ffprobe, deno) are bundled via bundle.resources.
+      # URLs mirror dep_ytdlp.rs / dep_ffmpeg.rs / dep_deno.rs. ffprobe is optional (skip if absent).
+      - name: Prepare bundled binaries (Linux)
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" -o "$BIN/yt-dlp"
+          chmod +x "$BIN/yt-dlp"
+          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" -o /tmp/ffmpeg.tar.xz
+          mkdir -p /tmp/ffx && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffx
+          cp "$(find /tmp/ffx -type f -name ffmpeg | head -1)" "$BIN/ffmpeg"
+          chmod +x "$BIN/ffmpeg"
+          PROBE=$(find /tmp/ffx -type f -name ffprobe | head -1 || true)
+          [ -n "$PROBE" ] && { cp "$PROBE" "$BIN/ffprobe"; chmod +x "$BIN/ffprobe"; }
+          curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip" -o /tmp/deno.zip
+          unzip -q /tmp/deno.zip -d /tmp/denox
+          cp "$(find /tmp/denox -type f -name deno | head -1)" "$BIN/deno"
+          chmod +x "$BIN/deno"
+          ls -la "$BIN"
+
+      - name: Prepare bundled binaries (Windows)
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -o "$BIN/yt-dlp.exe"
+          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -o /tmp/ffmpeg.zip
+          unzip -q /tmp/ffmpeg.zip -d /tmp/ffx
+          cp "$(find /tmp/ffx -type f -name ffmpeg.exe | head -1)" "$BIN/ffmpeg.exe"
+          PROBE=$(find /tmp/ffx -type f -name ffprobe.exe | head -1 || true)
+          [ -n "$PROBE" ] && cp "$PROBE" "$BIN/ffprobe.exe"
+          curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -o /tmp/deno.zip
+          unzip -q /tmp/deno.zip -d /tmp/denox
+          cp "$(find /tmp/denox -type f -name deno.exe | head -1)" "$BIN/deno.exe"
+          ls -la "$BIN"
+
+      # macOS is a universal build: yt-dlp_macos is already universal2; ffmpeg is
+      # per-arch, so lipo arm64+x64 into a single fat binary.
+      - name: Prepare bundled binaries (macOS universal)
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "$BIN/yt-dlp"
+          chmod +x "$BIN/yt-dlp"
+          for ARCH in arm64 x64; do
+            curl -fL "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${ARCH}.tar.gz" -o "/tmp/ffmpeg-${ARCH}.tar.gz"
+            mkdir -p "/tmp/ff-${ARCH}" && tar -xzf "/tmp/ffmpeg-${ARCH}.tar.gz" -C "/tmp/ff-${ARCH}"
+          done
+          lipo -create \
+            "$(find /tmp/ff-arm64 -type f -name ffmpeg | head -1)" \
+            "$(find /tmp/ff-x64 -type f -name ffmpeg | head -1)" \
+            -output "$BIN/ffmpeg"
+          chmod +x "$BIN/ffmpeg"
+          PA=$(find /tmp/ff-arm64 -type f -name ffprobe | head -1 || true)
+          PX=$(find /tmp/ff-x64 -type f -name ffprobe | head -1 || true)
+          if [ -n "$PA" ] && [ -n "$PX" ]; then
+            lipo -create "$PA" "$PX" -output "$BIN/ffprobe"
+            chmod +x "$BIN/ffprobe"
+          fi
+          for ARCH in aarch64 x86_64; do
+            curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-${ARCH}-apple-darwin.zip" -o "/tmp/deno-${ARCH}.zip"
+            mkdir -p "/tmp/deno-${ARCH}" && unzip -q "/tmp/deno-${ARCH}.zip" -d "/tmp/deno-${ARCH}"
+          done
+          lipo -create \
+            "$(find /tmp/deno-aarch64 -type f -name deno | head -1)" \
+            "$(find /tmp/deno-x86_64 -type f -name deno | head -1)" \
+            -output "$BIN/deno"
+          chmod +x "$BIN/deno"
+          lipo -info "$BIN/ffmpeg" "$BIN/deno"
+          file "$BIN/yt-dlp"
+          ls -la "$BIN"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

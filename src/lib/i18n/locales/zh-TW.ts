@@ -51,6 +51,10 @@ const zhTW: Record<string, string> = {
   "welcome.appManaged": "應用程式管理",
   "welcome.appManagedTag": "推薦",
   "welcome.appManagedDesc": "應用程式自動下載並管理所有必需的工具。無需手動設定。",
+  "welcome.hybrid": "混合",
+  "welcome.hybridDesc": "優先使用系統中已有的工具，若不可用則由應用程式自動下載並管理。",
+  "welcome.bundled": "內建捆綁",
+  "welcome.bundledDesc": "忽略系統安裝，由應用程式下載並管理所有必需工具的專屬副本。",
   "welcome.systemPath": "系統 PATH",
   "welcome.systemPathDesc": "使用系統已安裝的工具。您需要手動安裝 yt-dlp、ffmpeg 和 deno。",
   "welcome.start": "開始使用",
@@ -160,6 +164,10 @@ const zhTW: Record<string, string> = {
   "settings.updating": "更新中...",
   "settings.depMode": "依賴模式",
   "settings.depModeExternal": "外部（應用管理）",
+  "settings.depModeHybrid": "混合",
+  "settings.depModeHybridDesc": "優先使用系統 PATH 中的工具，若不可用則回退至應用程式管理的副本。推薦大多數使用者使用。",
+  "settings.depModeBundled": "內建捆綁",
+  "settings.depModeBundledDesc": "始終使用應用程式自帶的 yt-dlp、ffmpeg、deno 副本，忽略系統安裝。",
   "settings.depModeSystem": "系統 PATH",
   "settings.depModeExternalDesc": "應用自動下載和管理 yt-dlp、ffmpeg、deno。推薦大多數使用者使用。",
   "settings.depModeSystemDesc": "使用系統 PATH 中已安裝的二進位檔案。需要手動安裝。",
@@ -204,6 +212,12 @@ const zhTW: Record<string, string> = {
   "logs.cleared": "日誌已清除",
   "logs.allLevels": "全部",
   "logs.allCategories": "全部",
+
+  // About / licenses
+  "settings.about": "關於",
+  "settings.licensesDesc": "本應用程式內建或下載了以下開源工具：",
+  "settings.ffmpegGplNotice": "FFmpeg 依 GPLv3 授權發布，內建的 GPL 建置版本及其原始碼可透過上方專案連結取得。",
+  "settings.openLocation": "開啟檔案位置",
 }
 
 export default zhTW

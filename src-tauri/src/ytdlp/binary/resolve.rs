@@ -1,4 +1,4 @@
-use super::path::{app_bin_dir, command_with_path, is_external_mode};
+use super::path::{app_bin_dir, command_with_path, dep_mode, DepMode};
 use crate::modules::types::AppError;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -198,83 +198,81 @@ pub async fn check_dependencies() -> super::super::types::DependencyStatus {
     }
 }
 
-/// Resolve yt-dlp binary: app_data_dir/bin/ first (if external mode), then system PATH.
-pub async fn resolve_ytdlp_path_with_app(app: &AppHandle) -> Result<String, AppError> {
-    // 1. Check app-managed binary (only in external mode)
-    if is_external_mode(app) {
-        if let Some(bin_dir) = app_bin_dir(app) {
-            let bin_name = if cfg!(target_os = "windows") {
-                "yt-dlp.exe"
-            } else {
-                "yt-dlp"
-            };
-            let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() {
-                return Ok(app_binary.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    // 2. Fallback to system PATH
-    resolve_ytdlp_path().await
-}
-
-/// Resolve ffmpeg binary: app_data_dir/bin/ first (if external mode), then system PATH.
-pub async fn resolve_ffmpeg_path_with_app(app: &AppHandle) -> Option<String> {
-    // 1. Check app-managed binary (only in external mode)
-    if is_external_mode(app) {
-        if let Some(bin_dir) = app_bin_dir(app) {
-            let bin_name = if cfg!(target_os = "windows") {
-                "ffmpeg.exe"
-            } else {
-                "ffmpeg"
-            };
-            let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() {
-                // Return the directory containing ffmpeg
-                return Some(bin_dir.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    // 2. Fallback to system PATH
-    resolve_ffmpeg_path().await
-}
-
-/// Resolve deno binary: app_data_dir/bin/ (if external mode) -> ~/.deno/bin/ -> system PATH.
-pub async fn resolve_deno_path(app: &AppHandle) -> Option<PathBuf> {
-    // 1. Check app-managed binary (only in external mode)
-    if is_external_mode(app) {
-        if let Some(bin_dir) = app_bin_dir(app) {
-            let bin_name = if cfg!(target_os = "windows") {
-                "deno.exe"
-            } else {
-                "deno"
-            };
-            let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() {
-                return Some(app_binary);
-            }
-        }
-    }
-
-    // 2. Check ~/.deno/bin/
-    let deno_home = if cfg!(target_os = "windows") {
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(|p| PathBuf::from(p).join(".deno").join("bin").join("deno.exe"))
+/// Path to an app-managed binary (with platform `.exe` suffix), if it exists on disk.
+fn app_managed_binary(app: &AppHandle, unix_name: &str, windows_name: &str) -> Option<PathBuf> {
+    let bin_dir = app_bin_dir(app)?;
+    let name = if cfg!(target_os = "windows") {
+        windows_name
     } else {
-        std::env::var("HOME")
-            .ok()
-            .map(|p| PathBuf::from(p).join(".deno").join("bin").join("deno"))
+        unix_name
     };
-    if let Some(deno_path) = deno_home {
-        if deno_path.exists() {
-            return Some(deno_path);
+    let path = bin_dir.join(name);
+    path.exists().then_some(path)
+}
+
+/// Resolve yt-dlp according to the active dependency mode.
+///
+/// In `Hybrid` mode we return the bare command name `"yt-dlp"` when it resolves
+/// on the system; the hybrid PATH (system first, app bin appended) then ensures
+/// the system copy actually runs.
+pub async fn resolve_ytdlp_path_with_app(app: &AppHandle) -> Result<String, AppError> {
+    let app_binary =
+        || app_managed_binary(app, "yt-dlp", "yt-dlp.exe").map(|p| p.to_string_lossy().to_string());
+
+    match dep_mode(app) {
+        DepMode::Bundled => match app_binary() {
+            Some(path) => Ok(path),
+            None => resolve_ytdlp_path().await,
+        },
+        DepMode::Hybrid => {
+            if let Ok(name) = resolve_ytdlp_path().await {
+                return Ok(name);
+            }
+            match app_binary() {
+                Some(path) => Ok(path),
+                None => resolve_ytdlp_path().await,
+            }
         }
     }
+}
 
-    // 3. Check system PATH using which/where
+/// Resolve the ffmpeg directory (for `--ffmpeg-location`) per the active mode.
+pub async fn resolve_ffmpeg_path_with_app(app: &AppHandle) -> Option<String> {
+    // The app-managed ffmpeg lives directly in app bin dir, so the location we
+    // hand to yt-dlp is that directory.
+    let app_dir = || {
+        app_managed_binary(app, "ffmpeg", "ffmpeg.exe")
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()))
+    };
+
+    match dep_mode(app) {
+        DepMode::Bundled => match app_dir() {
+            Some(dir) => Some(dir),
+            None => resolve_ffmpeg_path().await,
+        },
+        DepMode::Hybrid => match resolve_ffmpeg_path().await {
+            Some(dir) => Some(dir),
+            None => app_dir(),
+        },
+    }
+}
+
+/// deno installed at the default `~/.deno/bin` location, if present.
+fn deno_home_path() -> Option<PathBuf> {
+    let (var, exe) = if cfg!(target_os = "windows") {
+        ("USERPROFILE", "deno.exe")
+    } else {
+        ("HOME", "deno")
+    };
+    let path = PathBuf::from(std::env::var(var).ok()?)
+        .join(".deno")
+        .join("bin")
+        .join(exe);
+    path.exists().then_some(path)
+}
+
+/// deno discovered on the system PATH via which/where.
+async fn deno_on_system_path() -> Option<PathBuf> {
     let which_cmd = if cfg!(target_os = "windows") {
         "where"
     } else {
@@ -289,18 +287,49 @@ pub async fn resolve_deno_path(app: &AppHandle) -> Option<PathBuf> {
         cmd.creation_flags(0x08000000);
     }
 
-    if let Ok(Ok(result)) = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
-        if result.status.success() {
-            if let Ok(path) = String::from_utf8(result.stdout) {
-                let path = path.lines().next().unwrap_or("").trim().to_string();
-                if !path.is_empty() {
-                    return Some(PathBuf::from(path));
-                }
-            }
-        }
+    let output = tokio::time::timeout(Duration::from_secs(5), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
+    let path = String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    (!path.is_empty()).then(|| PathBuf::from(path))
+}
 
-    None
+/// Resolve the deno binary according to the active dependency mode.
+///
+/// Note: yt-dlp discovers deno from PATH at download time; this resolution is
+/// used for the status display and to keep its ordering consistent with the
+/// PATH order that `command_with_path_app` builds for each mode.
+pub async fn resolve_deno_path(app: &AppHandle) -> Option<PathBuf> {
+    let app_binary = || app_managed_binary(app, "deno", "deno.exe");
+
+    match dep_mode(app) {
+        // App bundle wins, then user installs / system PATH.
+        DepMode::Bundled => match app_binary() {
+            Some(path) => Some(path),
+            None => match deno_home_path() {
+                Some(path) => Some(path),
+                None => deno_on_system_path().await,
+            },
+        },
+        // System-side wins; the bundled copy is only a last resort.
+        DepMode::Hybrid => match deno_home_path() {
+            Some(path) => Some(path),
+            None => match deno_on_system_path().await {
+                Some(path) => Some(path),
+                None => app_binary(),
+            },
+        },
+    }
 }
 
 /// Check deno version from a path.

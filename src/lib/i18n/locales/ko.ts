@@ -48,9 +48,11 @@ const ko: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "Modern YT-DLP에 오신 것을 환영합니다",
   "welcome.subtitle": "의존성(yt-dlp, ffmpeg, deno) 관리 방식을 선택하세요",
-  "welcome.appManaged": "앱 관리",
   "welcome.appManagedTag": "권장",
-  "welcome.appManagedDesc": "앱이 필요한 도구를 자동으로 다운로드하고 관리합니다. 별도 설정이 필요 없습니다.",
+  "welcome.hybrid": "하이브리드",
+  "welcome.hybridDesc": "시스템에 도구가 있으면 그것을 사용하고, 없으면 앱이 자동으로 다운로드해 관리합니다.",
+  "welcome.bundled": "내장 번들",
+  "welcome.bundledDesc": "시스템 설치를 무시하고 앱이 모든 도구의 자체 사본을 다운로드해 관리합니다.",
   "welcome.systemPath": "System PATH",
   "welcome.systemPathDesc": "시스템에 이미 설치된 도구를 사용합니다. yt-dlp, ffmpeg, deno를 직접 설치해야 합니다.",
   "welcome.start": "시작하기",
@@ -159,9 +161,11 @@ const ko: Record<string, string> = {
   "settings.update": "업데이트",
   "settings.updating": "업데이트 중...",
   "settings.depMode": "의존성 모드",
-  "settings.depModeExternal": "외부 (앱 관리)",
+  "settings.depModeHybrid": "하이브리드",
+  "settings.depModeHybridDesc": "시스템 PATH의 도구를 우선 사용하고 없으면 앱이 관리하는 사본으로 대체합니다. 대부분의 사용자에게 권장됩니다.",
+  "settings.depModeBundled": "내장 번들",
+  "settings.depModeBundledDesc": "시스템 설치를 무시하고 앱 자체의 yt-dlp, ffmpeg, deno 사본을 항상 사용합니다.",
   "settings.depModeSystem": "시스템 PATH",
-  "settings.depModeExternalDesc": "앱이 yt-dlp, ffmpeg, deno를 자동으로 다운로드하고 관리합니다. 대부분의 사용자에게 권장됩니다.",
   "settings.depModeSystemDesc": "시스템 PATH에 설치된 바이너리를 사용합니다. 수동 설치가 필요합니다.",
   "settings.depModeLabel": "의존성을 어떻게 관리할까요?",
   "settings.installAll": "누락 항목 전체 설치",
@@ -204,6 +208,12 @@ const ko: Record<string, string> = {
   "logs.cleared": "로그가 삭제되었습니다",
   "logs.allLevels": "전체",
   "logs.allCategories": "전체",
+
+  // About / licenses
+  "settings.about": "정보",
+  "settings.licensesDesc": "이 앱은 다음 오픈소스 도구를 포함하거나 다운로드합니다:",
+  "settings.ffmpegGplNotice": "FFmpeg는 GPLv3 라이선스로 배포됩니다. 번들된 GPL 빌드와 소스 코드는 위 프로젝트 링크에서 확인할 수 있습니다.",
+  "settings.openLocation": "파일 위치 열기",
 }
 
 export default ko

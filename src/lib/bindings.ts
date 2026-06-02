@@ -344,7 +344,9 @@ newLogEvent: "new-log-event"
 export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string } | { DependencyInstallError: string } | { ChecksumError: string } | { NotImplemented: string }
 export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null; minimizeToTray: boolean | null; 
 /**
- * Dependency resolution mode: "external" (app-managed) or "system" (system PATH only)
+ * Dependency resolution mode: "hybrid" (system first, bundled fallback),
+ * "bundled" (app-managed first), or "system" (system PATH only).
+ * Legacy "external" is treated as "bundled" at resolution time.
  */
 depMode: string; 
 /**

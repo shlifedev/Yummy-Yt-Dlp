@@ -48,9 +48,11 @@ const ja: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "Modern YT-DLPへようこそ",
   "welcome.subtitle": "依存関係（yt-dlp、ffmpeg、deno）の管理方法を選択してください",
-  "welcome.appManaged": "アプリ管理",
   "welcome.appManagedTag": "推奨",
-  "welcome.appManagedDesc": "アプリが必要なツールを自動的にダウンロード・管理します。手動セットアップは不要です。",
+  "welcome.hybrid": "ハイブリッド",
+  "welcome.hybridDesc": "システムにツールがあればそれを使い、なければアプリが自動的にダウンロード・管理します。",
+  "welcome.bundled": "内蔵バンドル",
+  "welcome.bundledDesc": "システムのインストールを無視し、アプリが全ツールの専用コピーをダウンロード・管理します。",
   "welcome.systemPath": "システムPATH",
   "welcome.systemPathDesc": "システムにインストール済みのツールを使用します。yt-dlp、ffmpeg、denoを手動でインストールする必要があります。",
   "welcome.start": "はじめる",
@@ -159,9 +161,11 @@ const ja: Record<string, string> = {
   "settings.update": "更新",
   "settings.updating": "更新中...",
   "settings.depMode": "依存関係モード",
-  "settings.depModeExternal": "外部（アプリ管理）",
+  "settings.depModeHybrid": "ハイブリッド",
+  "settings.depModeHybridDesc": "システムPATHのツールを優先し、なければアプリ管理のコピーにフォールバックします。ほとんどのユーザーに推奨。",
+  "settings.depModeBundled": "内蔵バンドル",
+  "settings.depModeBundledDesc": "システムのインストールを無視し、アプリ自身のyt-dlp、ffmpeg、denoのコピーを常に使用します。",
   "settings.depModeSystem": "システムPATH",
-  "settings.depModeExternalDesc": "アプリがyt-dlp、ffmpeg、denoを自動的にダウンロード・管理します。ほとんどのユーザーに推奨。",
   "settings.depModeSystemDesc": "システムPATHにインストール済みのバイナリを使用します。手動インストールが必要です。",
   "settings.depModeLabel": "依存関係の管理方法は？",
   "settings.installAll": "未インストール項目を一括インストール",
@@ -204,6 +208,12 @@ const ja: Record<string, string> = {
   "logs.cleared": "ログが削除されました",
   "logs.allLevels": "すべて",
   "logs.allCategories": "すべて",
+
+  // About / licenses
+  "settings.about": "このアプリについて",
+  "settings.licensesDesc": "このアプリは以下のオープンソースツールを同梱またはダウンロードします：",
+  "settings.ffmpegGplNotice": "FFmpeg は GPLv3 ライセンスで配布されています。同梱の GPL ビルドとそのソースコードは上記プロジェクトリンクから入手できます。",
+  "settings.openLocation": "ファイルの場所を開く",
 }
 
 export default ja

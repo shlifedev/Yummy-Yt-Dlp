@@ -278,7 +278,9 @@ pub struct AppSettings {
     pub language: Option<String>,
     pub theme: Option<String>,
     pub minimize_to_tray: Option<bool>,
-    /// Dependency resolution mode: "external" (app-managed) or "system" (system PATH only)
+    /// Dependency resolution mode: "hybrid" (system first, bundled fallback),
+    /// "bundled" (app-managed first), or "system" (system PATH only).
+    /// Legacy "external" is treated as "bundled" at resolution time.
     pub dep_mode: String,
     /// Whether the initial setup wizard has been completed
     pub setup_completed: bool,
@@ -300,7 +302,7 @@ impl Default for AppSettings {
             language: None,
             theme: None,
             minimize_to_tray: None,
-            dep_mode: "external".to_string(),
+            dep_mode: "hybrid".to_string(),
             setup_completed: false,
         }
     }
@@ -354,7 +356,7 @@ pub struct DepInfo {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum DepSource {
     AppManaged,
     SystemPath,

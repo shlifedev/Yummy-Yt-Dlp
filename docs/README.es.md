@@ -63,6 +63,16 @@ La compilación de producción se genera en `src-tauri/target/release/bundle/`.
 1. Aplicación de descarga para usuarios móviles (puede alojar su propio servidor yt-dlp)
 2. Actualizador de versiones
 
+## Créditos y Licencias de Terceros
+
+Esta aplicación incluye o descarga los siguientes binarios de código abierto:
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg está licenciado bajo la GNU General Public License v3. La versión GPL exacta incluida en cada lanzamiento se enlaza arriba, con el código fuente correspondiente disponible en el proyecto FFmpeg y los proveedores de compilación.
+
 ## Licencia
 
 Este proyecto está bajo la licencia [MIT License](../LICENSE).

@@ -63,6 +63,16 @@ bun run tauri build
 1. モバイルユーザー向けダウンローダーアプリ（yt-dlpサーバーを自分でホスティングできます）
 2. バージョンアップデーター
 
+## クレジット・サードパーティライセンス
+
+このアプリは以下のオープンソースバイナリをバンドルまたはダウンロードします：
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg は GNU General Public License v3 のもとでライセンスされています。各リリースに同梱される GPL ビルドは上記リンクから確認でき、ソースコードは FFmpeg プロジェクトおよびビルド提供者から入手できます。
+
 ## ライセンス
 
 このプロジェクトは [MIT License](../LICENSE) の下でライセンスされています。
