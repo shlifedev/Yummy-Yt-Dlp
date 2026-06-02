@@ -1,6 +1,5 @@
 <script lang="ts">
   import { commands, type PlaylistResult, type DuplicateCheckResult, type QuickMetadata } from "$lib/bindings"
-  import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
   import { onMount, onDestroy } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
@@ -38,13 +37,11 @@
   let fullSettings = $state<any>(null)
   let savingTemplate = $state(false)
 
-  // Download state
+  // Download state (live progress/cancel lives in the queue popup; this page only enqueues)
   let downloading = $state(false)
-  let downloadStatus = $state<string>("idle")
-  let progress = $state(0)
-  let speed = $state("")
-  let eta = $state("")
-  let taskId = $state<number | null>(null)
+
+  // Neutral info banner for non-error notices (e.g. batch skip summary)
+  let skipMessage = $state<string | null>(null)
 
   // Multi-select state
   let selectedEntries = $state<Set<string>>(new Set())
@@ -134,8 +131,6 @@
   let browsers = $state<string[]>([])
   let currentPlatform = $state<string>("")
 
-  let unlisten: (() => void) | null = null
-
   $effect(() => {
     const currentUrl = url // Only tracked dependency
     if (analyzeTimeoutId) {
@@ -164,38 +159,9 @@
     try {
       browsers = await commands.getAvailableBrowsers()
     } catch (e) { console.error("Failed to load browsers:", e) }
-
-    // Listen for global download events
-    unlisten = await listen("download-event", (event: any) => {
-      const data = event.payload
-      if (data.taskId === taskId) {
-        switch (data.eventType) {
-          case "started":
-            downloadStatus = "downloading"
-            downloading = true
-            break
-          case "progress":
-            progress = data.percent || 0
-            speed = data.speed || ""
-            eta = data.eta || ""
-            break
-          case "completed":
-            downloadStatus = "completed"
-            downloading = false
-            progress = 100
-            break
-          case "error":
-            downloadStatus = "failed"
-            downloading = false
-            error = data.message || "다운로드 실패"
-            break
-        }
-      }
-    })
   })
 
   onDestroy(() => {
-    if (unlisten) unlisten()
     stopAnalyzeTimer()
     if (tooltipTimerId) clearTimeout(tooltipTimerId)
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
@@ -304,6 +270,7 @@
     if (!url.trim()) return
     analyzing = true
     error = null
+    skipMessage = null
     videoInfo = null
     quickInfo = null
     loadingFormats = false
@@ -379,6 +346,9 @@
       if (currentGeneration === analyzeGeneration) {
         analyzing = false
         loadingFormats = false
+        // Drop the quick-preview card on any non-success path so it doesn't
+        // spin "Loading formats" forever when the full fetch failed/was cancelled.
+        if (!videoInfo) quickInfo = null
         stopAnalyzeTimer()
       }
     }
@@ -409,17 +379,21 @@
   async function handleSelectVideo(entry: { url: string; videoId: string; title: string | null }) {
     analyzing = true
     error = null
+    // Guard against rapid clicks / a concurrent analyze: only the latest wins.
+    const currentGeneration = ++analyzeGeneration
     try {
       const infoResult = await commands.fetchVideoInfo(entry.url)
+      if (currentGeneration !== analyzeGeneration) return
       if (infoResult.status === "error") {
         error = extractError(infoResult.error)
         return
       }
       videoInfo = infoResult.data
     } catch (e: any) {
+      if (currentGeneration !== analyzeGeneration) return
       error = e.message || String(e)
     } finally {
-      analyzing = false
+      if (currentGeneration === analyzeGeneration) analyzing = false
     }
   }
 
@@ -476,10 +450,6 @@
 
   async function executeDownload(request: any) {
     downloading = true
-    downloadStatus = "downloading"
-    progress = 0
-    speed = ""
-    eta = ""
     error = null
     duplicateCheck = null
     pendingRequest = null
@@ -487,20 +457,16 @@
     try {
       const result = await commands.addToQueue(request)
       if (result.status === "error") {
-        downloadStatus = "failed"
         downloading = false
         error = extractError(result.error)
       } else {
         window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: 1 } }))
         downloading = false
-        downloadStatus = "idle"
         url = ""
         videoInfo = null
         playlistResult = null
-        taskId = null
       }
     } catch (e: any) {
-      downloadStatus = "failed"
       downloading = false
       error = e.message || String(e)
     }
@@ -513,16 +479,6 @@
   function cancelDuplicate() {
     duplicateCheck = null
     pendingRequest = null
-  }
-
-  async function handleCancelDownload() {
-    if (taskId) {
-      try {
-        await commands.cancelDownload(taskId)
-        downloadStatus = "cancelled"
-        downloading = false
-      } catch (e) { console.error("Failed to cancel download:", e) }
-    }
   }
 
   function toggleSelect(videoId: string) {
@@ -602,7 +558,8 @@
       const messages: string[] = []
       if (skippedQueue > 0) messages.push(t("download.skippedQueue", { count: skippedQueue }))
       if (skippedExists > 0) messages.push(t("download.skippedExists", { count: skippedExists }))
-      error = messages.join(" ")
+      // Skipping duplicates is informational, not an error — show in the neutral banner.
+      skipMessage = messages.join(" ")
     }
     if (queued > 0) {
       window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: queued } }))
@@ -613,6 +570,7 @@
     if (!playlistResult || downloadingAll || selectedEntries.size === 0) return
     downloadingAll = true
     error = null
+    skipMessage = null
 
     try {
       const entries = playlistResult.entries.filter(e => selectedEntries.has(e.videoId))
@@ -633,6 +591,7 @@
     if (!playlistResult || downloadingAll) return
     downloadingAll = true
     error = null
+    skipMessage = null
 
     try {
       let allEntries = playlistResult.entries
@@ -680,6 +639,16 @@
         </div>
       {/if}
 
+      {#if skipMessage}
+        <div class="bg-yt-primary/10 border border-yt-primary/20 rounded-lg px-4 py-3 flex items-start gap-3">
+          <span class="material-symbols-outlined text-yt-primary text-[20px] shrink-0 mt-0.5">info</span>
+          <p class="flex-1 min-w-0 text-xs text-yt-text-secondary mt-0.5">{skipMessage}</p>
+          <button class="text-yt-text-secondary hover:text-yt-text" aria-label="Close" onclick={() => skipMessage = null}>
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+      {/if}
+
        {#if duplicateCheck}
         <div class="bg-yt-warning/10 border border-yt-warning/20 rounded-lg px-4 py-3 flex items-start gap-3">
            <span class="material-symbols-outlined text-yt-warning text-[20px] shrink-0 mt-0.5">warning</span>
@@ -720,6 +689,15 @@
             <div class="absolute inset-y-0 right-3 flex items-center gap-2">
                <span class="material-symbols-outlined text-yt-primary text-[18px] animate-spin">progress_activity</span>
                {#if analyzeElapsed > 0}<span class="text-xs text-yt-text-secondary font-mono">{analyzeElapsed}s</span>{/if}
+               <button
+                 type="button"
+                 onclick={handleCancelAnalyze}
+                 aria-label={t("download.cancel")}
+                 title={t("download.cancel")}
+                 class="text-yt-text-muted hover:text-yt-warning transition-colors flex items-center"
+               >
+                 <span class="material-symbols-outlined text-[18px]">close</span>
+               </button>
             </div>
            {/if}
         </div>
