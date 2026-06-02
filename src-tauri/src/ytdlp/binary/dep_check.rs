@@ -39,7 +39,6 @@ async fn quick_binary_exists(name: &str) -> bool {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -144,7 +143,6 @@ async fn app_managed_ffmpeg(app: &AppHandle) -> Option<DepInfo> {
     cmd.arg("-version");
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
     if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
@@ -293,7 +291,6 @@ pub fn warmup_ytdlp(app: AppHandle) {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 

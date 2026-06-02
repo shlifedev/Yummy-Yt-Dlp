@@ -21,7 +21,6 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             // taskkill /F (force) /T (tree - kill child processes) /PID
             let _ = tokio::process::Command::new("taskkill")
                 .args(["/F", "/T", "/PID", &pid.to_string()])
@@ -251,7 +250,6 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 

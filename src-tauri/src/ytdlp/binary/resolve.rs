@@ -11,7 +11,6 @@ pub(super) async fn try_get_version(binary_path: &Path) -> Result<String, String
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -72,7 +71,6 @@ pub(super) async fn which_first(name: &str) -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -140,7 +138,6 @@ pub async fn check_ffmpeg() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -166,7 +163,6 @@ pub async fn resolve_ffmpeg_path() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -187,7 +183,6 @@ pub async fn resolve_ffmpeg_path() -> Option<String> {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             which.creation_flags(0x08000000);
         }
 
@@ -326,7 +321,6 @@ pub(super) async fn deno_on_system_path() -> Option<PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -354,7 +348,6 @@ pub async fn check_deno_version(deno_path: &Path) -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -381,7 +374,6 @@ pub async fn update_ytdlp() -> Result<String, AppError> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
