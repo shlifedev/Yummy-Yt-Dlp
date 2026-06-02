@@ -157,6 +157,8 @@ const ko: Record<string, string> = {
   "settings.notInstalled": "미설치",
   "settings.appManaged": "앱 관리",
   "settings.systemPath": "시스템 PATH",
+  "settings.sourceUnavailableSystem": "시스템 PATH에 설치되어 있지 않아 내장 번들을 사용합니다.",
+  "settings.sourceUnavailableBundled": "내장 번들이 없어 시스템 PATH의 도구를 사용합니다.",
   "settings.install": "설치",
   "settings.update": "업데이트",
   "settings.updating": "업데이트 중...",

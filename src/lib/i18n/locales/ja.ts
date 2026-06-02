@@ -157,6 +157,8 @@ const ja: Record<string, string> = {
   "settings.notInstalled": "未インストール",
   "settings.appManaged": "アプリ管理",
   "settings.systemPath": "システムPATH",
+  "settings.sourceUnavailableSystem": "システムPATHに見つからないため、内蔵バンドルを使用します。",
+  "settings.sourceUnavailableBundled": "内蔵バンドルがないため、システムPATHのツールを使用します。",
   "settings.install": "インストール",
   "settings.update": "更新",
   "settings.updating": "更新中...",

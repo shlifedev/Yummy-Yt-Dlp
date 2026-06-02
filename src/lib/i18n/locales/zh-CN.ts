@@ -159,6 +159,8 @@ const zhCN: Record<string, string> = {
   "settings.notInstalled": "未安装",
   "settings.appManaged": "应用管理",
   "settings.systemPath": "系统PATH",
+  "settings.sourceUnavailableSystem": "系统PATH中未安装，将使用内置捆绑版本。",
+  "settings.sourceUnavailableBundled": "没有内置捆绑版本，将使用系统PATH中的工具。",
   "settings.install": "安装",
   "settings.update": "更新",
   "settings.updating": "更新中...",

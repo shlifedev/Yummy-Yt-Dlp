@@ -159,6 +159,8 @@ const fr: Record<string, string> = {
   "settings.notInstalled": "Non installé",
   "settings.appManaged": "Géré par l'app",
   "settings.systemPath": "PATH système",
+  "settings.sourceUnavailableSystem": "Introuvable dans le PATH système, la copie intégrée est utilisée.",
+  "settings.sourceUnavailableBundled": "Aucune copie intégrée disponible, l'outil du PATH système est utilisé.",
   "settings.install": "Installer",
   "settings.update": "Mettre à jour",
   "settings.updating": "Mise à jour...",

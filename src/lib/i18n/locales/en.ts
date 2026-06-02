@@ -163,6 +163,8 @@ const en: Record<string, string> = {
   "settings.notInstalled": "Not installed",
   "settings.appManaged": "App managed",
   "settings.systemPath": "System PATH",
+  "settings.sourceUnavailableSystem": "Not installed on the system PATH, so the bundled copy is used.",
+  "settings.sourceUnavailableBundled": "No bundled copy available, so the system PATH tool is used.",
   "settings.install": "Install",
   "settings.update": "Update",
   "settings.updating": "Updating...",

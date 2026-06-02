@@ -159,6 +159,8 @@ const zhTW: Record<string, string> = {
   "settings.notInstalled": "未安裝",
   "settings.appManaged": "應用程式管理",
   "settings.systemPath": "系統PATH",
+  "settings.sourceUnavailableSystem": "系統PATH中未安裝，將使用內建套件版本。",
+  "settings.sourceUnavailableBundled": "沒有內建套件版本，將使用系統PATH的工具。",
   "settings.install": "安裝",
   "settings.update": "更新",
   "settings.updating": "更新中...",

@@ -157,6 +157,8 @@ const de: Record<string, string> = {
   "settings.notInstalled": "Nicht installiert",
   "settings.appManaged": "App-verwaltet",
   "settings.systemPath": "System-PATH",
+  "settings.sourceUnavailableSystem": "Nicht im System-PATH installiert, daher wird die gebündelte Kopie verwendet.",
+  "settings.sourceUnavailableBundled": "Keine gebündelte Kopie vorhanden, daher wird das Tool aus dem System-PATH verwendet.",
   "settings.install": "Installieren",
   "settings.update": "Aktualisieren",
   "settings.updating": "Wird aktualisiert...",
