@@ -1,25 +1,27 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
+  import type { AppSettings } from "$lib/bindings"
   import { onMount } from "svelte"
   import { t, setLocale, getLocale, supportedLocales } from "$lib/i18n/index.svelte"
   import { setTheme, getTheme } from "$lib/theme/index.svelte"
   import { themes, themeList, type ThemeId } from "$lib/theme/themes"
 
-  let settings = $state({
+  let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
     maxConcurrent: 3,
     filenameTemplate: "%(title)s.%(ext)s",
-    cookieBrowser: null as string | null,
+    cookieBrowser: null,
     autoUpdateYtdlp: true,
     useAdvancedTemplate: false,
     templateUploaderFolder: false,
     templateUploadDate: false,
     templateVideoId: false,
-    language: null as string | null,
-    theme: null as string | null,
-    minimizeToTray: null as boolean | null,
+    language: null,
+    theme: null,
+    minimizeToTray: null,
     depMode: "external",
+    depOverrides: {},
     setupCompleted: true,
   })
 
@@ -118,6 +120,34 @@
                 </button>
               {/each}
             </div>
+         </div>
+      </div>
+    </section>
+
+    <!-- About / Licenses -->
+    <section>
+      <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider mb-4 px-1">{t("settings.about")}</h3>
+      <div class="bg-yt-surface border border-yt-border rounded-lg overflow-hidden">
+         <div class="p-4 space-y-3">
+            <p class="text-xs text-yt-text-secondary">{t("settings.licensesDesc")}</p>
+            <ul class="space-y-2 text-xs">
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">yt-dlp</span>
+                  <span class="text-yt-text-secondary">The Unlicense</span>
+                  <span class="text-yt-text-secondary/70">github.com/yt-dlp/yt-dlp</span>
+               </li>
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">FFmpeg</span>
+                  <span class="text-yt-text-secondary">GPL v3</span>
+                  <span class="text-yt-text-secondary/70">github.com/BtbN/FFmpeg-Builds · github.com/vanloctech/ffmpeg-macos</span>
+               </li>
+               <li class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-yt-text">Deno</span>
+                  <span class="text-yt-text-secondary">MIT</span>
+                  <span class="text-yt-text-secondary/70">github.com/denoland/deno</span>
+               </li>
+            </ul>
+            <p class="text-[10px] text-yt-text-secondary/80 leading-relaxed">{t("settings.ffmpegGplNotice")}</p>
          </div>
       </div>
     </section>

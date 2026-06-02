@@ -50,9 +50,11 @@ const en: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "Welcome to Modern YT-DLP",
   "welcome.subtitle": "Choose how to manage dependencies (yt-dlp, ffmpeg, deno)",
-  "welcome.appManaged": "App Managed",
   "welcome.appManagedTag": "Recommended",
-  "welcome.appManagedDesc": "The app automatically downloads and manages all required tools. No manual setup needed.",
+  "welcome.hybrid": "Hybrid",
+  "welcome.hybridDesc": "Use tools from your system if available, otherwise the app downloads and manages them automatically.",
+  "welcome.bundled": "Bundled",
+  "welcome.bundledDesc": "The app downloads and manages its own copies of all required tools, ignoring system installs.",
   "welcome.systemPath": "System PATH",
   "welcome.systemPathDesc": "Use tools already installed on your system. You need to install yt-dlp, ffmpeg, and deno manually.",
   "welcome.start": "Get Started",
@@ -161,13 +163,17 @@ const en: Record<string, string> = {
   "settings.notInstalled": "Not installed",
   "settings.appManaged": "App managed",
   "settings.systemPath": "System PATH",
+  "settings.sourceUnavailableSystem": "Not installed on the system PATH, so the bundled copy is used.",
+  "settings.sourceUnavailableBundled": "No bundled copy available, so the system PATH tool is used.",
   "settings.install": "Install",
   "settings.update": "Update",
   "settings.updating": "Updating...",
   "settings.depMode": "Dependency Mode",
-  "settings.depModeExternal": "External (App Managed)",
+  "settings.depModeHybrid": "Hybrid",
+  "settings.depModeHybridDesc": "Prefer tools on your system PATH, falling back to app-managed copies. Recommended for most users.",
+  "settings.depModeBundled": "Bundled",
+  "settings.depModeBundledDesc": "Always use the app's own copies of yt-dlp, ffmpeg, and deno, ignoring system installs.",
   "settings.depModeSystem": "System PATH",
-  "settings.depModeExternalDesc": "The app automatically downloads and manages yt-dlp, ffmpeg, and deno. Recommended for most users.",
   "settings.depModeSystemDesc": "Use binaries already installed on your system PATH. You need to install them manually.",
   "settings.depModeLabel": "How should dependencies be resolved?",
   "settings.installAll": "Install All Missing",
@@ -212,6 +218,12 @@ const en: Record<string, string> = {
   "logs.cleared": "Logs cleared",
   "logs.allLevels": "All",
   "logs.allCategories": "All",
+
+  // About / licenses
+  "settings.about": "About",
+  "settings.licensesDesc": "This app bundles or downloads these open-source tools:",
+  "settings.ffmpegGplNotice": "FFmpeg is distributed under the GPLv3; the bundled GPL build and its source are available from the project links above.",
+  "settings.openLocation": "Open file location",
 }
 
 export default en

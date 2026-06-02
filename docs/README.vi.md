@@ -63,6 +63,16 @@ Kết quả biên dịch sản xuất nằm trong `src-tauri/target/release/bund
 1. Ứng dụng tải xuống cho người dùng di động (bạn có thể tự lưu trữ máy chủ yt-dlp của riêng mình)
 2. Trình cập nhật phiên bản
 
+## Ghi công & Giấy phép Bên thứ ba
+
+Ứng dụng này đóng gói hoặc tải xuống các tệp nhị phân mã nguồn mở sau:
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg được cấp phép theo GNU General Public License v3. Bản build GPL chính xác đi kèm với mỗi phiên bản được liên kết ở trên, mã nguồn tương ứng có thể tìm thấy tại dự án FFmpeg và các nhà cung cấp bản build.
+
 ## Giấy phép
 
 Dự án này được cấp phép theo [MIT License](../LICENSE).

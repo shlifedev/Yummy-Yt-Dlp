@@ -48,9 +48,11 @@ const de: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "Willkommen bei Modern YT-DLP",
   "welcome.subtitle": "Wählen Sie, wie Abhängigkeiten (yt-dlp, ffmpeg, deno) verwaltet werden sollen",
-  "welcome.appManaged": "App-verwaltet",
   "welcome.appManagedTag": "Empfohlen",
-  "welcome.appManagedDesc": "Die App lädt automatisch alle erforderlichen Tools herunter und verwaltet sie. Keine manuelle Einrichtung erforderlich.",
+  "welcome.hybrid": "Hybrid",
+  "welcome.hybridDesc": "Verwendet Tools von Ihrem System, sofern vorhanden, andernfalls lädt die App sie automatisch herunter und verwaltet sie.",
+  "welcome.bundled": "Gebündelt",
+  "welcome.bundledDesc": "Die App lädt eigene Kopien aller erforderlichen Tools herunter und verwaltet sie, unabhängig von Systeminstallationen.",
   "welcome.systemPath": "System-PATH",
   "welcome.systemPathDesc": "Verwendet bereits auf Ihrem System installierte Tools. Sie müssen yt-dlp, ffmpeg und deno manuell installieren.",
   "welcome.start": "Los geht's",
@@ -155,13 +157,17 @@ const de: Record<string, string> = {
   "settings.notInstalled": "Nicht installiert",
   "settings.appManaged": "App-verwaltet",
   "settings.systemPath": "System-PATH",
+  "settings.sourceUnavailableSystem": "Nicht im System-PATH installiert, daher wird die gebündelte Kopie verwendet.",
+  "settings.sourceUnavailableBundled": "Keine gebündelte Kopie vorhanden, daher wird das Tool aus dem System-PATH verwendet.",
   "settings.install": "Installieren",
   "settings.update": "Aktualisieren",
   "settings.updating": "Wird aktualisiert...",
   "settings.depMode": "Abhängigkeitsmodus",
-  "settings.depModeExternal": "Extern (App-verwaltet)",
+  "settings.depModeHybrid": "Hybrid",
+  "settings.depModeHybridDesc": "Bevorzugt Tools im System-PATH und greift bei Bedarf auf app-verwaltete Kopien zurück. Für die meisten Benutzer empfohlen.",
+  "settings.depModeBundled": "Gebündelt",
+  "settings.depModeBundledDesc": "Verwendet immer die eigenen Kopien der App von yt-dlp, ffmpeg und deno und ignoriert Systeminstallationen.",
   "settings.depModeSystem": "System PATH",
-  "settings.depModeExternalDesc": "Die App lädt yt-dlp, ffmpeg und deno automatisch herunter und verwaltet sie. Für die meisten Benutzer empfohlen.",
   "settings.depModeSystemDesc": "Verwendet auf dem System PATH installierte Binärdateien. Manuelle Installation erforderlich.",
   "settings.depModeLabel": "Wie sollen Abhängigkeiten verwaltet werden?",
   "settings.installAll": "Alle fehlenden installieren",
@@ -204,6 +210,12 @@ const de: Record<string, string> = {
   "logs.cleared": "Protokolle gelöscht",
   "logs.allLevels": "Alle",
   "logs.allCategories": "Alle",
+
+  // About / licenses
+  "settings.about": "Über",
+  "settings.licensesDesc": "Diese App bündelt oder lädt folgende Open-Source-Tools herunter:",
+  "settings.ffmpegGplNotice": "FFmpeg wird unter der GPLv3 vertrieben; der mitgelieferte GPL-Build und sein Quellcode sind über die obigen Projektlinks verfügbar.",
+  "settings.openLocation": "Dateispeicherort öffnen",
 }
 
 export default de

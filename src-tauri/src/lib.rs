@@ -135,6 +135,10 @@ pub fn run() {
             // Setup system tray
             ytdlp::tray::setup_tray(&app.handle().clone()).expect("Failed to setup system tray");
 
+            // Seed bundled yt-dlp/ffmpeg into app_data_dir/bin before warmup/dep checks.
+            // Runs from a writable copy so `yt-dlp --update` keeps working; deno stays dynamic.
+            ytdlp::dep_seed::seed_bundled_binaries(app.handle());
+
             // Process any pending downloads left from a previous session.
             // These are items that were 'pending' (not 'downloading') when the app closed,
             // so reset_stale_downloads() does not touch them.

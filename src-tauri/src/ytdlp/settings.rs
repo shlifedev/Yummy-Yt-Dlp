@@ -65,6 +65,10 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| defaults.dep_mode.clone());
 
+    let dep_overrides = getter("depOverrides")
+        .and_then(|v| serde_json::from_value::<std::collections::HashMap<String, String>>(v).ok())
+        .unwrap_or_else(|| defaults.dep_overrides.clone());
+
     let setup_completed = getter("setupCompleted")
         .and_then(|v| v.as_bool())
         .unwrap_or(defaults.setup_completed);
@@ -84,6 +88,7 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         theme,
         minimize_to_tray,
         dep_mode,
+        dep_overrides,
         setup_completed,
     }
 }
@@ -180,6 +185,12 @@ pub fn update_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), Ap
     store.set(
         "depMode",
         serde_json::to_value(&settings.dep_mode).map_err(|e| AppError::Custom(e.to_string()))?,
+    );
+
+    store.set(
+        "depOverrides",
+        serde_json::to_value(&settings.dep_overrides)
+            .map_err(|e| AppError::Custom(e.to_string()))?,
     );
 
     store.set(
