@@ -104,6 +104,63 @@ pub(super) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) 
     }
 }
 
+/// Build a user-facing error message from a finished yt-dlp process's exit code
+/// and captured stderr. Extracted as a pure function so the classification logic
+/// (cookie failures, network errors, Windows cp949 encoding crashes) is testable.
+pub(super) fn classify_download_error(code: Option<i32>, stderr_output: &str) -> String {
+    let Some(code) = code else {
+        return format!(
+            "다운로드 프로세스가 예기치 않게 종료되었습니다.\n\n[stderr]: {}",
+            stderr_output
+        );
+    };
+    match code {
+        1 => {
+            if stderr_output.contains("Could not copy") && stderr_output.contains("cookie") {
+                "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나, Firefox 쿠키를 사용하세요.".to_string()
+            } else if stderr_output.is_empty() {
+                "다운로드 중 오류가 발생했습니다.".to_string()
+            } else {
+                let last_line = stderr_output
+                    .lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("다운로드 중 오류가 발생했습니다.");
+                format!("{}\n\n[stderr]: {}", last_line, stderr_output)
+            }
+        }
+        2 => format!(
+            "네트워크 연결 문제입니다. 인터넷 연결을 확인하세요.\n\n[stderr]: {}",
+            stderr_output
+        ),
+        120 => {
+            let is_encoding_error = stderr_output.contains("cp949")
+                || stderr_output.contains("cp932")
+                || stderr_output.contains("TextIOWrapper")
+                || stderr_output.contains("Errno 22")
+                || stderr_output.contains("UnicodeEncodeError");
+            if is_encoding_error {
+                format!(
+                    "인코딩 오류로 다운로드에 실패했습니다.\n\n\
+                    Windows 설정 → 시간 및 언어 → 관리 언어 설정 → \
+                    시스템 로캘 변경 → 'Beta: 세계 언어 지원을 위해 Unicode UTF-8 사용'을 \
+                    활성화한 후 재시작하세요.\n\n[stderr]: {}",
+                    stderr_output
+                )
+            } else {
+                format!(
+                    "yt-dlp exited with code: 120\n\n[stderr]: {}",
+                    stderr_output
+                )
+            }
+        }
+        _ => format!(
+            "yt-dlp exited with code: {}\n\n[stderr]: {}",
+            code, stderr_output
+        ),
+    }
+}
+
 /// Public wrapper for execute_download (used by retry_download in commands.rs)
 pub async fn execute_download_public(app: AppHandle, task_id: u64) {
     execute_download(app, task_id).await;
@@ -296,6 +353,10 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         let mut buf = Vec::new();
         let mut last_progress_percent: Option<f32> = None;
         let mut last_progress_update = tokio::time::Instant::now() - Duration::from_secs(1);
+        // Persist progress to SQLite at most every few seconds (or on the final
+        // tick). The frontend popup updates live from the IPC event above; the DB
+        // row only backs the queue page's 2s poll, so it doesn't need 500ms writes.
+        let mut last_db_progress_update = tokio::time::Instant::now() - Duration::from_secs(5);
         let mut actual_file_path: Option<String> = None;
 
         loop {
@@ -355,13 +416,20 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     },
                 );
 
-                // Update DB progress
-                let _ = db_state_clone.update_download_progress(
-                    task_id,
-                    progress_info.percent,
-                    Some(&speed),
-                    Some(&eta),
-                );
+                // Persist to DB on a slower cadence than the IPC emit; always
+                // persist the terminal 100% tick so the queue page never shows a
+                // stale sub-100 value for a finished item.
+                if now.duration_since(last_db_progress_update) >= Duration::from_secs(5)
+                    || progress_info.percent >= 100.0
+                {
+                    let _ = db_state_clone.update_download_progress(
+                        task_id,
+                        progress_info.percent,
+                        Some(&speed),
+                        Some(&eta),
+                    );
+                    last_db_progress_update = now;
+                }
 
                 last_progress_percent = Some(progress_info.percent);
                 last_progress_update = now;
@@ -526,61 +594,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         );
     } else {
         // Download failed
-        let error_message = if let Some(code) = status.code() {
-            match code {
-                1 => {
-                    if stderr_output.contains("Could not copy") && stderr_output.contains("cookie")
-                    {
-                        "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나, Firefox 쿠키를 사용하세요.".to_string()
-                    } else if stderr_output.is_empty() {
-                        "다운로드 중 오류가 발생했습니다.".to_string()
-                    } else {
-                        // Include full stderr for better diagnostics
-                        let last_line = stderr_output
-                            .lines()
-                            .rev()
-                            .find(|l| !l.trim().is_empty())
-                            .unwrap_or("다운로드 중 오류가 발생했습니다.");
-                        format!("{}\n\n[stderr]: {}", last_line, stderr_output)
-                    }
-                }
-                2 => format!(
-                    "네트워크 연결 문제입니다. 인터넷 연결을 확인하세요.\n\n[stderr]: {}",
-                    stderr_output
-                ),
-                120 => {
-                    // Exit code 120: often a Windows encoding crash (cp949/cp932)
-                    let is_encoding_error = stderr_output.contains("cp949")
-                        || stderr_output.contains("cp932")
-                        || stderr_output.contains("TextIOWrapper")
-                        || stderr_output.contains("Errno 22")
-                        || stderr_output.contains("UnicodeEncodeError");
-                    if is_encoding_error {
-                        format!(
-                            "인코딩 오류로 다운로드에 실패했습니다.\n\n\
-                            Windows 설정 → 시간 및 언어 → 관리 언어 설정 → \
-                            시스템 로캘 변경 → 'Beta: 세계 언어 지원을 위해 Unicode UTF-8 사용'을 \
-                            활성화한 후 재시작하세요.\n\n[stderr]: {}",
-                            stderr_output
-                        )
-                    } else {
-                        format!(
-                            "yt-dlp exited with code: 120\n\n[stderr]: {}",
-                            stderr_output
-                        )
-                    }
-                }
-                _ => format!(
-                    "yt-dlp exited with code: {}\n\n[stderr]: {}",
-                    code, stderr_output
-                ),
-            }
-        } else {
-            format!(
-                "다운로드 프로세스가 예기치 않게 종료되었습니다.\n\n[stderr]: {}",
-                stderr_output
-            )
-        };
+        let error_message = classify_download_error(status.code(), &stderr_output);
 
         // Log full error internally, sanitize for frontend
         logger::error_cat(
@@ -656,5 +670,62 @@ mod tests {
         append_limited(&mut output, "6789", 8);
 
         assert_eq!(output, "345\n6789");
+    }
+
+    #[test]
+    fn classify_cookie_failure_on_code_1() {
+        let msg = classify_download_error(
+            Some(1),
+            "ERROR: Could not copy Chrome cookie database. Permission denied.",
+        );
+        assert!(msg.contains("브라우저 쿠키에 접근할 수 없습니다"));
+    }
+
+    #[test]
+    fn classify_code_1_empty_stderr_is_generic() {
+        assert_eq!(
+            classify_download_error(Some(1), ""),
+            "다운로드 중 오류가 발생했습니다."
+        );
+    }
+
+    #[test]
+    fn classify_code_1_uses_last_nonempty_stderr_line() {
+        let msg =
+            classify_download_error(Some(1), "warning: something\n\nERROR: video unavailable");
+        assert!(msg.starts_with("ERROR: video unavailable"));
+        assert!(msg.contains("[stderr]:"));
+    }
+
+    #[test]
+    fn classify_network_error_on_code_2() {
+        let msg = classify_download_error(Some(2), "unable to resolve host");
+        assert!(msg.contains("네트워크 연결 문제입니다"));
+    }
+
+    #[test]
+    fn classify_code_120_encoding_crash() {
+        let msg =
+            classify_download_error(Some(120), "UnicodeEncodeError: 'cp949' codec can't encode");
+        assert!(msg.contains("인코딩 오류"));
+    }
+
+    #[test]
+    fn classify_code_120_non_encoding_is_raw() {
+        let msg = classify_download_error(Some(120), "some other failure");
+        assert!(msg.contains("yt-dlp exited with code: 120"));
+        assert!(!msg.contains("인코딩 오류"));
+    }
+
+    #[test]
+    fn classify_unknown_code_includes_code() {
+        let msg = classify_download_error(Some(99), "boom");
+        assert!(msg.contains("yt-dlp exited with code: 99"));
+    }
+
+    #[test]
+    fn classify_no_exit_code_is_unexpected_termination() {
+        let msg = classify_download_error(None, "killed");
+        assert!(msg.contains("예기치 않게 종료"));
     }
 }
