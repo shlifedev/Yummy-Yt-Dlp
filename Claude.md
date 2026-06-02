@@ -39,21 +39,49 @@ bun run check
 ### Backend Module Structure (`src-tauri/src/`)
 
 ```
-lib.rs              # App init, state setup (AppState, DbState, DownloadManagerState)
-command.rs          # Legacy/simple Tauri commands
+lib.rs              # App init, state setup (AppState, DbState, DownloadManagerState), collect_commands!/collect_events!
+main.rs             # Binary entry point (delegates to lib.rs run())
 modules/
-  types.rs          # AppError enum (thiserror-based, 7 variants)
-  logger.rs         # Logging utility
+  types.rs          # AppError enum (thiserror-based, 11 variants)
+  logger.rs         # Logging utility (text log + structured log DB)
+  log_db.rs         # SQLite structured log store (logs.db)
+  log_commands.rs   # Tauri commands for querying/clearing logs
 ytdlp/
   mod.rs            # Module re-exports
   types.rs          # All shared types: VideoInfo, DownloadRequest, DownloadStatus, DuplicateCheckResult, AppSettings, events, etc.
-  commands.rs       # Tauri commands: check_dependencies, get/update_settings, download queue, history CRUD, duplicate check
-  download.rs       # DownloadManager (concurrent download slots via AtomicU32 + CAS), queue processing, --no-overwrites
-  metadata.rs       # URL validation (regex), fetch_video_info/fetch_playlist_info via yt-dlp --dump-json (applies cookie_browser setting)
-  binary.rs         # yt-dlp/ffmpeg binary resolution (local app dir -> system PATH fallback, RwLock cache)
   progress.rs       # Parse yt-dlp progress output (regex-based, has unit tests)
   settings.rs       # Settings via tauri-plugin-store (settings.json)
-  db.rs             # SQLite via rusqlite: downloads table (queue) + history table + duplicate checks (history & queue)
+  security.rs       # URL/IP (SSRF), output-path & filename-template, cookie-browser validation; error-message sanitization
+  tray.rs           # System tray menu integration
+  dep_download.rs   # Shared streamed download + SHA-256 verification helper
+  dep_ytdlp.rs      # yt-dlp install/update (checksum-verified)
+  dep_ffmpeg.rs     # ffmpeg/ffprobe install
+  dep_deno.rs       # deno install (used by yt-dlp for some extractors)
+  binary/
+    mod.rs          # Re-exports (preserves import paths)
+    resolve.rs      # yt-dlp/ffmpeg binary resolution (local app dir -> system PATH fallback)
+    path.rs         # PATH-aware Command construction, app bin dir, external/system mode
+    dep_check.rs    # Full dependency check + cache (warmup, invalidate)
+  commands/
+    mod.rs          # Re-exports
+    dependency.rs   # check_dependencies, install commands
+    queue.rs        # download queue commands (get/retry/clear, pagination, summary)
+    history.rs      # history CRUD + duplicate check commands
+    settings_cmd.rs # get/update settings, select directory, available browsers
+    misc.rs         # misc commands
+  download/
+    mod.rs          # Re-exports
+    manager.rs      # DownloadManager (concurrent slots via AtomicU32 + CAS), cancel via watch::channel
+    executor.rs     # execute_download (spawns yt-dlp, --no-overwrites), process_next_pending, kill_process_tree
+    commands.rs     # add_to_queue, cancel_download, cancel_all_downloads, start_download (legacy)
+  metadata/
+    mod.rs          # Re-exports
+    fetch.rs        # fetch_video_info/fetch_playlist_info via yt-dlp --dump-json (applies cookie_browser); fetch_quick_metadata (oEmbed)
+    validation.rs   # validate_url (regex patterns for video/playlist/channel)
+  db/
+    mod.rs          # Database struct, schema + migrations (SCHEMA_VERSION), Mutex<Connection>
+    queue.rs        # downloads table (queue) operations
+    history.rs      # history table operations + duplicate checks (history & queue)
 ```
 
 ### Key Architectural Patterns
@@ -78,11 +106,14 @@ routes/
   +page.svelte              # Redirect to /tools/ytdlp
   +layout.svelte            # Minimal root layout (just renders children)
   tools/ytdlp/
-    +layout.svelte          # App shell: top nav, dependency check/install, download queue popup
+    +layout.svelte          # App shell: top nav, dependency check/install, download queue popup, F9 debug panel, update flow
     +page.svelte            # Main page: URL input, video/playlist analysis, format/quality selection, filename template, duplicate check, download
     queue/+page.svelte      # Full download queue view
     history/+page.svelte    # Download history with search/pagination
-    settings/+page.svelte   # Settings page (download path, concurrent downloads, cookie browser)
+    logs/+page.svelte       # Structured log viewer (reads logs.db)
+    settings/+layout.svelte # Settings section shell (sub-nav)
+    settings/+page.svelte   # Settings page (download path, concurrent downloads, cookie browser, language, theme)
+    settings/dependencies/+page.svelte  # App-managed dependency (yt-dlp/ffmpeg) install/update view
 ```
 
 **UI Stack**: Tailwind CSS v4, Skeleton UI v4 (`@skeletonlabs/skeleton-svelte`), Material Symbols icons. Custom CSS variables: `yt-bg`, `yt-surface`, `yt-highlight`, `yt-primary`.
@@ -100,7 +131,7 @@ routes/
 - Events: derive `tauri_specta::Event`, register in `collect_events![]`
 - Types for frontend: `#[serde(rename_all = "camelCase")]` + `specta::Type`
 - Error variants in `AppError` (modules/types.rs): use domain-specific variants, not `Custom`
-- Mutex poisoning: use `unwrap_or_else(|e| e.into_inner())` pattern (see db.rs, binary.rs)
+- Mutex poisoning: use `unwrap_or_else(|e| e.into_inner())` pattern (see db/mod.rs, download/manager.rs)
 
 ### Svelte/TypeScript
 - Svelte 5 runes: `$state()`, `$derived()`, `$effect()`, `$props()`
