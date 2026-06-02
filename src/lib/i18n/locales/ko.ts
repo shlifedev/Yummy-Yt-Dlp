@@ -129,6 +129,7 @@ const ko: Record<string, string> = {
   "queue.downloadComplete": "다운로드 완료",
   "queue.failed": "실패",
   "queue.pendingStatus": "대기 중...",
+  "queue.cancelled": "취소됨",
 
   "history.title": "라이브러리",
   "history.subtitle": "다운로드 이력",

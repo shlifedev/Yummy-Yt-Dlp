@@ -26,6 +26,12 @@
       if (result.status === "ok") {
         items = result.data.items
         totalCount = result.data.totalCount
+        // Stepped past the end after deleting the last item on a page? Clamp back so the user
+        // isn't stranded on an empty page while earlier pages still have history.
+        if (items.length === 0 && currentPage > 0 && totalCount > 0) {
+          currentPage = Math.max(0, Math.ceil(totalCount / pageSize) - 1)
+          return loadHistory()
+        }
       }
     } catch (e) { console.error(e) }
     finally { loading = false }

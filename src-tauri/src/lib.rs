@@ -132,8 +132,15 @@ pub fn run() {
             ));
             app.manage(download_manager);
 
-            // Setup system tray
-            ytdlp::tray::setup_tray(&app.handle().clone()).expect("Failed to setup system tray");
+            // Setup system tray. Treat tray setup as best-effort: if the OS doesn't provide a
+            // window icon (or tray creation otherwise fails), log and continue rather than
+            // aborting launch — a missing tray must not brick the whole app.
+            if let Err(e) = ytdlp::tray::setup_tray(&app.handle().clone()) {
+                modules::logger::warn_cat(
+                    "app",
+                    &format!("Failed to setup system tray (continuing without it): {}", e),
+                );
+            }
 
             // Seed bundled yt-dlp/ffmpeg into app_data_dir/bin before warmup/dep checks.
             // Runs from a writable copy so `yt-dlp --update` keeps working; deno stays dynamic.

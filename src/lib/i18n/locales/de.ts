@@ -129,6 +129,7 @@ const de: Record<string, string> = {
   "queue.downloadComplete": "Download abgeschlossen",
   "queue.failed": "Fehlgeschlagen",
   "queue.pendingStatus": "Ausstehend...",
+  "queue.cancelled": "Abgebrochen",
 
   "history.title": "Bibliothek",
   "history.subtitle": "Download-Verlauf",

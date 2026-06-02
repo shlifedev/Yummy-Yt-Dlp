@@ -131,6 +131,7 @@ const zhCN: Record<string, string> = {
   "queue.downloadComplete": "下载完成",
   "queue.failed": "失败",
   "queue.pendingStatus": "等待中...",
+  "queue.cancelled": "已取消",
 
   "history.title": "媒体库",
   "history.subtitle": "下载历史",

@@ -131,6 +131,7 @@ const zhTW: Record<string, string> = {
   "queue.downloadComplete": "下載完成",
   "queue.failed": "失敗",
   "queue.pendingStatus": "等待中...",
+  "queue.cancelled": "已取消",
 
   "history.title": "媒體庫",
   "history.subtitle": "下載紀錄",

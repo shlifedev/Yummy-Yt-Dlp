@@ -22,36 +22,49 @@ pub async fn clear_completed(app: AppHandle) -> Result<u32, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError> {
-    // Get the original download info from DB
     let db = app.state::<crate::DbState>();
-    let _task = db
-        .get_download(task_id)?
+    // Ensure the task exists (reuse the existing row rather than creating a duplicate).
+    db.get_download(task_id)?
         .ok_or_else(|| AppError::Custom("Download task not found".to_string()))?;
 
-    // Reset the original task to pending (reuse existing DB row instead of
-    // creating a duplicate via add_to_queue, which would leave a zombie pending row)
-    db.update_download_status(task_id, &DownloadStatus::Pending, None)?;
-
-    // Try to acquire a slot and start the download immediately if possible
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
-        db.update_download_status(task_id, &DownloadStatus::Downloading, None)?;
-        let app_clone = app.clone();
-        let app_panic_guard = app.clone();
-        tokio::spawn(async move {
-            let result = tokio::spawn(async move {
-                crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
-            })
-            .await;
-            if let Err(e) = result {
-                eprintln!("Download task panicked: {:?}", e);
-                let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                manager.release();
-                crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+        // Atomically flip this task to 'downloading' only if it is still retryable. This both
+        // pairs the acquired slot with a release on every failure path and prevents a concurrent
+        // process_next_pending from claiming the same task (double-dispatch).
+        match db.claim_for_retry(task_id) {
+            Ok(true) => {
+                let app_clone = app.clone();
+                let app_panic_guard = app.clone();
+                tokio::spawn(async move {
+                    let result = tokio::spawn(async move {
+                        crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
+                    })
+                    .await;
+                    if let Err(e) = result {
+                        eprintln!("Download task panicked: {:?}", e);
+                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
+                        manager.release();
+                        crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+                    }
+                });
             }
+            // Not in a retryable state (e.g. already running/completed): give the slot back.
+            Ok(false) => manager.release(),
+            Err(e) => {
+                manager.release();
+                return Err(e);
+            }
+        }
+    } else {
+        // No slot free: reset to pending so process_next_pending picks it up atomically when a
+        // slot frees. The extra trigger covers a slot freeing up between try_acquire and now.
+        db.update_download_status(task_id, &DownloadStatus::Pending, None)?;
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            crate::ytdlp::download::process_next_pending_public(app_clone);
         });
     }
-    // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
     Ok(())
 }
