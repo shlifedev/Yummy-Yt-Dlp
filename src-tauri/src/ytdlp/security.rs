@@ -125,26 +125,42 @@ fn is_ssrf_target(host: &str) -> bool {
     let ip_str = host.trim_start_matches('[').trim_end_matches(']');
     if let Ok(ip) = ip_str.parse::<IpAddr>() {
         return match ip {
-            IpAddr::V4(v4) => {
-                v4.is_loopback()           // 127.0.0.0/8
-                    || v4.is_private()      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-                    || v4.is_link_local()   // 169.254.0.0/16
-                    || v4.is_unspecified()  // 0.0.0.0
-                    || v4.is_broadcast()    // 255.255.255.255
-                    || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
-            }
+            IpAddr::V4(v4) => is_blocked_v4(v4),
             IpAddr::V6(v6) => {
-                v6.is_loopback()       // ::1
+                // Native v6 checks first so ::1 / :: are caught before to_ipv4()
+                // (which would otherwise remap ::1 to 0.0.0.1 and slip through).
+                if v6.is_loopback()        // ::1
                     || v6.is_unspecified() // ::
-                    // fe80::/10 (link-local)
-                    || (v6.segments()[0] & 0xffc0) == 0xfe80
-                    // fc00::/7 (unique local)
+                    || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 (link-local)
                     || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // fc00::/7 (unique local)
+                {
+                    return true;
+                }
+                // `::ffff:a.b.c.d` (IPv4-mapped) and the deprecated `::a.b.c.d`
+                // (IPv4-compatible) forms both route to the embedded v4 address,
+                // so re-check it as v4 to avoid bypassing the v4 allowlist.
+                // to_ipv4() (not to_ipv4_mapped()) catches both forms.
+                match v6.to_ipv4() {
+                    Some(v4) => is_blocked_v4(v4),
+                    None => false,
+                }
             }
         };
     }
 
     false
+}
+
+/// Whether an IPv4 address falls in a loopback/private/link-local/reserved range
+/// that should never be reachable for outbound downloads (SSRF protection).
+fn is_blocked_v4(v4: std::net::Ipv4Addr) -> bool {
+    v4.is_loopback()           // 127.0.0.0/8
+        || v4.is_private()      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+        || v4.is_link_local()   // 169.254.0.0/16
+        || v4.is_unspecified()  // 0.0.0.0
+        || v4.is_broadcast()    // 255.255.255.255
+        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
 }
 
 /// Validate and sanitize a download output path.
@@ -322,6 +338,22 @@ mod tests {
     fn test_ssrf_ipv6() {
         assert!(sanitize_url("http://[::1]/secret").is_err());
         assert!(sanitize_url("http://[::]/secret").is_err());
+    }
+
+    #[test]
+    fn test_ssrf_ipv4_mapped_ipv6() {
+        // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) forms must
+        // not bypass the v4 allowlist by re-encoding a private/loopback address.
+        assert!(sanitize_url("http://[::ffff:127.0.0.1]/secret").is_err());
+        assert!(sanitize_url("http://[::ffff:169.254.169.254]/metadata").is_err());
+        assert!(sanitize_url("http://[::ffff:10.0.0.1]/internal").is_err());
+        assert!(sanitize_url("http://[::127.0.0.1]/secret").is_err());
+    }
+
+    #[test]
+    fn test_ssrf_ipv4_mapped_public_allowed() {
+        // A mapped *public* address must still be allowed (no false positives).
+        assert!(sanitize_url("http://[::ffff:8.8.8.8]/").is_ok());
     }
 
     #[test]

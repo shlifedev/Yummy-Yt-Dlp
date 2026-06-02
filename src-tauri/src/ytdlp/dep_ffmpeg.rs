@@ -115,9 +115,22 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
         "ffmpeg"
     };
     let ffmpeg_path = bin_dir.join(ffmpeg_bin);
-    let version = get_binary_version(&ffmpeg_path, "-version")
-        .await
-        .unwrap_or_else(|| "unknown".to_string());
+    // BtbN/vanloctech "latest" builds publish no stable per-release checksum, so a
+    // successful `ffmpeg -version` is our integrity/sanity gate instead. If the
+    // extracted binary does not run, treat the install as failed and remove the
+    // broken binaries so a later dependency check does not report them as installed.
+    let version = match get_binary_version(&ffmpeg_path, "-version").await {
+        Some(v) => v,
+        None => {
+            for path in &extracted {
+                let _ = tokio::fs::remove_file(path).await;
+            }
+            return Err(AppError::DependencyInstallError(
+                "ffmpeg installed but failed to run (-version); the download may be corrupt"
+                    .to_string(),
+            ));
+        }
+    };
 
     emit_stage(
         app,
