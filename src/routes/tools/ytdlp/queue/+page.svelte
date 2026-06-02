@@ -49,6 +49,7 @@
   }
 
   async function handleClearCompleted() {
+    if (!confirm(t("queue.clearCompletedConfirm"))) return
     try {
       const result = await commands.clearCompleted()
       if (result.status === "ok") await loadQueue()
@@ -67,6 +68,7 @@
   }
 
   async function handleCancelAll() {
+    if (!confirm(t("queue.cancelAllConfirm"))) return
     try {
       const result = await commands.cancelAllDownloads()
       if (result.status === "ok") await loadQueue()

@@ -204,6 +204,10 @@ const zhTW: Record<string, string> = {
   "logs.cleared": "日誌已清除",
   "logs.allLevels": "全部",
   "logs.allCategories": "全部",
+  // Confirmations (destructive actions)
+  "queue.cancelAllConfirm": "取消所有進行中和等待中的下載？",
+  "queue.clearCompletedConfirm": "清除所有已完成的項目？",
+  "layout.stopAllConfirm": "停止所有進行中和等待中的下載？",
 }
 
 export default zhTW

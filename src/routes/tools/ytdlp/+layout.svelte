@@ -167,6 +167,7 @@
   }
 
   async function handleCancelAll() {
+    if (!confirm(t("layout.stopAllConfirm"))) return
     try {
       const result = await commands.cancelAllDownloads()
       if (result.status === "ok") {
@@ -617,9 +618,10 @@
       {#each navItems as item}
         <a
           href={item.href}
+          aria-current={isActive(item.href, item.exact) ? "page" : undefined}
           class="flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium relative
-            {isActive(item.href, item.exact) 
-              ? 'bg-yt-highlight text-yt-text shadow-sm ring-1 ring-inset ring-yt-border' 
+            {isActive(item.href, item.exact)
+              ? 'bg-yt-highlight text-yt-text shadow-sm ring-1 ring-inset ring-yt-border'
               : 'text-yt-text-secondary hover:bg-yt-overlay hover:text-yt-text'}"
         >
           <span class="material-symbols-outlined text-[20px] {isActive(item.href, item.exact) ? 'text-yt-primary' : ''}">{item.icon}</span>
