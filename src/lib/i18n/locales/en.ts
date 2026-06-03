@@ -152,6 +152,8 @@ const en: Record<string, string> = {
   "tray.quit": "Quit",
   "settings.minimizeToTray": "Minimize to Tray",
   "settings.minimizeToTrayDesc": "Minimize to system tray when closing the window",
+  "settings.autoUpdateDeps": "Auto-update dependencies",
+  "settings.autoUpdateDepsDesc": "Keep yt-dlp up to date on launch (ffmpeg & deno only when stale). Turn off to update manually from the Dependencies tab",
 
   // Update
   "update.checkUpdate": "Check for Updates",

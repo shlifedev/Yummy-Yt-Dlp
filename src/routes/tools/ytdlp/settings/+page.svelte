@@ -45,6 +45,11 @@
     await autoSave()
   }
 
+  async function handleAutoUpdateChange(e: Event) {
+    settings.autoUpdateYtdlp = (e.target as HTMLInputElement).checked
+    await autoSave()
+  }
+
   async function handleLanguageChange(locale: string) {
     setLocale(locale)
     settings.language = locale
@@ -77,6 +82,17 @@
             </div>
             <label class="relative inline-flex items-center cursor-pointer">
               <input id="minimize-tray" type="checkbox" checked={settings.minimizeToTray === true} onchange={handleMinimizeChange} class="sr-only peer" />
+              <div class="w-9 h-5 bg-yt-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
+            </label>
+         </div>
+         <!-- Auto-update dependencies on launch -->
+         <div class="p-4 flex items-center justify-between gap-4">
+            <div>
+               <label for="auto-update-deps" class="block text-sm font-medium text-yt-text mb-1">{t("settings.autoUpdateDeps")}</label>
+               <p class="text-xs text-yt-text-secondary">{t("settings.autoUpdateDepsDesc")}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input id="auto-update-deps" type="checkbox" checked={settings.autoUpdateYtdlp === true} onchange={handleAutoUpdateChange} class="sr-only peer" />
               <div class="w-9 h-5 bg-yt-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
             </label>
          </div>

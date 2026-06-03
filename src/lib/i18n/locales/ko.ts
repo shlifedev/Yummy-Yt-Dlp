@@ -144,6 +144,8 @@ const ko: Record<string, string> = {
   "tray.quit": "종료",
   "settings.minimizeToTray": "트레이로 최소화",
   "settings.minimizeToTrayDesc": "창을 닫을 때 시스템 트레이로 최소화",
+  "settings.autoUpdateDeps": "의존성 자동 업데이트",
+  "settings.autoUpdateDepsDesc": "앱 시작 시 yt-dlp를 최신으로 자동 갱신 (ffmpeg·deno는 오래됐을 때만). 끄면 의존성 탭에서 수동 업데이트해야 합니다",
 
   // Update
   "update.checkUpdate": "업데이트 확인",

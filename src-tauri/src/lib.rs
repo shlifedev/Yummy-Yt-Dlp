@@ -146,6 +146,11 @@ pub fn run() {
             // Runs from a writable copy so `yt-dlp --update` keeps working; deno stays dynamic.
             ytdlp::dep_seed::seed_bundled_binaries(app.handle());
 
+            // Keep the seeded copies fresh: a background, throttled check that
+            // re-downloads an outdated yt-dlp (and stale ffmpeg/deno) so a frozen
+            // bundle doesn't silently break downloads. Gated by `autoUpdateYtdlp`.
+            ytdlp::dep_autoupdate::auto_update_bundled_deps(app.handle());
+
             // Process any pending downloads left from a previous session.
             // These are items that were 'pending' (not 'downloading') when the app closed,
             // so reset_stale_downloads() does not touch them.
