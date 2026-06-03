@@ -28,7 +28,7 @@
 - 4种颜色主题（Dark、Violet、Red、Light）
 - 跨平台支持（Windows、macOS、Linux）
 
-> **💡 提示：** 应用会在首次启动时自动下载 yt-dlp、FFmpeg 和 Deno。但自动管理的二进制文件（PyInstaller 打包）初次启动可能较慢。为了**显著提升**元数据获取和下载速度，建议通过系统包管理器预先安装 — macOS 使用 [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`），Windows 使用 [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`），Linux 使用 `apt`/`pacman`。应用会自动检测并优先使用系统 PATH 中已安装的版本。
+> **💡 提示：** 应用会在首次启动时自动设置 yt-dlp、FFmpeg 和 Deno（随应用打包，或按需下载/更新）。自动管理的 yt-dlp 构建每次运行时都会自解压，因此首次启动可能较慢。为了**显著提升**元数据获取和下载速度，建议通过系统包管理器预先安装 — macOS 使用 [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`），Windows 使用 [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`），Linux 使用 `apt`/`pacman`。默认情况下，应用会自动检测并优先使用系统 PATH 中已安装的版本。
 
 ## 从源码构建
 

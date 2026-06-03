@@ -28,7 +28,7 @@ Construído com Tauri 2.0 (Rust) e SvelteKit, fornecendo uma interface limpa e i
 - 4 temas de cores (Dark, Violet, Red, Light)
 - Suporte multiplataforma (Windows, macOS, Linux)
 
-> **💡 Dica:** O aplicativo baixa automaticamente yt-dlp, FFmpeg e Deno na primeira execução. No entanto, os binários gerenciados automaticamente (empacotados com PyInstaller) podem ser lentos na inicialização. Para obtenção de metadados e downloads **significativamente mais rápidos**, instale-os previamente pelo gerenciador de pacotes do seu sistema — [Homebrew](https://brew.sh/) no macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) no Windows (`winget install yt-dlp.yt-dlp ffmpeg`), ou `apt`/`pacman` no Linux. O aplicativo detectará e priorizará automaticamente as versões instaladas no PATH do sistema.
+> **💡 Dica:** O aplicativo configura automaticamente yt-dlp, FFmpeg e Deno na primeira execução (empacotados com o aplicativo e baixados/atualizados conforme necessário). A versão do yt-dlp gerenciada automaticamente se autoextrai a cada execução, então sua primeira inicialização pode ser lenta. Para obtenção de metadados e downloads **significativamente mais rápidos**, instale-os previamente pelo gerenciador de pacotes do seu sistema — [Homebrew](https://brew.sh/) no macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) no Windows (`winget install yt-dlp.yt-dlp ffmpeg`), ou `apt`/`pacman` no Linux. Por padrão, o aplicativo detecta e prioriza as versões instaladas no PATH do sistema.
 
 ## Compilar a partir do código-fonte
 

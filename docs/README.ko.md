@@ -28,7 +28,7 @@ Tauri 2.0 (Rust)과 SvelteKit으로 구축되어 비디오 다운로드를 관�
 - 4가지 컬러 테마 (Dark, Violet, Red, Light)
 - 크로스 플랫폼 지원 (Windows, macOS, Linux)
 
-> **💡 팁:** 앱은 첫 실행 시 yt-dlp, FFmpeg, Deno를 자동으로 다운로드합니다. 하지만 자동 설치된 바이너리(PyInstaller 패키징)는 초기 실행 속도가 느릴 수 있습니다. **훨씬 빠른** 메타데이터 조회 및 다운로드를 위해 시스템 패키지 매니저로 미리 설치하세요 — macOS는 [Homebrew](https://brew.sh/) (`brew install yt-dlp ffmpeg`), Windows는 [winget](https://learn.microsoft.com/windows/package-manager/winget/) (`winget install yt-dlp.yt-dlp ffmpeg`), Linux는 `apt`/`pacman` 사용. 앱이 자동으로 시스템 PATH에서 설치된 버전을 감지하여 우선 사용합니다.
+> **💡 팁:** 앱은 첫 실행 시 yt-dlp, FFmpeg, Deno를 자동으로 설정합니다(앱에 번들되거나 필요 시 다운로드·업데이트). 자동 관리되는 yt-dlp 빌드는 실행할 때마다 자가 추출하므로 첫 실행이 느릴 수 있습니다. **훨씬 빠른** 메타데이터 조회 및 다운로드를 위해 시스템 패키지 매니저로 미리 설치하세요 — macOS는 [Homebrew](https://brew.sh/) (`brew install yt-dlp ffmpeg`), Windows는 [winget](https://learn.microsoft.com/windows/package-manager/winget/) (`winget install yt-dlp.yt-dlp ffmpeg`), Linux는 `apt`/`pacman` 사용. 기본적으로 앱은 시스템 PATH에 설치된 버전을 감지하여 우선 사용합니다.
 
 ## 직접 빌드하기
 
