@@ -10,7 +10,7 @@
   let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
-    maxConcurrent: 3,
+    maxConcurrent: 2,
     filenameTemplate: "%(title)s.%(ext)s",
     cookieBrowser: null,
     autoUpdateYtdlp: true,

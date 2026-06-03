@@ -21,10 +21,11 @@ fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
         completed_at: row.get(13)?,
         audio_format: row.get(14)?,
         audio_quality: row.get(15)?,
+        error_detail: row.get(16)?,
     })
 }
 
-const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality";
+const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality, error_detail";
 
 impl Database {
     pub fn insert_download(
@@ -98,12 +99,13 @@ impl Database {
         id: u64,
         status: &DownloadStatus,
         error_msg: Option<&str>,
+        error_detail: Option<&str>,
     ) -> Result<(), AppError> {
         let conn = self.conn();
 
         conn.execute(
-            "UPDATE downloads SET status = ?1, error_message = ?2 WHERE id = ?3",
-            params![status.to_string(), error_msg, id],
+            "UPDATE downloads SET status = ?1, error_message = ?2, error_detail = ?3 WHERE id = ?4",
+            params![status.to_string(), error_msg, error_detail, id],
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
@@ -513,6 +515,29 @@ impl Database {
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT {} FROM downloads WHERE status IN ('downloading', 'pending') ORDER BY created_at ASC",
+                DOWNLOAD_COLUMNS
+            ))
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let tasks = stmt
+            .query_map([], map_download_row)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Ok(tasks)
+    }
+
+    /// Active queue for the unified view's "in progress" section: everything not yet completed
+    /// (downloading, pending, failed, cancelled), newest first. Completed downloads live in the
+    /// history table and are shown in the records section instead.
+    /// Rows backing the queue page's status filters. Includes `completed` so the "Completed"
+    /// filter tab can list finished downloads; the page keeps them out of the default view.
+    pub fn get_active_queue(&self) -> Result<Vec<DownloadTaskInfo>, AppError> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM downloads WHERE status IN ('downloading', 'pending', 'failed', 'cancelled', 'completed') ORDER BY created_at DESC",
                 DOWNLOAD_COLUMNS
             ))
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;

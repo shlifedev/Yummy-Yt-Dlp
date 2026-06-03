@@ -11,7 +11,7 @@ pub struct Database {
 }
 
 /// Current schema version. Increment when adding new migrations.
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 
 impl Database {
     pub fn new(app_data_dir: &Path) -> Result<Self, AppError> {
@@ -106,6 +106,13 @@ impl Database {
         if current < 5 {
             // v5: Add audio_quality column for audio bitrate/quality selection
             conn.execute_batch("ALTER TABLE downloads ADD COLUMN audio_quality TEXT;")
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
+
+        if current < 6 {
+            // v6: Store the raw yt-dlp error line for failed downloads so the UI can show
+            // the real cause instead of only the generic classified message.
+            conn.execute_batch("ALTER TABLE downloads ADD COLUMN error_detail TEXT;")
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 

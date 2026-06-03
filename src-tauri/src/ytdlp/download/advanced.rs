@@ -85,6 +85,10 @@ pub fn build_advanced_args(
     if ffmpeg_available {
         if adv.embed_thumbnail {
             args.push("--embed-thumbnail".to_string());
+            // 번들 ffmpeg엔 png 인코더가 없어 webp 썸네일을 mp4에 임베드할 때 yt-dlp의
+            // png 변환이 "Encoder not found"로 죽는다. jpg(mjpeg)로 미리 변환해 우회.
+            args.push("--convert-thumbnails".to_string());
+            args.push("jpg".to_string());
         }
         if adv.embed_metadata {
             args.push("--embed-metadata".to_string());
@@ -259,6 +263,15 @@ mod tests {
         assert!(!has(&no_ff, "--embed-metadata"));
         assert!(has(&no_ff, "--write-thumbnail"));
         assert!(has(&no_ff, "--write-info-json"));
+
+        // With ffmpeg, embedding a thumbnail must pre-convert to jpg so the bundled
+        // ffmpeg's missing png encoder can't break the mp4 thumbnail embed.
+        let with_ff = build_advanced_args(&adv, false, true);
+        assert!(has(&with_ff, "--embed-thumbnail"));
+        assert_eq!(
+            val_after(&with_ff, "--convert-thumbnails"),
+            Some(&"jpg".to_string())
+        );
     }
 
     #[test]

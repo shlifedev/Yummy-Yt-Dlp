@@ -164,6 +164,9 @@ pub struct DownloadTaskInfo {
     pub speed: Option<String>,
     pub eta: Option<String>,
     pub error_message: Option<String>,
+    /// Raw yt-dlp error line (e.g. the actual `ERROR:` stderr), shown verbatim in the
+    /// queue's expandable error detail. `error_message` stays the translatable summary key.
+    pub error_detail: Option<String>,
     pub created_at: i64,
     pub completed_at: Option<i64>,
     pub audio_format: Option<String>,
@@ -182,6 +185,9 @@ pub struct GlobalDownloadEvent {
     pub file_path: Option<String>,
     pub file_size: Option<u64>,
     pub message: Option<String>,
+    /// Raw yt-dlp error line for failed events, surfaced to the UI alongside the
+    /// translatable `message` key so the user sees the real cause.
+    pub detail: Option<String>,
 }
 
 // === Install ===
@@ -378,7 +384,7 @@ impl Default for AppSettings {
         Self {
             download_path: String::new(),
             default_quality: "1080p".to_string(),
-            max_concurrent: 3,
+            max_concurrent: 2,
             filename_template: "%(title)s.%(ext)s".to_string(),
             cookie_browser: None,
             auto_update_ytdlp: true,

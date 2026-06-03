@@ -24,6 +24,8 @@ pub fn run() {
             ytdlp::commands::check_dependencies,
             ytdlp::commands::update_ytdlp,
             ytdlp::commands::get_download_queue,
+            ytdlp::commands::get_active_queue,
+            ytdlp::commands::clear_all_queue_and_history,
             ytdlp::commands::clear_completed,
             ytdlp::commands::retry_download,
             ytdlp::commands::get_settings,

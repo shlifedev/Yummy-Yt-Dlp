@@ -46,7 +46,7 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
 
 /// Helper: emit an error download event to the frontend.
 /// Sanitizes the error message to remove sensitive system paths before sending to UI.
-fn emit_download_error(app: &AppHandle, task_id: u64, message: String) {
+fn emit_download_error(app: &AppHandle, task_id: u64, message: String, detail: Option<String>) {
     let sanitized = security::sanitize_error_message(&message);
     let _ = app.emit(
         "download-event",
@@ -59,6 +59,7 @@ fn emit_download_error(app: &AppHandle, task_id: u64, message: String) {
             file_path: None,
             file_size: None,
             message: Some(sanitized),
+            detail,
         },
     );
 }
@@ -73,8 +74,8 @@ fn handle_download_failure(
     manager: &Arc<DownloadManager>,
 ) {
     logger::error_cat("download", &format!("[download:{}] {}", task_id, error_msg));
-    let _ = db.update_download_status(task_id, &DownloadStatus::Failed, Some(error_msg));
-    emit_download_error(app, task_id, error_msg.to_string());
+    let _ = db.update_download_status(task_id, &DownloadStatus::Failed, Some(error_msg), None);
+    emit_download_error(app, task_id, error_msg.to_string(), None);
     manager.unregister_cancel(task_id);
     manager.release();
     process_next_pending(app.clone());
@@ -161,6 +162,17 @@ pub(super) fn classify_download_error(code: Option<i32>, stderr_output: &str) ->
     }
 }
 
+/// Pull the most informative raw line out of yt-dlp's stderr so the UI can show the real cause
+/// (e.g. "ERROR: Postprocessing: Error opening output files: Encoder not found") alongside the
+/// generic classified key. Returns the last `ERROR:`-tagged line, or None when there is none.
+pub(super) fn extract_ytdlp_error(stderr: &str) -> Option<String> {
+    stderr
+        .lines()
+        .map(str::trim)
+        .rfind(|line| line.contains("ERROR:"))
+        .map(str::to_string)
+}
+
 /// Public wrapper for execute_download (used by retry_download in commands.rs)
 pub async fn execute_download_public(app: AppHandle, task_id: u64) {
     execute_download(app, task_id).await;
@@ -169,11 +181,19 @@ pub async fn execute_download_public(app: AppHandle, task_id: u64) {
 /// Outcome of a single yt-dlp download attempt, so the caller can decide whether to retry
 /// (e.g. with `--impersonate` after an anti-bot 410) or finalize the download.
 enum AttemptOutcome {
-    Completed { file_path: Option<String> },
-    Failed { code: Option<i32>, stderr: String },
+    Completed {
+        file_path: Option<String>,
+        already_existed: bool,
+    },
+    Failed {
+        code: Option<i32>,
+        stderr: String,
+    },
     Cancelled,
     TimedOut,
-    Fatal { msg: String },
+    Fatal {
+        msg: String,
+    },
 }
 
 /// Run one yt-dlp download attempt: build the command from `args`, spawn it, stream progress to
@@ -245,7 +265,7 @@ async fn run_download_attempt(
 
     // Save JoinHandle for stdout reader task
     // Returns the actual output file path parsed from yt-dlp stdout
-    let stdout_handle: tokio::task::JoinHandle<Option<String>> = tokio::spawn(async move {
+    let stdout_handle: tokio::task::JoinHandle<(Option<String>, bool)> = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut buf = Vec::new();
         let mut last_progress_percent: Option<f32> = None;
@@ -255,6 +275,9 @@ async fn run_download_attempt(
         // row only backs the queue page's 2s poll, so it doesn't need 500ms writes.
         let mut last_db_progress_update = tokio::time::Instant::now() - Duration::from_secs(5);
         let mut actual_file_path: Option<String> = None;
+        // yt-dlp prints "... has already been downloaded" and exits 0 when --no-overwrites finds
+        // the file on disk. Track it so the caller records a skip instead of a fresh download.
+        let mut already_existed = false;
 
         loop {
             buf.clear();
@@ -268,6 +291,9 @@ async fn run_download_attempt(
             // lines, plus the --no-overwrites "already been downloaded" skip line).
             if let Some(path) = parse_output_destination(&line) {
                 actual_file_path = Some(path);
+            }
+            if line.contains(" has already been downloaded") {
+                already_existed = true;
             }
 
             if let Some(progress_info) = progress::parse_progress_line(&line) {
@@ -301,6 +327,7 @@ async fn run_download_attempt(
                         file_path: None,
                         file_size: None,
                         message: None,
+                        detail: None,
                     },
                 );
 
@@ -324,7 +351,7 @@ async fn run_download_attempt(
             }
         }
 
-        actual_file_path
+        (actual_file_path, already_existed)
     });
 
     // Collect stderr for error messages (byte-level reader for non-UTF-8 resilience)
@@ -381,7 +408,7 @@ async fn run_download_attempt(
     };
 
     // Await both stdout and stderr handles before checking result
-    let actual_file_path = stdout_handle.await.ok().flatten();
+    let (actual_file_path, already_existed) = stdout_handle.await.unwrap_or((None, false));
     let stderr_output = stderr_handle.await.unwrap_or_default();
 
     let exit_code = status.code();
@@ -402,6 +429,7 @@ async fn run_download_attempt(
     if status.success() {
         AttemptOutcome::Completed {
             file_path: actual_file_path,
+            already_existed,
         }
     } else {
         AttemptOutcome::Failed {
@@ -443,9 +471,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 "download",
                 &format!("[download:{}] yt-dlp not found: {}", task_id, _e),
             );
-            let _ =
-                db_state.update_download_status(task_id, &DownloadStatus::Failed, Some(error_msg));
-            emit_download_error(&app, task_id, "yt-dlp not found".to_string());
+            let _ = db_state.update_download_status(
+                task_id,
+                &DownloadStatus::Failed,
+                Some(error_msg),
+                None,
+            );
+            emit_download_error(&app, task_id, "yt-dlp not found".to_string(), None);
             manager.release();
             process_next_pending(app);
             return;
@@ -477,6 +509,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             file_path: None,
             file_size: None,
             message: None,
+            detail: None,
         },
     );
 
@@ -577,7 +610,10 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     }
 
     match outcome {
-        AttemptOutcome::Completed { file_path } => {
+        AttemptOutcome::Completed {
+            file_path,
+            already_existed,
+        } => {
             // Use the actual file path parsed from yt-dlp stdout, falling back to the template path
             let file_path = file_path.unwrap_or_else(|| task.output_path.clone());
             let file_size = tokio::fs::metadata(&file_path)
@@ -586,68 +622,102 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 .map(|m| m.len())
                 .unwrap_or(0);
 
-            // Mark as completed and insert history in a single transaction
             let completed_at = chrono::Utc::now().timestamp();
-            let history_item = HistoryItem {
-                id: 0,
-                video_url: task.video_url.clone(),
-                video_id: task.video_id.clone(),
-                title: task.title.clone(),
-                quality_label: task.quality_label.clone(),
-                format: task.format_id.clone(),
-                file_path: file_path.clone(),
-                file_size: Some(file_size),
-                downloaded_at: completed_at,
-            };
 
-            if let Err(e) = db_state.complete_and_record(task_id, completed_at, &history_item) {
-                logger::error_cat(
+            if already_existed {
+                // File was already on disk (--no-overwrites skip). Mark completed but skip the
+                // history insert so the same video isn't recorded twice; the original download's
+                // history row is what duplicate detection keeps relying on.
+                let _ = db_state.mark_completed(task_id, completed_at);
+                logger::info_cat(
                     "download",
                     &format!(
-                        "[download:{}] failed to complete_and_record: {}",
-                        task_id, e
+                        "[download:{}] file already exists, marked completed",
+                        task_id
                     ),
                 );
-                // Fallback: mark completed and best-effort insert the history row separately so the
-                // download still shows in History and duplicate detection keeps recognizing it
-                // (otherwise the queue says 'completed' but the video is treated as never-downloaded).
-                let _ = db_state.mark_completed(task_id, completed_at);
-                if let Err(e2) = db_state.insert_history(&history_item) {
+                let _ = app.emit(
+                    "download-event",
+                    GlobalDownloadEvent {
+                        task_id,
+                        event_type: "completed".to_string(),
+                        percent: Some(100.0),
+                        speed: None,
+                        eta: None,
+                        file_path: Some(file_path),
+                        file_size: Some(file_size),
+                        message: None,
+                        detail: None,
+                    },
+                );
+            } else {
+                // Mark as completed and insert history in a single transaction
+                let history_item = HistoryItem {
+                    id: 0,
+                    video_url: task.video_url.clone(),
+                    video_id: task.video_id.clone(),
+                    title: task.title.clone(),
+                    quality_label: task.quality_label.clone(),
+                    format: task.format_id.clone(),
+                    file_path: file_path.clone(),
+                    file_size: Some(file_size),
+                    downloaded_at: completed_at,
+                };
+
+                if let Err(e) = db_state.complete_and_record(task_id, completed_at, &history_item) {
                     logger::error_cat(
                         "download",
                         &format!(
-                            "[download:{}] fallback insert_history also failed: {}",
-                            task_id, e2
+                            "[download:{}] failed to complete_and_record: {}",
+                            task_id, e
                         ),
                     );
+                    // Fallback: mark completed and best-effort insert the history row separately so
+                    // the download still shows in History and duplicate detection keeps recognizing
+                    // it (otherwise the queue says 'completed' but the video looks never-downloaded).
+                    let _ = db_state.mark_completed(task_id, completed_at);
+                    if let Err(e2) = db_state.insert_history(&history_item) {
+                        logger::error_cat(
+                            "download",
+                            &format!(
+                                "[download:{}] fallback insert_history also failed: {}",
+                                task_id, e2
+                            ),
+                        );
+                    }
                 }
+
+                logger::info_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] completed successfully, file_size={}",
+                        task_id, file_size
+                    ),
+                );
+
+                // Send completion event
+                let _ = app.emit(
+                    "download-event",
+                    GlobalDownloadEvent {
+                        task_id,
+                        event_type: "completed".to_string(),
+                        percent: Some(100.0),
+                        speed: None,
+                        eta: None,
+                        file_path: Some(file_path),
+                        file_size: Some(file_size),
+                        message: None,
+                        detail: None,
+                    },
+                );
             }
-
-            logger::info_cat(
-                "download",
-                &format!(
-                    "[download:{}] completed successfully, file_size={}",
-                    task_id, file_size
-                ),
-            );
-
-            // Send completion event
-            let _ = app.emit(
-                "download-event",
-                GlobalDownloadEvent {
-                    task_id,
-                    event_type: "completed".to_string(),
-                    percent: Some(100.0),
-                    speed: None,
-                    eta: None,
-                    file_path: Some(file_path),
-                    file_size: Some(file_size),
-                    message: None,
-                },
-            );
         }
         AttemptOutcome::Failed { code, stderr } => {
             let error_message = classify_download_error(code, &stderr);
+            // The classified key is a stable, translatable summary; keep the real yt-dlp ERROR
+            // line as detail so the user sees the actual cause, not just "Download failed".
+            let error_detail =
+                extract_ytdlp_error(&stderr).map(|d| security::sanitize_error_message(&d));
 
             // Log full error internally, sanitize for frontend
             logger::error_cat(
@@ -659,11 +729,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 task_id,
                 &DownloadStatus::Failed,
                 Some(&sanitized_error),
+                error_detail.as_deref(),
             );
-            emit_download_error(&app, task_id, sanitized_error);
+            emit_download_error(&app, task_id, sanitized_error, error_detail);
         }
         AttemptOutcome::Cancelled => {
-            let _ = db_state.update_download_status(task_id, &DownloadStatus::Cancelled, None);
+            let _ =
+                db_state.update_download_status(task_id, &DownloadStatus::Cancelled, None, None);
             let _ = app.emit(
                 "download-event",
                 GlobalDownloadEvent {
@@ -675,14 +747,19 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     file_path: None,
                     file_size: None,
                     message: Some("error.downloadCancelled".to_string()),
+                    detail: None,
                 },
             );
         }
         AttemptOutcome::TimedOut => {
             let error_msg = "error.downloadTimeout";
-            let _ =
-                db_state.update_download_status(task_id, &DownloadStatus::Failed, Some(error_msg));
-            emit_download_error(&app, task_id, error_msg.to_string());
+            let _ = db_state.update_download_status(
+                task_id,
+                &DownloadStatus::Failed,
+                Some(error_msg),
+                None,
+            );
+            emit_download_error(&app, task_id, error_msg.to_string(), None);
         }
         AttemptOutcome::Fatal { msg } => {
             // handle_download_failure already releases the slot and dispatches the next task.
@@ -833,5 +910,22 @@ mod tests {
     fn classify_no_exit_code_is_unexpected_termination() {
         let msg = classify_download_error(None, "killed");
         assert_eq!(msg, "error.processTerminated");
+    }
+
+    #[test]
+    fn extract_ytdlp_error_returns_last_error_line() {
+        let stderr = "[download] 100% of 5MiB\nERROR: Postprocessing: Error opening output files: Encoder not found";
+        assert_eq!(
+            extract_ytdlp_error(stderr).as_deref(),
+            Some("ERROR: Postprocessing: Error opening output files: Encoder not found")
+        );
+    }
+
+    #[test]
+    fn extract_ytdlp_error_none_when_no_error_line() {
+        assert_eq!(
+            extract_ytdlp_error("[download] just progress\nfinished"),
+            None
+        );
     }
 }

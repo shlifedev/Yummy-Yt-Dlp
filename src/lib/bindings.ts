@@ -29,6 +29,26 @@ async getDownloadQueue() : Promise<Result<DownloadTaskInfo[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getActiveQueue() : Promise<Result<DownloadTaskInfo[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_active_queue") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Wipe the entire queue and download history in one shot. Cancels anything in flight first so
+ * yt-dlp processes stop before their rows disappear, then clears both tables.
+ */
+async clearAllQueueAndHistory() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_queue_and_history") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearCompleted() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_completed") };
@@ -409,11 +429,21 @@ export type DependencyStatus = { ytdlpInstalled: boolean; ytdlpVersion: string |
 ytdlpDebug: string | null }
 export type DownloadRequest = { videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputDir: string | null; cookieBrowser: string | null; audioFormat: string | null; audioQuality: string | null }
 export type DownloadStatus = "pending" | "downloading" | "paused" | "completed" | "failed" | "cancelled"
-export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; createdAt: number; completedAt: number | null; audioFormat: string | null; audioQuality: string | null }
+export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; 
+/**
+ * Raw yt-dlp error line (e.g. the actual `ERROR:` stderr), shown verbatim in the
+ * queue's expandable error detail. `error_message` stays the translatable summary key.
+ */
+errorDetail: string | null; createdAt: number; completedAt: number | null; audioFormat: string | null; audioQuality: string | null }
 export type DuplicateCheckResult = { inHistory: boolean; inQueue: boolean; historyItem: HistoryItem | null; fileExists: boolean }
 export type FormatInfo = { formatId: string; ext: string; resolution: string | null; qualityLabel: string | null; filesize: number | null; vcodec: string | null; acodec: string | null; hasVideo: boolean; hasAudio: boolean }
 export type FullDependencyStatus = { ytdlp: DepInfo; ffmpeg: DepInfo; deno: DepInfo }
-export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null }
+export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null; 
+/**
+ * Raw yt-dlp error line for failed events, surfaced to the UI alongside the
+ * translatable `message` key so the user sees the real cause.
+ */
+detail: string | null }
 export type HistoryItem = { id: number; videoUrl: string; videoId: string; title: string; qualityLabel: string; format: string; filePath: string; fileSize: number | null; downloadedAt: number }
 export type HistoryResult = { items: HistoryItem[]; totalCount: number; page: number; pageSize: number }
 export type LogEntry = { id: number; timestamp: number; level: string; category: string; message: string; details: string | null }

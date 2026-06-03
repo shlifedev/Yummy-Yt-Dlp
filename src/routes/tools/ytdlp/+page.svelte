@@ -166,7 +166,7 @@
   // Settings
   let downloadPath = $state("~/Downloads")
   let cookieBrowser = $state<string | null>(null)
-  let maxConcurrent = $state(3)
+  let maxConcurrent = $state(2)
   let browsers = $state<string[]>([])
   let currentPlatform = $state<string>("")
 
@@ -225,7 +225,7 @@
           case "error":
             downloadStatus = "failed"
             downloading = false
-            error = data.message ? t(data.message) : t("error.downloadFailed")
+            error = data.detail || (data.message ? t(data.message) : t("error.downloadFailed"))
             break
         }
       }
@@ -603,10 +603,6 @@
     }
   }
 
-  function confirmDuplicate() {
-    if (pendingRequest) executeDownload(pendingRequest)
-  }
-
   function cancelDuplicate() {
     duplicateCheck = null
     pendingRequest = null
@@ -799,14 +795,10 @@
             </p>
           </div>
           <div class="flex flex-col gap-2 shrink-0">
-             <button
-              class="px-3 py-1.5 rounded-md bg-yt-warning hover:bg-yt-warning/80 text-white text-xs font-medium transition-colors"
-              onclick={confirmDuplicate}
-            >{t("download.redownload")}</button>
             <button
               class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-highlight border border-yt-border text-yt-text-secondary text-xs font-medium transition-colors"
               onclick={cancelDuplicate}
-            >{t("download.cancel")}</button>
+            >{t("download.close")}</button>
           </div>
         </div>
       {/if}
