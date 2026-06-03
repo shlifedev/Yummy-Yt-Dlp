@@ -579,7 +579,7 @@
 
 <div class="flex h-screen overflow-hidden bg-yt-bg text-yt-text font-body selection:bg-yt-primary/20 selection:text-yt-text">
   <!-- Sidebar -->
-  <aside class="w-56 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
+  <aside class="w-48 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
     <!-- Window Drag Region (Mac style) -->
     <div data-tauri-drag-region class="h-8 shrink-0"></div>
 

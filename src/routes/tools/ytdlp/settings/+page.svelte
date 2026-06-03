@@ -70,7 +70,7 @@
     <span class="material-symbols-outlined text-yt-primary text-3xl animate-spin">progress_activity</span>
   </div>
 {:else}
-  <div class="max-w-3xl mx-auto px-8 py-8 space-y-10">
+  <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
 
     <!-- General Section -->
     <section>

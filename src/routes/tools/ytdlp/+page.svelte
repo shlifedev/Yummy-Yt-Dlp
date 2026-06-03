@@ -745,7 +745,7 @@
 
 <div class="h-full flex flex-col bg-yt-bg">
     <!-- URL Input Area -->
-    <div class="p-6 shrink-0 space-y-4 max-w-3xl mx-auto w-full">
+    <div class="p-6 shrink-0 space-y-4 max-w-6xl mx-auto w-full">
       <!-- Error & Warning -->
       {#if error}
         <div class="bg-yt-error/10 border border-yt-error/20 rounded-lg px-4 py-3 flex items-start gap-3">
@@ -964,7 +964,10 @@
           </div>
 
           {#if advancedExpanded && fullSettings?.advanced}
-            <div class="border-t border-yt-border/50 pt-3 space-y-3 text-xs text-yt-text-secondary">
+            {#snippet advLabel(text: string, help: string)}
+              <span role="note" class="cursor-help" onmouseenter={(e) => showTooltip(e, help)} onmouseleave={hideTooltip}>{text}</span>
+            {/snippet}
+            <div class="border-t border-yt-border/50 pt-3 space-y-3 text-xs text-yt-text-secondary max-h-[45vh] overflow-y-auto pr-1">
 
               <!-- Subtitles -->
               <div class="space-y-1.5">
@@ -972,18 +975,18 @@
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.writeSubs} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advWriteSubs")}</span>
+                    {@render advLabel(t("download.advWriteSubs"), t("download.advWriteSubsHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.writeAutoSubs} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advWriteAutoSubs")}</span>
+                    {@render advLabel(t("download.advWriteAutoSubs"), t("download.advWriteAutoSubsHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.embedSubs} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advEmbedSubs")}</span>
+                    {@render advLabel(t("download.advEmbedSubs"), t("download.advEmbedSubsHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advSubLangs")}</span>
+                    {@render advLabel(t("download.advSubLangs"), t("download.advSubLangsHelp"))}
                     <input
                       type="text"
                       bind:value={advanced.subLangs}
@@ -993,7 +996,7 @@
                     />
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advConvertSubs")}</span>
+                    {@render advLabel(t("download.advConvertSubs"), t("download.advConvertSubsHelp"))}
                     <select bind:value={advanced.convertSubs} onchange={saveAdvanced} class={selCls}>
                       {#each SUB_CONVERT_FORMATS as f}
                         <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
@@ -1008,7 +1011,7 @@
                 <div class={hdrCls}>{t("download.advSbHeader")} <span class="font-normal normal-case text-yt-text-secondary/50">· {t("download.advNeedsFfmpeg")}</span></div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advSbMode")}</span>
+                    {@render advLabel(t("download.advSbMode"), t("download.advSbModeHelp"))}
                     <select bind:value={advanced.sponsorblockMode} onchange={saveAdvanced} class={selCls}>
                       <option value="off">{t("download.advSbOff")}</option>
                       <option value="mark">{t("download.advSbMark")}</option>
@@ -1021,7 +1024,7 @@
                 </div>
                 {#if advanced.sponsorblockMode !== "off"}
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span class="opacity-70">{t("download.advSbCategories")}</span>
+                    {@render advLabel(t("download.advSbCategories"), t("download.advSbCategoriesHelp"))}
                     {#each SPONSORBLOCK_CATEGORIES as cat}
                       <label class="flex items-center gap-1 hover:text-yt-text cursor-pointer">
                         <input type="checkbox" checked={advanced.sponsorblockCategories.includes(cat)} onchange={() => toggleSponsorblockCategory(cat)} class={cbCls} />
@@ -1038,23 +1041,23 @@
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.embedThumbnail} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advEmbedThumbnail")}</span>
+                    {@render advLabel(t("download.advEmbedThumbnail"), t("download.advEmbedThumbnailHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.embedMetadata} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advEmbedMetadata")}</span>
+                    {@render advLabel(t("download.advEmbedMetadata"), t("download.advEmbedMetadataHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.embedChapters} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advEmbedChapters")}</span>
+                    {@render advLabel(t("download.advEmbedChapters"), t("download.advEmbedChaptersHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.writeThumbnail} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advWriteThumbnail")}</span>
+                    {@render advLabel(t("download.advWriteThumbnail"), t("download.advWriteThumbnailHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.writeInfoJson} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advWriteInfoJson")}</span>
+                    {@render advLabel(t("download.advWriteInfoJson"), t("download.advWriteInfoJsonHelp"))}
                   </label>
                 </div>
               </div>
@@ -1064,7 +1067,7 @@
                 <div class={hdrCls}>{t("download.advFormatHeader")}</div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advVideoCodec")}</span>
+                    {@render advLabel(t("download.advVideoCodec"), t("download.advVideoCodecHelp"))}
                     <select bind:value={advanced.videoCodec} onchange={saveAdvanced} class={selCls}>
                       <option value="auto">{t("download.advCodecAuto")}</option>
                       <option value="av01">AV1</option>
@@ -1073,7 +1076,7 @@
                     </select>
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advLimitRate")}</span>
+                    {@render advLabel(t("download.advLimitRate"), t("download.advLimitRateHelp"))}
                     <input
                       type="text"
                       bind:value={advanced.limitRate}
@@ -1093,15 +1096,15 @@
                 <div class={hdrCls}>{t("download.advNetHeader")}</div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advConcurrentFragments")}</span>
+                    {@render advLabel(t("download.advConcurrentFragments"), t("download.advConcurrentFragmentsHelp"))}
                     <input type="number" min="1" max="16" value={advanced.concurrentFragments} oninput={(e) => setConcurrentFragments(e.currentTarget.value)} class={numCls} />
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advRetries")}</span>
+                    {@render advLabel(t("download.advRetries"), t("download.advRetriesHelp"))}
                     <input type="number" min="0" max="100" value={advanced.retries ?? ""} oninput={(e) => setRetries(e.currentTarget.value)} class={numCls} />
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advSleepInterval")}</span>
+                    {@render advLabel(t("download.advSleepInterval"), t("download.advSleepIntervalHelp"))}
                     <input type="number" min="0" value={advanced.sleepInterval} oninput={(e) => setSleepInterval(e.currentTarget.value)} class={numCls} />
                   </label>
                 </div>
@@ -1112,7 +1115,7 @@
                 <div class={hdrCls}>{t("download.advContainerHeader")}</div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advMergeFormat")}</span>
+                    {@render advLabel(t("download.advMergeFormat"), t("download.advMergeFormatHelp"))}
                     <select bind:value={advanced.mergeOutputFormat} onchange={saveAdvanced} class={selCls}>
                       {#each CONTAINER_FORMATS as f}
                         <option value={f}>{f === "" ? t("download.advCodecAuto") : f.toUpperCase()}</option>
@@ -1120,7 +1123,7 @@
                     </select>
                   </label>
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advRemuxVideo")}</span>
+                    {@render advLabel(t("download.advRemuxVideo"), t("download.advRemuxVideoHelp"))}
                     <select bind:value={advanced.remuxVideo} onchange={saveAdvanced} class={selCls}>
                       {#each CONTAINER_FORMATS as f}
                         <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
@@ -1135,7 +1138,7 @@
                 <div class={hdrCls}>{t("download.advSectionsHeader")} <span class="font-normal normal-case text-yt-text-secondary/50">· {t("download.advNeedsFfmpeg")}</span></div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advDownloadSections")}</span>
+                    {@render advLabel(t("download.advDownloadSections"), t("download.advDownloadSectionsHelp"))}
                     <input
                       type="text"
                       bind:value={advanced.downloadSections}
@@ -1146,7 +1149,7 @@
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.splitChapters} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advSplitChapters")}</span>
+                    {@render advLabel(t("download.advSplitChapters"), t("download.advSplitChaptersHelp"))}
                   </label>
                 </div>
               </div>
@@ -1156,7 +1159,7 @@
                 <div class={hdrCls}>{t("download.advMiscHeader")}</div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   <label class="flex items-center gap-1.5">
-                    <span class="opacity-70">{t("download.advProxy")}</span>
+                    {@render advLabel(t("download.advProxy"), t("download.advProxyHelp"))}
                     <input
                       type="text"
                       bind:value={advanced.proxy}
@@ -1167,11 +1170,11 @@
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.noMtime} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advNoMtime")}</span>
+                    {@render advLabel(t("download.advNoMtime"), t("download.advNoMtimeHelp"))}
                   </label>
                   <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
                     <input type="checkbox" bind:checked={advanced.restrictFilenames} onchange={saveAdvanced} class={cbCls} />
-                    <span>{t("download.advRestrictFilenames")}</span>
+                    {@render advLabel(t("download.advRestrictFilenames"), t("download.advRestrictFilenamesHelp"))}
                   </label>
                 </div>
               </div>
@@ -1183,7 +1186,7 @@
 
     <!-- Results Area -->
     <div class="flex-1 overflow-y-auto px-6 pb-6">
-       <div class="max-w-3xl mx-auto w-full">
+       <div class="max-w-6xl mx-auto w-full">
          
          <!-- Analyzing Skeleton / Progress (only when no quickInfo yet) -->
     {#if analyzing && !quickInfo}
