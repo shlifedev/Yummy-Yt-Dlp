@@ -143,12 +143,12 @@
       if (result.status === "ok") {
         const data = result.data
         activeDownloads = data.activeItems.map((item: any) => {
-          const groupTitle = data.activeGroupTitles[item.id] ?? null
+          // item.groupTitle is populated by the (joined) active-queue summary query.
           const cached = progressCache.get(item.id)
           if (cached && item.status === "downloading") {
-            return { ...item, ...cached, groupTitle }
+            return { ...item, ...cached }
           }
-          return { ...item, groupTitle }
+          return item
         })
         recentCompleted = data.recentCompleted
         // 더 이상 활성이 아닌 다운로드의 캐시 정리
@@ -580,7 +580,7 @@
 
 <div class="flex h-screen overflow-hidden bg-yt-bg text-yt-text font-body selection:bg-yt-primary/20 selection:text-yt-text">
   <!-- Sidebar -->
-  <aside class="w-56 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
+  <aside class="w-48 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
     <!-- Window Drag Region (Mac style) -->
     <div data-tauri-drag-region class="h-8 shrink-0"></div>
 
@@ -591,7 +591,7 @@
           <span class="material-symbols-outlined text-[20px]">download</span>
         </div>
         <div>
-          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Modern YT-DLP</h1>
+          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Yummy YT-DLP</h1>
           <p class="text-[10px] text-yt-text-secondary font-mono">v{appVersion}</p>
         </div>
        </div>

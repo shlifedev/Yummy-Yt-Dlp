@@ -1,6 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
   import type { FullDependencyStatus, DepInstallEvent, AppSettings } from "$lib/bindings"
+  import { defaultAdvancedOptions } from "$lib/advanced"
   import { onMount } from "svelte"
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
@@ -9,7 +10,7 @@
   let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
-    maxConcurrent: 3,
+    maxConcurrent: 2,
     filenameTemplate: "%(title)s.%(ext)s",
     cookieBrowser: null,
     autoUpdateYtdlp: true,
@@ -22,6 +23,7 @@
     minimizeToTray: null,
     depMode: "hybrid",
     depOverrides: {},
+    advanced: defaultAdvancedOptions(),
     setupCompleted: true,
   })
 
@@ -267,7 +269,7 @@
     <span class="material-symbols-outlined text-yt-primary text-3xl animate-spin">progress_activity</span>
   </div>
 {:else}
-  <div class="max-w-3xl mx-auto px-8 py-8 space-y-10">
+  <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
 
     <!-- Dependency Mode -->
     <section>

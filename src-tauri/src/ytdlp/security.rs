@@ -274,6 +274,69 @@ pub fn sanitize_error_message(msg: &str) -> String {
     sanitized
 }
 
+/// Validate a yt-dlp subtitle language list (e.g. "en,ko,en-US", "all", "all,-live_chat").
+/// Rejects whitespace and shell metacharacters that have no business in a lang list.
+pub fn sanitize_sub_langs(langs: &str) -> Result<String, AppError> {
+    let langs = langs.trim();
+    if langs.is_empty() || langs.len() > 200 {
+        return Err(AppError::Custom(
+            "Subtitle languages must be 1-200 characters".to_string(),
+        ));
+    }
+    let re = regex::Regex::new(r"^[A-Za-z0-9,.\-_*]+$").unwrap();
+    if !re.is_match(langs) {
+        return Err(AppError::Custom(
+            "Subtitle languages may only contain letters, digits and , . - _ * (e.g. \"en,ko\")"
+                .to_string(),
+        ));
+    }
+    Ok(langs.to_string())
+}
+
+/// Validate a yt-dlp rate limit (e.g. "1M", "500K", "4.2M", "1000").
+pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
+    let rate = rate.trim();
+    let re = regex::Regex::new(r"^\d+(\.\d+)?[KMGkmg]?$").unwrap();
+    if !re.is_match(rate) {
+        return Err(AppError::Custom(
+            "Rate limit must look like 1M, 500K or 4.2M (no spaces or units like MB/s)".to_string(),
+        ));
+    }
+    Ok(rate.to_string())
+}
+
+/// Validate a yt-dlp download-sections time range (e.g. "1:30-2:00", "00:01:30-00:02:00",
+/// optionally prefixed with "*"). Only a single time range is accepted.
+pub fn sanitize_download_sections(sections: &str) -> Result<String, AppError> {
+    let sections = sections.trim();
+    let re = regex::Regex::new(r"^\*?\d{1,2}:\d{2}(:\d{2})?-\d{1,2}:\d{2}(:\d{2})?$").unwrap();
+    if !re.is_match(sections) {
+        return Err(AppError::Custom(
+            "Section must be a time range like 1:30-2:45 or 00:01:30-00:02:45".to_string(),
+        ));
+    }
+    Ok(sections.to_string())
+}
+
+/// Validate a proxy URL for yt-dlp's --proxy. Unlike `sanitize_url`, this intentionally ALLOWS
+/// localhost / private addresses, since proxies are very commonly local (e.g. 127.0.0.1:8080).
+pub fn sanitize_proxy(proxy: &str) -> Result<String, AppError> {
+    let proxy = proxy.trim();
+    if proxy.is_empty() || proxy.len() > 2048 {
+        return Err(AppError::Custom(
+            "Proxy URL must be 1-2048 characters".to_string(),
+        ));
+    }
+    let re =
+        regex::Regex::new(r"^(?i)(https?|socks4|socks5)://[A-Za-z0-9.\-_]+(:\d{1,5})?/?$").unwrap();
+    if !re.is_match(proxy) {
+        return Err(AppError::Custom(
+            "Proxy must be like http://host:port or socks5://127.0.0.1:1080".to_string(),
+        ));
+    }
+    Ok(proxy.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,5 +455,45 @@ mod tests {
         assert_eq!(clamp_max_concurrent(5), 5);
         assert_eq!(clamp_max_concurrent(100), MAX_CONCURRENT_LIMIT);
         assert_eq!(clamp_max_concurrent(u32::MAX), MAX_CONCURRENT_LIMIT);
+    }
+
+    // === Advanced option validators ===
+
+    #[test]
+    fn test_sub_langs() {
+        assert!(sanitize_sub_langs("en").is_ok());
+        assert!(sanitize_sub_langs("en,ko,en-US").is_ok());
+        assert!(sanitize_sub_langs("all,-live_chat").is_ok());
+        assert!(sanitize_sub_langs("en;rm -rf").is_err());
+        assert!(sanitize_sub_langs("en | cat").is_err());
+        assert!(sanitize_sub_langs("").is_err());
+    }
+
+    #[test]
+    fn test_limit_rate() {
+        assert!(sanitize_limit_rate("1M").is_ok());
+        assert!(sanitize_limit_rate("500K").is_ok());
+        assert!(sanitize_limit_rate("4.2M").is_ok());
+        assert!(sanitize_limit_rate("1000").is_ok());
+        assert!(sanitize_limit_rate("1 MB/s").is_err());
+        assert!(sanitize_limit_rate("fast").is_err());
+    }
+
+    #[test]
+    fn test_download_sections() {
+        assert!(sanitize_download_sections("1:30-2:45").is_ok());
+        assert!(sanitize_download_sections("00:01:30-00:02:45").is_ok());
+        assert!(sanitize_download_sections("*0:10-0:20").is_ok());
+        assert!(sanitize_download_sections("30-90").is_err());
+        assert!(sanitize_download_sections("1:30,2:45").is_err());
+    }
+
+    #[test]
+    fn test_proxy() {
+        assert!(sanitize_proxy("http://127.0.0.1:8080").is_ok());
+        assert!(sanitize_proxy("https://proxy.example.com:3128").is_ok());
+        assert!(sanitize_proxy("socks5://127.0.0.1:1080").is_ok());
+        assert!(sanitize_proxy("javascript:alert(1)").is_err());
+        assert!(sanitize_proxy("not a url").is_err());
     }
 }

@@ -39,7 +39,7 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
         // Immediately start download - ensure release() on DB update failure
-        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None) {
+        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None, None) {
             Ok(()) => {
                 let app_clone = app.clone();
                 let app_panic_guard = app.clone();

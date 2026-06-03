@@ -24,6 +24,16 @@ impl Database {
         let conn =
             Connection::open(&db_path).map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        // WAL + relaxed sync: far fewer fsyncs per write (the queue does frequent
+        // progress/status updates) and readers don't block the single writer.
+        // busy_timeout avoids spurious SQLITE_BUSY under brief contention.
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;",
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
         Self::create_tables(&conn)?;
         Self::run_migrations(&conn)?;
 
@@ -100,11 +110,15 @@ impl Database {
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 
+        if current < 6 {
+            // v6: Store the raw yt-dlp error line for failed downloads so the UI can show
+            // the real cause instead of only the generic classified message.
+            conn.execute_batch("ALTER TABLE downloads ADD COLUMN error_detail TEXT;")
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
+
         if current < 7 {
             // v7: Download groups for batch playlist/channel downloads.
-            // (v6 is used by another branch's `error_detail` migration on the
-            //  shared app-data DB — same app identifier — so we take v7 to avoid
-            //  a version-number clash that would silently skip this migration.)
             // total_count is fixed at batch time so history headers can show
             // "N/total done" even after the queue rows are cleared.
             conn.execute_batch(

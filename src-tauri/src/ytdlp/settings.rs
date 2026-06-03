@@ -1,4 +1,4 @@
-use super::types::AppSettings;
+use super::types::{AdvancedOptions, AppSettings};
 use crate::modules::types::AppError;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
@@ -73,6 +73,10 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         .and_then(|v| v.as_bool())
         .unwrap_or(defaults.setup_completed);
 
+    let advanced = getter("advanced")
+        .and_then(|v| serde_json::from_value::<AdvancedOptions>(v).ok())
+        .unwrap_or_default();
+
     AppSettings {
         download_path,
         default_quality,
@@ -89,6 +93,7 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         minimize_to_tray,
         dep_mode,
         dep_overrides,
+        advanced,
         setup_completed,
     }
 }
@@ -191,6 +196,11 @@ pub fn update_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), Ap
         "depOverrides",
         serde_json::to_value(&settings.dep_overrides)
             .map_err(|e| AppError::Custom(e.to_string()))?,
+    );
+
+    store.set(
+        "advanced",
+        serde_json::to_value(&settings.advanced).map_err(|e| AppError::Custom(e.to_string()))?,
     );
 
     store.set(

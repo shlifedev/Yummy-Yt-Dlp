@@ -21,10 +21,27 @@ pub(super) fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<Download
         completed_at: row.get(13)?,
         audio_format: row.get(14)?,
         audio_quality: row.get(15)?,
+        error_detail: row.get(16)?,
+        group_id: None,
+        group_title: None,
     })
 }
 
-pub(super) const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality";
+/// Like `map_download_row` but also reads `group_id` (col 17) and `group_title`
+/// (col 18). Used by queries that LEFT JOIN download_groups for client-side grouping.
+pub(super) fn map_download_row_with_group(
+    row: &rusqlite::Row,
+) -> rusqlite::Result<DownloadTaskInfo> {
+    let mut task = map_download_row(row)?;
+    task.group_id = row.get(17)?;
+    task.group_title = row.get(18)?;
+    Ok(task)
+}
+
+pub(super) const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality, error_detail";
+/// Same columns as DOWNLOAD_COLUMNS but qualified with the `d` alias and with
+/// `d.group_id`, `g.title` appended — for queries joined to download_groups.
+pub(super) const DOWNLOAD_COLUMNS_G: &str = "d.id, d.video_url, d.video_id, d.title, d.format_id, d.quality_label, d.output_path, d.status, d.progress, d.speed, d.eta, d.error_message, d.created_at, d.completed_at, d.audio_format, d.audio_quality, d.error_detail, d.group_id, g.title";
 
 impl Database {
     pub fn insert_download(
@@ -59,12 +76,13 @@ impl Database {
         id: u64,
         status: &DownloadStatus,
         error_msg: Option<&str>,
+        error_detail: Option<&str>,
     ) -> Result<(), AppError> {
         let conn = self.conn();
 
         conn.execute(
-            "UPDATE downloads SET status = ?1, error_message = ?2 WHERE id = ?3",
-            params![status.to_string(), error_msg, id],
+            "UPDATE downloads SET status = ?1, error_message = ?2, error_detail = ?3 WHERE id = ?4",
+            params![status.to_string(), error_msg, error_detail, id],
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
@@ -121,14 +139,14 @@ impl Database {
         Ok(tasks)
     }
 
+    /// Remove only completed downloads from the queue. This matches the "Clear Completed"
+    /// button label and its `completedCount === 0` disabled guard. Failed and cancelled rows
+    /// are intentionally kept so users can inspect error messages and retry them.
     pub fn clear_completed(&self) -> Result<u32, AppError> {
         let conn = self.conn();
 
         let deleted = conn
-            .execute(
-                "DELETE FROM downloads WHERE status IN ('completed', 'cancelled', 'failed')",
-                [],
-            )
+            .execute("DELETE FROM downloads WHERE status = 'completed'", [])
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(deleted as u32)
@@ -249,6 +267,24 @@ impl Database {
         }
     }
 
+    /// Atomically claim a specific task for retry by flipping it to 'downloading' only if it is
+    /// currently in a retryable terminal/pending state. Returns true if this call claimed it.
+    /// Using a single conditional UPDATE prevents a concurrent process_next_pending from
+    /// double-dispatching the same task (which would spawn two yt-dlp processes / duplicate
+    /// history rows).
+    pub fn claim_for_retry(&self, id: u64) -> Result<bool, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads
+                 SET status = 'downloading', error_message = NULL, progress = 0.0, completed_at = NULL
+                 WHERE id = ?1 AND status IN ('failed', 'cancelled', 'pending')",
+                params![id],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows > 0)
+    }
+
     pub fn get_active_count(&self) -> Result<u32, AppError> {
         let conn = self.conn();
         let count: u32 = conn
@@ -319,16 +355,16 @@ impl Database {
             }
         }
 
-        // Get active items (downloading + pending)
+        // Get active items (downloading + pending) with group title for popup chips.
         let mut active_stmt = conn
             .prepare(&format!(
-                "SELECT {} FROM downloads WHERE status IN ('downloading', 'pending') ORDER BY created_at ASC",
-                DOWNLOAD_COLUMNS
+                "SELECT {} FROM downloads d LEFT JOIN download_groups g ON g.id = d.group_id WHERE d.status IN ('downloading', 'pending') ORDER BY d.created_at ASC",
+                DOWNLOAD_COLUMNS_G
             ))
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         let active_items = active_stmt
-            .query_map([], map_download_row)
+            .query_map([], map_download_row_with_group)
             .map_err(|e| AppError::DatabaseError(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
@@ -347,27 +383,6 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        // Group titles for active/pending items that belong to a group (popup chips).
-        let mut active_group_titles = std::collections::HashMap::new();
-        {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT d.id, g.title FROM downloads d
-                     JOIN download_groups g ON g.id = d.group_id
-                     WHERE d.status IN ('downloading', 'pending')",
-                )
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
-                })
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-            for row in rows {
-                let (id, title) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
-                active_group_titles.insert(id, title);
-            }
-        }
-
         Ok(QueueSummary {
             active_items,
             recent_completed,
@@ -375,7 +390,6 @@ impl Database {
             pending_count,
             completed_count,
             total_count,
-            active_group_titles,
         })
     }
 
@@ -390,6 +404,29 @@ impl Database {
 
         let tasks = stmt
             .query_map([], map_download_row)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Ok(tasks)
+    }
+
+    /// Active queue for the unified view's "in progress" section: everything not yet completed
+    /// (downloading, pending, failed, cancelled), newest first. Completed downloads live in the
+    /// history table and are shown in the records section instead.
+    /// Rows backing the queue page's status filters. Includes `completed` so the "Completed"
+    /// filter tab can list finished downloads; the page keeps them out of the default view.
+    pub fn get_active_queue(&self) -> Result<Vec<DownloadTaskInfo>, AppError> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM downloads d LEFT JOIN download_groups g ON g.id = d.group_id WHERE d.status IN ('downloading', 'pending', 'failed', 'cancelled', 'completed') ORDER BY d.created_at DESC",
+                DOWNLOAD_COLUMNS_G
+            ))
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        let tasks = stmt
+            .query_map([], map_download_row_with_group)
             .map_err(|e| AppError::DatabaseError(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;

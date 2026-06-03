@@ -1,6 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
   import type { AppSettings } from "$lib/bindings"
+  import { defaultAdvancedOptions } from "$lib/advanced"
   import { onMount } from "svelte"
   import { t, setLocale, getLocale, supportedLocales } from "$lib/i18n/index.svelte"
   import { setTheme, getTheme } from "$lib/theme/index.svelte"
@@ -9,7 +10,7 @@
   let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
-    maxConcurrent: 3,
+    maxConcurrent: 2,
     filenameTemplate: "%(title)s.%(ext)s",
     cookieBrowser: null,
     autoUpdateYtdlp: true,
@@ -22,6 +23,7 @@
     minimizeToTray: null,
     depMode: "external",
     depOverrides: {},
+    advanced: defaultAdvancedOptions(),
     setupCompleted: true,
   })
 
@@ -45,6 +47,11 @@
     await autoSave()
   }
 
+  async function handleAutoUpdateChange(e: Event) {
+    settings.autoUpdateYtdlp = (e.target as HTMLInputElement).checked
+    await autoSave()
+  }
+
   async function handleLanguageChange(locale: string) {
     setLocale(locale)
     settings.language = locale
@@ -63,7 +70,7 @@
     <span class="material-symbols-outlined text-yt-primary text-3xl animate-spin">progress_activity</span>
   </div>
 {:else}
-  <div class="max-w-3xl mx-auto px-8 py-8 space-y-10">
+  <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
 
     <!-- General Section -->
     <section>
@@ -77,6 +84,17 @@
             </div>
             <label class="relative inline-flex items-center cursor-pointer">
               <input id="minimize-tray" type="checkbox" checked={settings.minimizeToTray === true} onchange={handleMinimizeChange} class="sr-only peer" />
+              <div class="w-9 h-5 bg-yt-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
+            </label>
+         </div>
+         <!-- Auto-update dependencies on launch -->
+         <div class="p-4 flex items-center justify-between gap-4">
+            <div>
+               <label for="auto-update-deps" class="block text-sm font-medium text-yt-text mb-1">{t("settings.autoUpdateDeps")}</label>
+               <p class="text-xs text-yt-text-secondary">{t("settings.autoUpdateDepsDesc")}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input id="auto-update-deps" type="checkbox" checked={settings.autoUpdateYtdlp === true} onchange={handleAutoUpdateChange} class="sr-only peer" />
               <div class="w-9 h-5 bg-yt-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yt-primary"></div>
             </label>
          </div>

@@ -1,6 +1,7 @@
 pub mod binary;
 pub mod commands;
 pub mod db;
+pub mod dep_autoupdate;
 pub mod dep_deno;
 pub mod dep_download;
 pub mod dep_ffmpeg;

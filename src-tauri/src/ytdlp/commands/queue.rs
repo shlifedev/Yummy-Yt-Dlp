@@ -14,6 +14,13 @@ pub async fn get_download_queue(app: AppHandle) -> Result<Vec<DownloadTaskInfo>,
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_active_queue(app: AppHandle) -> Result<Vec<DownloadTaskInfo>, AppError> {
+    let db = app.state::<crate::DbState>();
+    db.get_active_queue()
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn clear_completed(app: AppHandle) -> Result<u32, AppError> {
     let db = app.state::<crate::DbState>();
     db.clear_completed()
@@ -22,37 +29,69 @@ pub async fn clear_completed(app: AppHandle) -> Result<u32, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError> {
-    // Get the original download info from DB
     let db = app.state::<crate::DbState>();
-    let _task = db
-        .get_download(task_id)?
+    // Ensure the task exists (reuse the existing row rather than creating a duplicate).
+    db.get_download(task_id)?
         .ok_or_else(|| AppError::Custom("Download task not found".to_string()))?;
 
-    // Reset the original task to pending (reuse existing DB row instead of
-    // creating a duplicate via add_to_queue, which would leave a zombie pending row)
-    db.update_download_status(task_id, &DownloadStatus::Pending, None)?;
-
-    // Try to acquire a slot and start the download immediately if possible
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
-        db.update_download_status(task_id, &DownloadStatus::Downloading, None)?;
-        let app_clone = app.clone();
-        let app_panic_guard = app.clone();
-        tokio::spawn(async move {
-            let result = tokio::spawn(async move {
-                crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
-            })
-            .await;
-            if let Err(e) = result {
-                eprintln!("Download task panicked: {:?}", e);
-                let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                manager.release();
-                crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+        // Atomically flip this task to 'downloading' only if it is still retryable. This both
+        // pairs the acquired slot with a release on every failure path and prevents a concurrent
+        // process_next_pending from claiming the same task (double-dispatch).
+        match db.claim_for_retry(task_id) {
+            Ok(true) => {
+                let app_clone = app.clone();
+                let app_panic_guard = app.clone();
+                tokio::spawn(async move {
+                    let result = tokio::spawn(async move {
+                        crate::ytdlp::download::execute_download_public(app_clone, task_id).await;
+                    })
+                    .await;
+                    if let Err(e) = result {
+                        eprintln!("Download task panicked: {:?}", e);
+                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
+                        manager.release();
+                        crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+                    }
+                });
             }
+            // Not in a retryable state (e.g. already running/completed): give the slot back.
+            Ok(false) => manager.release(),
+            Err(e) => {
+                manager.release();
+                return Err(e);
+            }
+        }
+    } else {
+        // No slot free: reset to pending so process_next_pending picks it up atomically when a
+        // slot frees. The extra trigger covers a slot freeing up between try_acquire and now.
+        db.update_download_status(task_id, &DownloadStatus::Pending, None, None)?;
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            crate::ytdlp::download::process_next_pending_public(app_clone);
         });
     }
-    // Otherwise stays pending, will be picked up by process_next_pending when a slot frees
 
+    Ok(())
+}
+
+/// Wipe the entire queue and download history in one shot. Cancels anything in flight first so
+/// yt-dlp processes stop before their rows disappear, then clears both tables.
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_all_queue_and_history(app: AppHandle) -> Result<(), AppError> {
+    let db = app.state::<crate::DbState>();
+    let manager = app.state::<Arc<DownloadManager>>();
+
+    let ids = db.get_cancellable_ids()?;
+    for id in ids {
+        db.cancel_if_active(id).ok();
+        manager.send_cancel(id);
+    }
+
+    db.clear_all_data()?;
+    manager.sync_active_count(0);
     Ok(())
 }
 
@@ -65,29 +104,7 @@ pub async fn get_active_downloads(app: AppHandle) -> Result<Vec<DownloadTaskInfo
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_download_queue_paginated(
-    app: AppHandle,
-    page: u32,
-    page_size: u32,
-    status_filter: Option<String>,
-) -> Result<QueueResult, AppError> {
-    let db = app.state::<crate::DbState>();
-    db.get_queue_grouped(page, page_size, status_filter.as_deref())
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn get_queue_summary(app: AppHandle) -> Result<QueueSummary, AppError> {
     let db = app.state::<crate::DbState>();
     db.get_queue_summary(5)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn get_group_queue_items(
-    app: AppHandle,
-    group_id: u64,
-) -> Result<Vec<DownloadTaskInfo>, AppError> {
-    let db = app.state::<crate::DbState>();
-    db.get_group_queue_items(group_id)
 }
