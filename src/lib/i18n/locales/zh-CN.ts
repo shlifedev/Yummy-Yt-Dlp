@@ -36,7 +36,7 @@ const zhCN: Record<string, string> = {
   "layout.switchToAppManagedDesc": "让应用自动下载和管理依赖项。",
 
   // Welcome (first-run)
-  "welcome.title": "欢迎使用 Modern YT-DLP",
+  "welcome.title": "欢迎使用 Yummy YT-DLP",
   "welcome.subtitle": "选择如何管理依赖项（yt-dlp、ffmpeg、deno）",
   "welcome.appManaged": "应用管理",
   "welcome.appManagedTag": "推荐",
@@ -176,6 +176,26 @@ const zhCN: Record<string, string> = {
   "settings.licensesDesc": "本应用内置或下载了以下开源工具：",
   "settings.ffmpegGplNotice": "FFmpeg 遵循 GPLv3 协议发布，内置的 GPL 构建版本及其源代码可通过上方项目链接获取。",
   "settings.openLocation": "打开文件位置",
+
+  // Errors (backend i18n keys)
+  "error.privateVideo": "这是私享视频，无法访问。",
+  "error.videoUnavailable": "该视频不可用。",
+  "error.unsupportedUrl": "不支持的 URL 格式。",
+  "error.tooManyRequests": "请求过多，请稍后再试。",
+  "error.siteBlocked": "网站拦截了请求（HTTP 410）。浏览器伪装重试也失败了。请稍后重试，或更新 yt-dlp／配置 Cookie。",
+  "error.noFormats": "未找到视频格式，可能是直播。",
+  "error.ageRestricted": "年龄限制内容。请在设置中指定 Cookie 浏览器。",
+  "error.cookieAccess": "无法访问浏览器 Cookie。请完全退出浏览器，或使用 Firefox Cookie。",
+  "error.ytdlpGeneric": "获取视频信息失败。",
+  "error.ytdlpExecFailed": "运行 yt-dlp 失败。",
+  "error.fetchTimeout": "请求超时，请检查网络连接。",
+  "error.processTerminated": "下载进程意外终止。",
+  "error.downloadFailed": "下载失败。",
+  "error.networkError": "网络连接出现问题，请检查您的网络连接。",
+  "error.encodingError": "因编码错误下载失败。在 Windows 上，进入 设置 → 时间和语言 → 语言 → 管理语言设置 → 更改系统区域设置，启用“Beta：使用 Unicode UTF-8 提供全球语言支持”，然后重启。",
+  "error.downloadCancelled": "下载已取消。",
+  "error.downloadTimeout": "下载超时（最长 6 小时）。",
+  "error.unknown": "发生未知错误。",
 }
 
 export default zhCN

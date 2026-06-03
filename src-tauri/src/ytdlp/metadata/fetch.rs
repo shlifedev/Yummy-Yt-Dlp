@@ -1,5 +1,5 @@
-use super::map_stderr_error;
 use super::validation::{PLAYLIST_PATTERN, VIDEO_PATTERNS};
+use super::{map_stderr_error, run_with_impersonate_fallback};
 use crate::modules::logger;
 use crate::modules::types::AppError;
 use crate::ytdlp::types::*;
@@ -35,14 +35,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let output = tokio::time::timeout(METADATA_TIMEOUT, cmd.output())
-        .await
-        .map_err(|_| {
-            AppError::MetadataError(
-                "메타데이터 요청 시간이 초과되었습니다. 네트워크 연결을 확인하세요.".to_string(),
-            )
-        })?
-        .map_err(|e| AppError::MetadataError(format!("Failed to execute yt-dlp: {}", e)))?;
+    let output = run_with_impersonate_fallback(cmd, METADATA_TIMEOUT, "error.fetchTimeout").await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -185,16 +178,8 @@ pub async fn fetch_playlist_info(
     }
 
     // Use a longer timeout for playlists (5 minutes) since large playlists take more time
-    let playlist_timeout = Duration::from_secs(300);
-    let output = tokio::time::timeout(playlist_timeout, cmd.output())
-        .await
-        .map_err(|_| {
-            AppError::MetadataError(
-                "재생목록 메타데이터 요청 시간이 초과되었습니다. 네트워크 연결을 확인하세요."
-                    .to_string(),
-            )
-        })?
-        .map_err(|e| AppError::MetadataError(format!("Failed to execute yt-dlp: {}", e)))?;
+    let output =
+        run_with_impersonate_fallback(cmd, Duration::from_secs(300), "error.fetchTimeout").await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -280,23 +265,41 @@ pub async fn fetch_playlist_info(
     // Map entries to PlaylistEntry structs
     let mut playlist_entries: Vec<PlaylistEntry> = Vec::new();
     for entry in &all_entries {
-        // Extract video_id
-        let video_id = entry["id"]
+        // 항목 URL은 yt-dlp가 준 전체 URL을 신뢰한다(webpage_url > url).
+        // YouTube 평탄화 항목은 간혹 id만 오므로, ie_key가 YouTube일 때만
+        // watch?v= 형태로 재구성한다. 그 외 사이트는 절대 YouTube URL로 바꾸지 않는다.
+        let webpage_url = entry["webpage_url"].as_str();
+        let url_field = entry["url"].as_str();
+        let id_field = entry["id"].as_str();
+        let ie_key = entry["ie_key"]
             .as_str()
-            .or_else(|| entry["url"].as_str())
-            .unwrap_or("")
-            .to_string();
+            .or_else(|| entry["extractor_key"].as_str())
+            .unwrap_or("");
+        let is_youtube =
+            ie_key.eq_ignore_ascii_case("youtube") || ie_key.eq_ignore_ascii_case("youtubetab");
 
-        if video_id.is_empty() {
+        let video_url = match (webpage_url, url_field) {
+            (Some(u), _) if u.starts_with("http") => u.to_string(),
+            (_, Some(u)) if u.starts_with("http") => u.to_string(),
+            _ => match id_field {
+                // id-form만 있는 경우: YouTube(또는 추출기 미상)일 때만 재구성.
+                Some(id) if is_youtube || ie_key.is_empty() => {
+                    format!("https://www.youtube.com/watch?v={}", id)
+                }
+                // 비-YouTube + id-form이면 그대로 둬 yt-dlp가 ie_key로 재해석하게 한다.
+                Some(id) => id.to_string(),
+                None => String::new(),
+            },
+        };
+
+        if video_url.is_empty() {
             continue;
         }
 
-        // Construct video URL
-        let video_url = if video_id.starts_with("http") {
-            video_id.clone()
-        } else {
-            format!("https://www.youtube.com/watch?v={}", video_id)
-        };
+        // 식별/중복체크용 id: 순수 id 우선, 없으면 URL로 대체.
+        let video_id = id_field
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| video_url.clone());
 
         let entry_title = entry["title"].as_str().map(|s| s.to_string());
         let duration = entry["duration"].as_u64();
@@ -398,4 +401,67 @@ pub async fn fetch_quick_metadata(url: String) -> Result<QuickMetadata, AppError
         channel_url,
         thumbnail,
     })
+}
+
+/// Determine whether an arbitrary URL is a single video or a playlist/channel.
+/// Non-YouTube URLs can't be classified by regex, so we let yt-dlp decide via the
+/// top-level `_type` field. `--flat-playlist` + `--playlist-items 1` keeps this fast
+/// even for huge channels (no per-item extraction).
+#[tauri::command]
+#[specta::specta]
+pub async fn detect_url_type(app: AppHandle, url: String) -> Result<UrlType, AppError> {
+    let url = security::sanitize_url(&url)?;
+    logger::info_cat("metadata", &format!("Detecting URL type: {}", url));
+    let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
+    let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
+
+    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
+    cmd.arg("--dump-single-json")
+        .arg("--flat-playlist")
+        .arg("--playlist-items")
+        .arg("1")
+        .arg("--encoding")
+        .arg("UTF-8");
+    if let Some(browser) = &settings.cookie_browser {
+        if security::sanitize_cookie_browser(browser).is_ok() {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+    }
+    cmd.arg(&url);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    // Detection only resolves one item, so a tighter timeout than full fetch is fine.
+    let output =
+        run_with_impersonate_fallback(cmd, Duration::from_secs(60), "error.fetchTimeout").await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        logger::error_cat(
+            "metadata",
+            &format!(
+                "detect_url_type failed: {}",
+                security::sanitize_error_message(&stderr)
+            ),
+        );
+        return Err(map_stderr_error(&stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| AppError::MetadataError(format!("Failed to parse JSON: {}", e)))?;
+
+    let url_type = match json["_type"].as_str() {
+        Some("playlist") | Some("multi_video") => UrlType::Playlist,
+        _ => UrlType::Video,
+    };
+
+    logger::info_cat(
+        "metadata",
+        &format!("URL type detected: {:?} ({})", url_type, url),
+    );
+    Ok(url_type)
 }

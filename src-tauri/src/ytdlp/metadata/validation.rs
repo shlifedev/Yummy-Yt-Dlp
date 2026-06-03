@@ -88,14 +88,14 @@ pub fn validate_url(url: String) -> Result<UrlValidation, AppError> {
         }
     }
 
-    // Not a recognised YouTube URL — fall back to generic HTTP(S) check.
-    // sanitize_url already enforces http/https and SSRF protection,
-    // so here we just verify the scheme and let yt-dlp decide if it works.
+    // 정형 패턴(YouTube)에 안 잡히는 URL은 형식만 통과시키고, 단일 영상인지
+    // 재생목록/채널인지는 yt-dlp가 판단하도록 Unknown으로 넘긴다(detect_url_type).
+    // sanitize_url이 이미 http/https + SSRF를 검증했으므로 여기선 스킴만 확인한다.
     let lower = url.to_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         return Ok(UrlValidation {
             valid: true,
-            url_type: UrlType::Video,
+            url_type: UrlType::Unknown,
             normalized_url: Some(url.to_string()),
             video_id: None,
         });

@@ -36,7 +36,7 @@ const de: Record<string, string> = {
   "layout.switchToAppManagedDesc": "Lassen Sie die App Abhängigkeiten automatisch herunterladen und verwalten.",
 
   // Welcome (first-run)
-  "welcome.title": "Willkommen bei Modern YT-DLP",
+  "welcome.title": "Willkommen bei Yummy YT-DLP",
   "welcome.subtitle": "Wählen Sie, wie Abhängigkeiten (yt-dlp, ffmpeg, deno) verwaltet werden sollen",
   "welcome.appManagedTag": "Empfohlen",
   "welcome.hybrid": "Hybrid",
@@ -172,6 +172,26 @@ const de: Record<string, string> = {
   "settings.licensesDesc": "Diese App bündelt oder lädt folgende Open-Source-Tools herunter:",
   "settings.ffmpegGplNotice": "FFmpeg wird unter der GPLv3 vertrieben; der mitgelieferte GPL-Build und sein Quellcode sind über die obigen Projektlinks verfügbar.",
   "settings.openLocation": "Dateispeicherort öffnen",
+
+  // Errors (backend i18n keys)
+  "error.privateVideo": "Dies ist ein privates Video und kann nicht aufgerufen werden.",
+  "error.videoUnavailable": "Dieses Video ist nicht verfügbar.",
+  "error.unsupportedUrl": "Nicht unterstütztes URL-Format.",
+  "error.tooManyRequests": "Zu viele Anfragen. Bitte versuchen Sie es in Kürze erneut.",
+  "error.siteBlocked": "Die Website hat die Anfrage blockiert (HTTP 410). Der Browser-Imitationsversuch ist ebenfalls fehlgeschlagen. Versuchen Sie es später erneut oder aktualisieren Sie yt-dlp / konfigurieren Sie Cookies.",
+  "error.noFormats": "Keine Videoformate gefunden. Möglicherweise ein Livestream.",
+  "error.ageRestricted": "Altersbeschränkter Inhalt. Legen Sie in den Einstellungen einen Cookie-Browser fest.",
+  "error.cookieAccess": "Kein Zugriff auf Browser-Cookies. Beenden Sie den Browser vollständig oder verwenden Sie Firefox-Cookies.",
+  "error.ytdlpGeneric": "Videoinformationen konnten nicht abgerufen werden.",
+  "error.ytdlpExecFailed": "yt-dlp konnte nicht ausgeführt werden.",
+  "error.fetchTimeout": "Zeitüberschreitung der Anfrage. Überprüfen Sie Ihre Netzwerkverbindung.",
+  "error.processTerminated": "Der Download-Prozess wurde unerwartet beendet.",
+  "error.downloadFailed": "Download fehlgeschlagen.",
+  "error.networkError": "Netzwerkverbindungsproblem. Überprüfen Sie Ihre Internetverbindung.",
+  "error.encodingError": "Download aufgrund eines Kodierungsfehlers fehlgeschlagen. Gehen Sie unter Windows zu Einstellungen → Zeit und Sprache → Sprache → Verwaltungssprachoptionen → Gebietsschema ändern, aktivieren Sie „Beta: Unicode UTF-8 für weltweite Sprachunterstützung verwenden“ und starten Sie neu.",
+  "error.downloadCancelled": "Download abgebrochen.",
+  "error.downloadTimeout": "Zeitüberschreitung beim Download (max. 6 Stunden).",
+  "error.unknown": "Ein unbekannter Fehler ist aufgetreten.",
 }
 
 export default de

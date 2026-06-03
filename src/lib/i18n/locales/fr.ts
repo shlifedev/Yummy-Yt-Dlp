@@ -36,7 +36,7 @@ const fr: Record<string, string> = {
   "layout.switchToAppManagedDesc": "Laissez l'application télécharger et gérer les dépendances automatiquement.",
 
   // Welcome (first-run)
-  "welcome.title": "Bienvenue dans Modern YT-DLP",
+  "welcome.title": "Bienvenue dans Yummy YT-DLP",
   "welcome.subtitle": "Choisissez comment gérer les dépendances (yt-dlp, ffmpeg, deno)",
   "welcome.appManaged": "Géré par l'app",
   "welcome.appManagedTag": "Recommandé",
@@ -176,6 +176,26 @@ const fr: Record<string, string> = {
   "settings.licensesDesc": "Cette application intègre ou télécharge les outils open source suivants :",
   "settings.ffmpegGplNotice": "FFmpeg est distribué sous licence GPLv3 ; la version GPL fournie et son code source sont disponibles via les liens de projet ci-dessus.",
   "settings.openLocation": "Ouvrir l'emplacement du fichier",
+
+  // Errors (backend i18n keys)
+  "error.privateVideo": "Cette vidéo est privée et inaccessible.",
+  "error.videoUnavailable": "Cette vidéo n'est pas disponible.",
+  "error.unsupportedUrl": "Format d'URL non pris en charge.",
+  "error.tooManyRequests": "Trop de requêtes. Veuillez réessayer dans un instant.",
+  "error.siteBlocked": "Le site a bloqué la requête (HTTP 410). La tentative d'usurpation du navigateur a aussi échoué. Réessayez plus tard, ou mettez à jour yt-dlp / configurez les cookies.",
+  "error.noFormats": "Aucun format vidéo trouvé. Il peut s'agir d'un direct.",
+  "error.ageRestricted": "Contenu soumis à une limite d'âge. Définissez un navigateur de cookies dans les Paramètres.",
+  "error.cookieAccess": "Impossible d'accéder aux cookies du navigateur. Fermez complètement le navigateur, ou utilisez les cookies de Firefox.",
+  "error.ytdlpGeneric": "Échec de la récupération des informations de la vidéo.",
+  "error.ytdlpExecFailed": "Échec de l'exécution de yt-dlp.",
+  "error.fetchTimeout": "La requête a expiré. Vérifiez votre connexion réseau.",
+  "error.processTerminated": "Le processus de téléchargement s'est arrêté de manière inattendue.",
+  "error.downloadFailed": "Échec du téléchargement.",
+  "error.networkError": "Problème de connexion réseau. Vérifiez votre connexion Internet.",
+  "error.encodingError": "Échec du téléchargement en raison d'une erreur d'encodage. Sous Windows, allez dans Paramètres → Heure et langue → Langue → Paramètres de langue d'administration → Modifier les paramètres régionaux du système, activez « Bêta : Utiliser Unicode UTF-8 pour la prise en charge linguistique mondiale », puis redémarrez.",
+  "error.downloadCancelled": "Téléchargement annulé.",
+  "error.downloadTimeout": "Le téléchargement a expiré (6 heures max).",
+  "error.unknown": "Une erreur inconnue s'est produite.",
 }
 
 export default fr

@@ -590,7 +590,7 @@
           <span class="material-symbols-outlined text-[20px]">download</span>
         </div>
         <div>
-          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Modern YT-DLP</h1>
+          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Yummy YT-DLP</h1>
           <p class="text-[10px] text-yt-text-secondary font-mono">v{appVersion}</p>
         </div>
        </div>

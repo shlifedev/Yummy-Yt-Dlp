@@ -38,7 +38,7 @@ const en: Record<string, string> = {
   "layout.switchToAppManagedDesc": "Let the app download and manage dependencies automatically instead.",
 
   // Welcome (first-run)
-  "welcome.title": "Welcome to Modern YT-DLP",
+  "welcome.title": "Welcome to Yummy YT-DLP",
   "welcome.subtitle": "Choose how to manage dependencies (yt-dlp, ffmpeg, deno)",
   "welcome.appManagedTag": "Recommended",
   "welcome.hybrid": "Hybrid",
@@ -182,6 +182,26 @@ const en: Record<string, string> = {
   "settings.licensesDesc": "This app bundles or downloads these open-source tools:",
   "settings.ffmpegGplNotice": "FFmpeg is distributed under the GPLv3; the bundled GPL build and its source are available from the project links above.",
   "settings.openLocation": "Open file location",
+
+  // Errors (backend i18n keys; see src-tauri metadata/mod.rs, download/executor.rs)
+  "error.privateVideo": "This is a private video and can't be accessed.",
+  "error.videoUnavailable": "This video is unavailable.",
+  "error.unsupportedUrl": "Unsupported URL format.",
+  "error.tooManyRequests": "Too many requests. Please try again shortly.",
+  "error.siteBlocked": "The site blocked the request (HTTP 410). Browser impersonation retry also failed. Try again later, or update yt-dlp / configure cookies.",
+  "error.noFormats": "No video formats found. This may be a live stream.",
+  "error.ageRestricted": "Age-restricted content. Set a cookie browser in Settings.",
+  "error.cookieAccess": "Can't access browser cookies. Fully quit the browser, or use Firefox cookies.",
+  "error.ytdlpGeneric": "Failed to fetch video info.",
+  "error.ytdlpExecFailed": "Failed to run yt-dlp.",
+  "error.fetchTimeout": "The request timed out. Check your network connection.",
+  "error.processTerminated": "The download process terminated unexpectedly.",
+  "error.downloadFailed": "Download failed.",
+  "error.networkError": "Network connection problem. Check your internet connection.",
+  "error.encodingError": "Download failed due to an encoding error. On Windows, go to Settings → Time & Language → Language → Administrative language settings → Change system locale, enable 'Beta: Use Unicode UTF-8 for worldwide language support', then restart.",
+  "error.downloadCancelled": "Download cancelled.",
+  "error.downloadTimeout": "Download timed out (max 6 hours).",
+  "error.unknown": "An unknown error occurred.",
 }
 
 export default en

@@ -37,6 +37,7 @@ pub fn run() {
             ytdlp::commands::get_download_queue_paginated,
             ytdlp::commands::get_queue_summary,
             ytdlp::metadata::validate_url,
+            ytdlp::metadata::detect_url_type,
             ytdlp::metadata::fetch_video_info,
             ytdlp::metadata::fetch_playlist_info,
             ytdlp::metadata::fetch_quick_metadata,

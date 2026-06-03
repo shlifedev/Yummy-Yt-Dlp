@@ -193,7 +193,7 @@
           case "error":
             downloadStatus = "failed"
             downloading = false
-            error = data.message || "다운로드 실패"
+            error = data.message ? t(data.message) : t("error.downloadFailed")
             break
         }
       }
@@ -339,7 +339,20 @@
 
       const normalized = valResult.data.normalizedUrl || url
 
-      if (valResult.data.urlType === "video") {
+      // 정형 패턴에 안 잡힌 URL(비-YouTube)은 단일 영상인지 재생목록/채널인지
+      // yt-dlp가 판별한다. YouTube는 validate 단계에서 이미 타입이 정해진다.
+      let resolvedType = valResult.data.urlType
+      if (resolvedType === "unknown") {
+        const probe = await commands.detectUrlType(normalized)
+        if (currentGeneration !== analyzeGeneration) return
+        if (probe.status === "error") {
+          error = extractError(probe.error)
+          return
+        }
+        resolvedType = probe.data
+      }
+
+      if (resolvedType === "video") {
         loadingFormats = true
 
         const isYoutube = normalized.includes("youtube.com") || normalized.includes("youtu.be")
@@ -374,7 +387,7 @@
         videoInfo = infoResult.data
         quickInfo = null // Replace quick preview with full info
         loadingFormats = false
-      } else if (valResult.data.urlType === "channel" || valResult.data.urlType === "playlist") {
+      } else if (resolvedType === "channel" || resolvedType === "playlist") {
         const plResult = await commands.fetchPlaylistInfo(normalized, 0, 50)
         if (currentGeneration !== analyzeGeneration) return
         if (plResult.status === "error") {

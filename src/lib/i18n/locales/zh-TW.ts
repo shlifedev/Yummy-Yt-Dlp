@@ -36,7 +36,7 @@ const zhTW: Record<string, string> = {
   "layout.switchToAppManagedDesc": "讓應用程式自動下載和管理依賴項。",
 
   // Welcome (first-run)
-  "welcome.title": "歡迎使用 Modern YT-DLP",
+  "welcome.title": "歡迎使用 Yummy YT-DLP",
   "welcome.subtitle": "選擇如何管理依賴項（yt-dlp、ffmpeg、deno）",
   "welcome.appManaged": "應用程式管理",
   "welcome.appManagedTag": "推薦",
@@ -176,6 +176,26 @@ const zhTW: Record<string, string> = {
   "settings.licensesDesc": "本應用程式內建或下載了以下開源工具：",
   "settings.ffmpegGplNotice": "FFmpeg 依 GPLv3 授權發布，內建的 GPL 建置版本及其原始碼可透過上方專案連結取得。",
   "settings.openLocation": "開啟檔案位置",
+
+  // Errors (backend i18n keys)
+  "error.privateVideo": "這是私人影片，無法存取。",
+  "error.videoUnavailable": "此影片無法使用。",
+  "error.unsupportedUrl": "不支援的 URL 格式。",
+  "error.tooManyRequests": "請求過多，請稍後再試。",
+  "error.siteBlocked": "網站封鎖了請求（HTTP 410）。瀏覽器偽裝重試也失敗了。請稍後重試，或更新 yt-dlp／設定 Cookie。",
+  "error.noFormats": "找不到影片格式，可能是直播。",
+  "error.ageRestricted": "年齡限制內容。請在設定中指定 Cookie 瀏覽器。",
+  "error.cookieAccess": "無法存取瀏覽器 Cookie。請完全結束瀏覽器，或使用 Firefox Cookie。",
+  "error.ytdlpGeneric": "取得影片資訊失敗。",
+  "error.ytdlpExecFailed": "執行 yt-dlp 失敗。",
+  "error.fetchTimeout": "請求逾時，請檢查網路連線。",
+  "error.processTerminated": "下載程序意外結束。",
+  "error.downloadFailed": "下載失敗。",
+  "error.networkError": "網路連線發生問題，請檢查您的網路連線。",
+  "error.encodingError": "因編碼錯誤下載失敗。在 Windows 上，前往 設定 → 時間與語言 → 語言 → 系統管理語言設定 → 變更系統地區設定，啟用「Beta：使用 Unicode UTF-8 提供全球語言支援」後重新啟動。",
+  "error.downloadCancelled": "下載已取消。",
+  "error.downloadTimeout": "下載逾時（最長 6 小時）。",
+  "error.unknown": "發生未知錯誤。",
 }
 
 export default zhTW

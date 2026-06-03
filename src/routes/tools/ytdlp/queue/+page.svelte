@@ -227,7 +227,7 @@
                         <span class="text-yt-success">{t("queue.downloadComplete")}</span>
                      {:else if item.status === "failed"}
                          <button class="text-yt-error hover:underline flex items-center gap-1" onclick={() => toggleError(item.id)}>
-                            {item.errorMessage ? item.errorMessage.split("\n")[0] : t("queue.failed")}
+                            {item.errorMessage ? t(item.errorMessage) : t("queue.failed")}
                             <span class="material-symbols-outlined text-[14px]">expand_more</span>
                          </button>
                      {:else if item.status === "cancelled"}
@@ -248,7 +248,7 @@
 
                {#if item.status === "failed" && item.errorMessage && expandedErrors.has(item.id)}
                  <div class="mt-2 text-xs text-yt-error bg-yt-error/5 p-2 rounded border border-yt-error/10 font-mono whitespace-pre-wrap">
-                    {item.errorMessage}
+                    {t(item.errorMessage)}
                  </div>
                {/if}
             </div>

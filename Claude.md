@@ -125,6 +125,12 @@ routes/
 
 ## Conventions
 
+### Git & Pull Requests
+- Write all commit messages in English (this repo overrides the global Korean-commit default — it ships an English-first README with 10 translations).
+- Keep the subject line concise and imperative; use Conventional Commits prefixes (`feat:`, `fix:`, `docs:`, …).
+- Do not add a `Co-authored-by` trailer.
+- When asked to open a PR, write the title and body in English.
+
 ### Rust
 - All Tauri commands use `#[tauri::command]` + `#[specta::specta]`
 - After creating a command: add to `collect_commands![]` in `lib.rs`, run app to regenerate bindings
@@ -138,6 +144,7 @@ routes/
 - No semicolons, double quotes, 2-space indent
 - Import commands from `$lib/bindings`, not raw `invoke()`
 - Error extraction: `Object.values(err)[0]` pattern for AppError variants
+- No hardcoded user-facing strings. Any text shown in the UI must go through i18n — add the key to **all** locale files in `src/lib/i18n/locales/` (en, ko, ja, fr, de, zh-CN, zh-TW) and reference it via the translation helper. Never leave a raw Korean (or any literal) string in a component.
 
 ### Adding a New Command
 1. Define in appropriate file with `#[tauri::command]` + `#[specta::specta]`

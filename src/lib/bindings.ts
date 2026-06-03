@@ -132,6 +132,20 @@ async validateUrl(url: string) : Promise<Result<UrlValidation, AppError>> {
 }
 },
 /**
+ * Determine whether an arbitrary URL is a single video or a playlist/channel.
+ * Non-YouTube URLs can't be classified by regex, so we let yt-dlp decide via the
+ * top-level `_type` field. `--flat-playlist` + `--playlist-items 1` keeps this fast
+ * even for huge channels (no per-item extraction).
+ */
+async detectUrlType(url: string) : Promise<Result<UrlType, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("detect_url_type", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Fetch video metadata using yt-dlp --dump-json
  */
 async fetchVideoInfo(url: string) : Promise<Result<VideoInfo, AppError>> {

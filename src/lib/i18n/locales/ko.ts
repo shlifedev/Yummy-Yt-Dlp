@@ -36,7 +36,7 @@ const ko: Record<string, string> = {
   "layout.switchToAppManagedDesc": "앱이 자동으로 의존성을 다운로드하고 관리하도록 전환합니다.",
 
   // Welcome (first-run)
-  "welcome.title": "Modern YT-DLP에 오신 것을 환영합니다",
+  "welcome.title": "Yummy YT-DLP에 오신 것을 환영합니다",
   "welcome.subtitle": "의존성(yt-dlp, ffmpeg, deno) 관리 방식을 선택하세요",
   "welcome.appManagedTag": "권장",
   "welcome.hybrid": "하이브리드",
@@ -174,6 +174,26 @@ const ko: Record<string, string> = {
   "settings.licensesDesc": "이 앱은 다음 오픈소스 도구를 포함하거나 다운로드합니다:",
   "settings.ffmpegGplNotice": "FFmpeg는 GPLv3 라이선스로 배포됩니다. 번들된 GPL 빌드와 소스 코드는 위 프로젝트 링크에서 확인할 수 있습니다.",
   "settings.openLocation": "파일 위치 열기",
+
+  // Errors (백엔드 i18n 키; src-tauri metadata/mod.rs, download/executor.rs 참고)
+  "error.privateVideo": "비공개 영상입니다. 접근할 수 없습니다.",
+  "error.videoUnavailable": "이 영상은 사용할 수 없습니다.",
+  "error.unsupportedUrl": "지원하지 않는 URL 형식입니다.",
+  "error.tooManyRequests": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
+  "error.siteBlocked": "사이트가 접근을 차단했습니다(HTTP 410). 브라우저 위장 재시도에도 실패했습니다. 잠시 후 다시 시도하거나 yt-dlp 업데이트/쿠키 설정을 확인하세요.",
+  "error.noFormats": "영상 형식을 찾을 수 없습니다. 라이브 스트림일 수 있습니다.",
+  "error.ageRestricted": "연령 제한 콘텐츠입니다. 설정에서 쿠키 브라우저를 지정하세요.",
+  "error.cookieAccess": "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나 Firefox 쿠키를 사용하세요.",
+  "error.ytdlpGeneric": "영상 정보를 가져오지 못했습니다.",
+  "error.ytdlpExecFailed": "yt-dlp 실행에 실패했습니다.",
+  "error.fetchTimeout": "요청 시간이 초과되었습니다. 네트워크 연결을 확인하세요.",
+  "error.processTerminated": "다운로드 프로세스가 예기치 않게 종료되었습니다.",
+  "error.downloadFailed": "다운로드에 실패했습니다.",
+  "error.networkError": "네트워크 연결에 문제가 있습니다. 인터넷 연결을 확인하세요.",
+  "error.encodingError": "인코딩 오류로 다운로드에 실패했습니다. Windows 설정 → 시간 및 언어 → 언어 → 관리 언어 설정 → 시스템 로캘 변경에서 'Beta: 세계 언어 지원을 위해 Unicode UTF-8 사용'을 켠 뒤 재시작하세요.",
+  "error.downloadCancelled": "다운로드가 취소되었습니다.",
+  "error.downloadTimeout": "다운로드 시간이 초과되었습니다(최대 6시간).",
+  "error.unknown": "알 수 없는 오류가 발생했습니다.",
 }
 
 export default ko

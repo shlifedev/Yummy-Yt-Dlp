@@ -36,7 +36,7 @@ const ja: Record<string, string> = {
   "layout.switchToAppManagedDesc": "アプリが自動的に依存関係をダウンロード・管理するモードに切り替えます。",
 
   // Welcome (first-run)
-  "welcome.title": "Modern YT-DLPへようこそ",
+  "welcome.title": "Yummy YT-DLPへようこそ",
   "welcome.subtitle": "依存関係（yt-dlp、ffmpeg、deno）の管理方法を選択してください",
   "welcome.appManagedTag": "推奨",
   "welcome.hybrid": "ハイブリッド",
@@ -172,6 +172,26 @@ const ja: Record<string, string> = {
   "settings.licensesDesc": "このアプリは以下のオープンソースツールを同梱またはダウンロードします：",
   "settings.ffmpegGplNotice": "FFmpeg は GPLv3 ライセンスで配布されています。同梱の GPL ビルドとそのソースコードは上記プロジェクトリンクから入手できます。",
   "settings.openLocation": "ファイルの場所を開く",
+
+  // Errors (backend i18n keys)
+  "error.privateVideo": "非公開の動画です。アクセスできません。",
+  "error.videoUnavailable": "この動画は利用できません。",
+  "error.unsupportedUrl": "対応していないURL形式です。",
+  "error.tooManyRequests": "リクエストが多すぎます。しばらくしてからもう一度お試しください。",
+  "error.siteBlocked": "サイトがアクセスをブロックしました（HTTP 410）。ブラウザ偽装での再試行も失敗しました。しばらくしてから再試行するか、yt-dlpの更新やCookie設定を確認してください。",
+  "error.noFormats": "動画フォーマットが見つかりません。ライブ配信の可能性があります。",
+  "error.ageRestricted": "年齢制限付きコンテンツです。設定でCookieブラウザを指定してください。",
+  "error.cookieAccess": "ブラウザのCookieにアクセスできません。ブラウザを完全に終了するか、FirefoxのCookieを使用してください。",
+  "error.ytdlpGeneric": "動画情報の取得に失敗しました。",
+  "error.ytdlpExecFailed": "yt-dlpの実行に失敗しました。",
+  "error.fetchTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください。",
+  "error.processTerminated": "ダウンロードプロセスが予期せず終了しました。",
+  "error.downloadFailed": "ダウンロードに失敗しました。",
+  "error.networkError": "ネットワーク接続に問題があります。インターネット接続を確認してください。",
+  "error.encodingError": "エンコードエラーでダウンロードに失敗しました。Windowsの設定 → 時刻と言語 → 言語 → 管理用の言語設定 → システムロケールの変更 で「ベータ: ワールドワイド言語サポートでUnicode UTF-8を使用」を有効にして再起動してください。",
+  "error.downloadCancelled": "ダウンロードをキャンセルしました。",
+  "error.downloadTimeout": "ダウンロードがタイムアウトしました（最大6時間）。",
+  "error.unknown": "不明なエラーが発生しました。",
 }
 
 export default ja
