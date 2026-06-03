@@ -160,14 +160,14 @@ impl Database {
         Ok(tasks)
     }
 
+    /// Remove only completed downloads from the queue. This matches the "Clear Completed"
+    /// button label and its `completedCount === 0` disabled guard. Failed and cancelled rows
+    /// are intentionally kept so users can inspect error messages and retry them.
     pub fn clear_completed(&self) -> Result<u32, AppError> {
         let conn = self.conn();
 
         let deleted = conn
-            .execute(
-                "DELETE FROM downloads WHERE status IN ('completed', 'cancelled', 'failed')",
-                [],
-            )
+            .execute("DELETE FROM downloads WHERE status = 'completed'", [])
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(deleted as u32)
@@ -283,6 +283,24 @@ impl Database {
             Some(id) => self.get_download(id),
             None => Ok(None),
         }
+    }
+
+    /// Atomically claim a specific task for retry by flipping it to 'downloading' only if it is
+    /// currently in a retryable terminal/pending state. Returns true if this call claimed it.
+    /// Using a single conditional UPDATE prevents a concurrent process_next_pending from
+    /// double-dispatching the same task (which would spawn two yt-dlp processes / duplicate
+    /// history rows).
+    pub fn claim_for_retry(&self, id: u64) -> Result<bool, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads
+                 SET status = 'downloading', error_message = NULL, progress = 0.0, completed_at = NULL
+                 WHERE id = ?1 AND status IN ('failed', 'cancelled', 'pending')",
+                params![id],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows > 0)
     }
 
     pub fn get_active_count(&self) -> Result<u32, AppError> {

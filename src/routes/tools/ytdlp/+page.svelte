@@ -60,6 +60,10 @@
   let duplicateCheck = $state<DuplicateCheckResult | null>(null)
   let pendingRequest = $state<any>(null)
 
+  // Informational notice (e.g. "N skipped because already downloaded") — shown separately
+  // from `error` so a successful batch isn't presented as a failure.
+  let notice = $state<string | null>(null)
+
   // Analyze elapsed time
   let analyzeStartTime = $state<number | null>(null)
   let analyzeElapsed = $state(0)
@@ -144,8 +148,10 @@
     }
     if (looksLikeVideoUrl(currentUrl)) {
       analyzeTimeoutId = setTimeout(() => {
-        // Read analyzing/downloading at execution time, not tracked by $effect
-        if (!analyzing && !downloading) {
+        // Don't gate on `analyzing`: if a previous fetch is still in flight, handleAnalyze bumps
+        // analyzeGeneration to supersede it, so the newest URL always wins. Gating on analyzing
+        // would silently drop the new URL and leave stale results for the old one.
+        if (!downloading) {
           handleAnalyze()
         }
       }, 800)
@@ -304,6 +310,7 @@
     if (!url.trim()) return
     analyzing = true
     error = null
+    notice = null
     videoInfo = null
     quickInfo = null
     loadingFormats = false
@@ -311,6 +318,10 @@
     playlistPage = 0
     selectedEntries = new Set()
     noMoreEntries = false
+    // Dismiss any stale duplicate-warning dialog so its captured request can't be confirmed
+    // against a different, newly-analyzed video.
+    duplicateCheck = null
+    pendingRequest = null
     const currentGeneration = ++analyzeGeneration
     startAnalyzeTimer()
 
@@ -436,6 +447,7 @@
   async function handleStartDownload() {
     if (!videoInfo && !url.trim()) return
     error = null
+    notice = null
     duplicateCheck = null
     pendingRequest = null
 
@@ -602,7 +614,7 @@
       const messages: string[] = []
       if (skippedQueue > 0) messages.push(t("download.skippedQueue", { count: skippedQueue }))
       if (skippedExists > 0) messages.push(t("download.skippedExists", { count: skippedExists }))
-      error = messages.join(" ")
+      notice = messages.join(" ")
     }
     if (queued > 0) {
       window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: queued } }))
@@ -613,6 +625,7 @@
     if (!playlistResult || downloadingAll || selectedEntries.size === 0) return
     downloadingAll = true
     error = null
+    notice = null
 
     try {
       const entries = playlistResult.entries.filter(e => selectedEntries.has(e.videoId))
@@ -633,6 +646,7 @@
     if (!playlistResult || downloadingAll) return
     downloadingAll = true
     error = null
+    notice = null
 
     try {
       let allEntries = playlistResult.entries
@@ -675,6 +689,16 @@
              <p class="text-xs text-yt-text-secondary mt-0.5">{error}</p>
           </div>
           <button class="text-yt-text-secondary hover:text-yt-text" aria-label="Close error" onclick={() => error = null}>
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+      {/if}
+
+      {#if notice}
+        <div class="bg-yt-primary/10 border border-yt-primary/20 rounded-lg px-4 py-3 flex items-start gap-3">
+          <span class="material-symbols-outlined text-yt-primary text-[20px] shrink-0 mt-0.5">info</span>
+          <p class="flex-1 min-w-0 text-xs text-yt-text-secondary mt-0.5">{notice}</p>
+          <button class="text-yt-text-secondary hover:text-yt-text" aria-label="Close notice" onclick={() => notice = null}>
             <span class="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
@@ -728,7 +752,7 @@
           onclick={playlistResult && !videoInfo
             ? (selectedEntries.size > 0 ? handleDownloadSelected : handleDownloadAll)
             : handleStartDownload}
-          disabled={downloading || downloadingAll || (!videoInfo && !playlistResult && !url.trim())}
+          disabled={downloading || downloadingAll || analyzing || (!videoInfo && !playlistResult && !url.trim())}
         >
           {#if downloadingAll}
             <span class="material-symbols-outlined text-[18px] animate-spin">sync</span>

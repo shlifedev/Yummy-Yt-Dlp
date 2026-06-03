@@ -48,13 +48,25 @@ export function getDateLocale(): string {
   return map[currentLocale] || "en-US"
 }
 
+// Keep the document language in sync with the UI language so the <html lang> attribute
+// (hardcoded in app.html for first paint) reflects the actual locale.
+function applyDocumentLang() {
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = currentLocale
+  }
+}
+
 export function setLocale(locale: string) {
-  if (locales[locale]) currentLocale = locale
+  if (locales[locale]) {
+    currentLocale = locale
+    applyDocumentLang()
+  }
 }
 
 export async function initLocale(savedLocale?: string | null) {
   if (savedLocale && locales[savedLocale]) {
     currentLocale = savedLocale
+    applyDocumentLang()
     return
   }
   try {
@@ -70,4 +82,5 @@ export async function initLocale(savedLocale?: string | null) {
   } catch (e) {
     console.error("Failed to detect system locale:", e)
   }
+  applyDocumentLang()
 }

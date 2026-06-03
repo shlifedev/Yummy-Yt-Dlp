@@ -136,6 +136,7 @@
   }
 
   function goToPage(page: number) {
+    if (page < 0 || page >= totalPages) return
     currentPage = page
     loadLogs()
   }

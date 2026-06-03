@@ -96,6 +96,7 @@ const ja: Record<string, string> = {
   "queue.downloadComplete": "ダウンロード完了",
   "queue.failed": "失敗",
   "queue.pendingStatus": "待機中...",
+  "queue.cancelled": "キャンセル済み",
 
   "history.title": "ライブラリ",
   "history.subtitle": "ダウンロード履歴",

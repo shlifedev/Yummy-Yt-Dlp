@@ -7,9 +7,32 @@ use tauri_plugin_store::StoreExt;
 
 const STORE_FILE: &str = "settings.json";
 
+/// Localized ("Show Window", "Quit") labels based on the saved language setting.
+/// The tray is built once at startup in Rust, so this reads the persisted language directly;
+/// it covers users who explicitly picked a non-English language (who would notice English here).
+fn tray_labels(app: &AppHandle) -> (&'static str, &'static str) {
+    let lang = app
+        .store(STORE_FILE)
+        .ok()
+        .and_then(|s| s.get("language"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    match lang.as_str() {
+        "ko" => ("창 보기", "종료"),
+        "ja" => ("ウィンドウを表示", "終了"),
+        "zh-CN" => ("显示窗口", "退出"),
+        "zh-TW" => ("顯示視窗", "結束"),
+        "fr" => ("Afficher la fenêtre", "Quitter"),
+        "de" => ("Fenster anzeigen", "Beenden"),
+        _ => ("Show Window", "Quit"),
+    }
+}
+
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let show = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let (show_label, quit_label) = tray_labels(app);
+    let show = MenuItemBuilder::with_id("show", show_label).build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", quit_label).build(app)?;
     let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
 
     let icon = app

@@ -42,6 +42,13 @@
         completedCount = data.completedCount
         failedCount = data.failedCount
         cancelledCount = data.cancelledCount
+
+        // If a delete/clear/cancel emptied the current page but earlier pages still have items,
+        // step back instead of stranding the user on an empty page with hidden pagination.
+        if (queue.length === 0 && currentPage > 0 && totalCount > 0) {
+          currentPage = Math.max(0, Math.ceil(totalCount / pageSize) - 1)
+          return loadQueue()
+        }
       }
     } catch (e) {
       console.error("Failed to load queue:", e)
@@ -100,6 +107,7 @@
     { key: "pending", labelKey: "queue.pendingStatus", countFn: () => pendingCount, color: "bg-yellow-500" },
     { key: "completed", labelKey: "queue.completed", countFn: () => completedCount, color: "bg-yt-success" },
     { key: "failed", labelKey: "queue.failed", countFn: () => failedCount, color: "bg-yt-error" },
+    { key: "cancelled", labelKey: "queue.cancelled", countFn: () => cancelledCount, color: "bg-yt-text-muted" },
   ]
 </script>
 
@@ -191,6 +199,10 @@
                    <div class="w-8 h-8 rounded-full bg-yt-error/10 flex items-center justify-center">
                      <span class="material-symbols-outlined text-yt-error text-[18px]">error</span>
                   </div>
+               {:else if item.status === "cancelled"}
+                  <div class="w-8 h-8 rounded-full bg-yt-surface border border-yt-border flex items-center justify-center">
+                     <span class="material-symbols-outlined text-yt-text-muted text-[18px]">cancel</span>
+                  </div>
                {:else}
                   <div class="w-8 h-8 rounded-full bg-yt-surface border border-yt-border flex items-center justify-center">
                      <span class="material-symbols-outlined text-yt-text-muted text-[18px]">hourglass_empty</span>
@@ -217,6 +229,8 @@
                             {item.errorMessage ? item.errorMessage.split("\n")[0] : t("queue.failed")}
                             <span class="material-symbols-outlined text-[14px]">expand_more</span>
                          </button>
+                     {:else if item.status === "cancelled"}
+                        <span class="text-yt-text-muted">{t("queue.cancelled")}</span>
                      {:else}
                         <span>{t("queue.pendingStatus")}</span>
                      {/if}

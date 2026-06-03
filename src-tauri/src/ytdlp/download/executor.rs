@@ -103,6 +103,31 @@ pub(super) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) 
     }
 }
 
+/// Extract the resolved output file path from a yt-dlp stdout line, if the line announces one.
+/// Handles the merge case, single-file/audio-extraction destinations, and the
+/// `--no-overwrites` skip line ("<path> has already been downloaded") so a re-download of an
+/// existing file records the real path instead of the unexpanded `%(title)s.%(ext)s` template.
+pub(super) fn parse_output_destination(line: &str) -> Option<String> {
+    if let Some(rest) = line.strip_prefix("[Merger] Merging formats into \"") {
+        return rest.strip_suffix('"').map(|p| p.to_string());
+    }
+    if let Some(rest) = line
+        .strip_prefix("[download] Destination: ")
+        .or_else(|| line.strip_prefix("[ExtractAudio] Destination: "))
+    {
+        return Some(rest.trim().to_string());
+    }
+    if let Some(rest) = line.strip_prefix("[download] ") {
+        if let Some(path) = rest.strip_suffix(" has already been downloaded") {
+            let path = path.trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Build a user-facing error message from a finished yt-dlp process's exit code
 /// and captured stderr. Extracted as a pure function so the classification logic
 /// (cookie failures, network errors, Windows cp949 encoding crashes) is testable.
@@ -310,6 +335,33 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
+    // Final cancellation check before the point of no return. Binary/ffmpeg resolution above can
+    // take several seconds (cold yt-dlp start), and a cancel that arrived before register_cancel
+    // ran would have been dropped by send_cancel (no receiver yet). cancel_if_active still set the
+    // DB row to 'cancelled', so re-read it here and bail before spawning instead of downloading a
+    // file the user already cancelled (which would otherwise overwrite the status with 'completed').
+    if let Ok(Some(t)) = db_state.get_download(task_id) {
+        if matches!(t.status, DownloadStatus::Cancelled) {
+            let _ = app.emit(
+                "download-event",
+                GlobalDownloadEvent {
+                    task_id,
+                    event_type: "cancelled".to_string(),
+                    percent: None,
+                    speed: None,
+                    eta: None,
+                    file_path: None,
+                    file_size: None,
+                    message: Some("다운로드가 취소되었습니다.".to_string()),
+                },
+            );
+            manager.unregister_cancel(task_id);
+            manager.release();
+            process_next_pending(app);
+            return;
+        }
+    }
+
     // Spawn process
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -365,19 +417,10 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 Err(_) => continue, // non-fatal read error, keep going
             }
             let line = String::from_utf8_lossy(&buf).trim_end().to_string();
-            // Capture actual file path from yt-dlp output lines:
-            // "[download] Destination: /path/to/file.mp4"
-            // "[Merger] Merging formats into "/path/to/file.mkv""
-            // "[ExtractAudio] Destination: /path/to/file.mp3"
-            if let Some(path) = line.strip_prefix("[Merger] Merging formats into \"") {
-                if let Some(path) = path.strip_suffix('"') {
-                    actual_file_path = Some(path.to_string());
-                }
-            } else if let Some(path) = line
-                .strip_prefix("[download] Destination: ")
-                .or_else(|| line.strip_prefix("[ExtractAudio] Destination: "))
-            {
-                actual_file_path = Some(path.trim().to_string());
+            // Capture the resolved output file path from yt-dlp's stdout (Destination/Merger
+            // lines, plus the --no-overwrites "already been downloaded" skip line).
+            if let Some(path) = parse_output_destination(&line) {
+                actual_file_path = Some(path);
             }
 
             if let Some(progress_info) = progress::parse_progress_line(&line) {
@@ -564,8 +607,19 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     task_id, e
                 ),
             );
-            // Fallback: at least mark the download as completed
+            // Fallback: mark completed and best-effort insert the history row separately so the
+            // download still shows in History and duplicate detection keeps recognizing it
+            // (otherwise the queue says 'completed' but the video is treated as never-downloaded).
             let _ = db_state.mark_completed(task_id, completed_at);
+            if let Err(e2) = db_state.insert_history(&history_item) {
+                logger::error_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] fallback insert_history also failed: {}",
+                        task_id, e2
+                    ),
+                );
+            }
         }
 
         logger::info_cat(
@@ -671,6 +725,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_destination_lines() {
+        assert_eq!(
+            parse_output_destination("[download] Destination: /tmp/video.mp4"),
+            Some("/tmp/video.mp4".to_string())
+        );
+        assert_eq!(
+            parse_output_destination("[ExtractAudio] Destination: /tmp/song.mp3"),
+            Some("/tmp/song.mp3".to_string())
+        );
+        assert_eq!(
+            parse_output_destination("[Merger] Merging formats into \"/tmp/video.mkv\""),
+            Some("/tmp/video.mkv".to_string())
+        );
+    }
+
+    #[test]
     fn classify_cookie_failure_on_code_1() {
         let msg = classify_download_error(
             Some(1),
@@ -685,6 +755,20 @@ mod tests {
             classify_download_error(Some(1), ""),
             "다운로드 중 오류가 발생했습니다."
         );
+    }
+
+    #[test]
+    fn parse_already_downloaded_line() {
+        assert_eq!(
+            parse_output_destination("[download] /tmp/video.mp4 has already been downloaded"),
+            Some("/tmp/video.mp4".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ignores_unrelated_lines() {
+        assert_eq!(parse_output_destination("[download]  12.3% of 5MiB"), None);
+        assert_eq!(parse_output_destination("[info] Writing thumbnail"), None);
     }
 
     #[test]

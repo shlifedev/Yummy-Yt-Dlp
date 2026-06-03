@@ -29,7 +29,14 @@ fn map_stderr_error(stderr: &str) -> AppError {
             "비디오 형식을 찾을 수 없습니다. 라이브 스트림일 수 있습니다.".to_string(),
         );
     }
-    if stderr.contains("age") || stderr.contains("confirm your age") {
+    // Match specific age-restriction phrases only. A bare "age" substring also matches the
+    // very common "Unable to download webpage" error, mislabeling network failures as
+    // age-restricted content.
+    if stderr.contains("confirm your age")
+        || stderr.contains("age-restricted")
+        || stderr.contains("age restricted")
+        || stderr.contains("inappropriate for some users")
+    {
         return AppError::MetadataError(
             "연령 제한 콘텐츠입니다. 설정에서 쿠키 브라우저를 설정하세요.".to_string(),
         );

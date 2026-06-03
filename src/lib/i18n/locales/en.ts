@@ -100,6 +100,7 @@ const en: Record<string, string> = {
   "queue.downloadComplete": "Download Complete",
   "queue.failed": "Failed",
   "queue.pendingStatus": "Pending...",
+  "queue.cancelled": "Cancelled",
 
   // History page
   "history.title": "Library",
