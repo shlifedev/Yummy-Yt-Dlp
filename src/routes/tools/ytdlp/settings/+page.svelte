@@ -1,25 +1,27 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
+  import type { AppSettings } from "$lib/bindings"
   import { onMount } from "svelte"
   import { t, setLocale, getLocale, supportedLocales } from "$lib/i18n/index.svelte"
   import { setTheme, getTheme } from "$lib/theme/index.svelte"
   import { themes, themeList, type ThemeId } from "$lib/theme/themes"
 
-  let settings = $state({
+  let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
     maxConcurrent: 3,
     filenameTemplate: "%(title)s.%(ext)s",
-    cookieBrowser: null as string | null,
+    cookieBrowser: null,
     autoUpdateYtdlp: true,
     useAdvancedTemplate: false,
     templateUploaderFolder: false,
     templateUploadDate: false,
     templateVideoId: false,
-    language: null as string | null,
-    theme: null as string | null,
-    minimizeToTray: null as boolean | null,
+    language: null,
+    theme: null,
+    minimizeToTray: null,
     depMode: "external",
+    depOverrides: {},
     setupCompleted: true,
   })
 

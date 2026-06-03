@@ -282,6 +282,11 @@ pub struct AppSettings {
     /// "bundled" (app-managed first), or "system" (system PATH only).
     /// Legacy "external" is treated as "bundled" at resolution time.
     pub dep_mode: String,
+    /// Per-dependency source override. Maps a dependency name ("yt-dlp",
+    /// "ffmpeg", "deno") to "appManaged" or "systemPath". A dependency without
+    /// an entry follows `dep_mode`.
+    #[serde(default)]
+    pub dep_overrides: std::collections::HashMap<String, String>,
     /// Whether the initial setup wizard has been completed
     pub setup_completed: bool,
 }
@@ -303,6 +308,7 @@ impl Default for AppSettings {
             theme: None,
             minimize_to_tray: None,
             dep_mode: "hybrid".to_string(),
+            dep_overrides: std::collections::HashMap::new(),
             setup_completed: false,
         }
     }
@@ -352,8 +358,16 @@ pub struct FullDependencyStatus {
 pub struct DepInfo {
     pub installed: bool,
     pub version: Option<String>,
+    /// The source currently active for this dependency (honoring any override).
     pub source: DepSource,
     pub path: Option<String>,
+    /// Whether an app-managed copy exists on disk, independent of which source
+    /// is active. Drives the per-item source toggle in the UI.
+    #[serde(default)]
+    pub app_available: bool,
+    /// Whether a system-PATH copy is discoverable, independent of the active source.
+    #[serde(default)]
+    pub system_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

@@ -350,10 +350,29 @@ export type AppSettings = { downloadPath: string; defaultQuality: string; maxCon
  */
 depMode: string; 
 /**
+ * Per-dependency source override. Maps a dependency name ("yt-dlp",
+ * "ffmpeg", "deno") to "appManaged" or "systemPath". A dependency without
+ * an entry follows `dep_mode`.
+ */
+depOverrides?: Partial<{ [key in string]: string }>; 
+/**
  * Whether the initial setup wizard has been completed
  */
 setupCompleted: boolean }
-export type DepInfo = { installed: boolean; version: string | null; source: DepSource; path: string | null }
+export type DepInfo = { installed: boolean; version: string | null; 
+/**
+ * The source currently active for this dependency (honoring any override).
+ */
+source: DepSource; path: string | null; 
+/**
+ * Whether an app-managed copy exists on disk, independent of which source
+ * is active. Drives the per-item source toggle in the UI.
+ */
+appAvailable?: boolean; 
+/**
+ * Whether a system-PATH copy is discoverable, independent of the active source.
+ */
+systemAvailable?: boolean }
 export type DepInstallEvent = { depName: string; stage: DepInstallStage; percent: number; bytesDownloaded: number; bytesTotal: number | null; message: string | null }
 export type DepInstallStage = "Downloading" | "Verifying" | "Extracting" | "Completing" | "Failed"
 export type DepSource = "AppManaged" | "SystemPath" | "NotFound"

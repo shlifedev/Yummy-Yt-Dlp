@@ -109,6 +109,39 @@ pub(crate) fn dep_mode(app: &AppHandle) -> DepMode {
     }
 }
 
+/// The source a user has explicitly pinned for a single dependency.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum DepSourcePref {
+    AppManaged,
+    SystemPath,
+}
+
+/// Read the per-dependency source override for `dep` (e.g. `"yt-dlp"`), if set.
+pub(crate) fn dep_override(app: &AppHandle, dep: &str) -> Option<DepSourcePref> {
+    let store = app.store("settings.json").ok()?;
+    let overrides = store.get("depOverrides")?;
+    match overrides.get(dep).and_then(|v| v.as_str())? {
+        "appManaged" => Some(DepSourcePref::AppManaged),
+        "systemPath" => Some(DepSourcePref::SystemPath),
+        _ => None,
+    }
+}
+
+/// The order in which to try sources for `dep`. An explicit per-item override
+/// wins; otherwise the global `dep_mode` decides (bundled → app first,
+/// hybrid → system first).
+pub(crate) fn source_order(app: &AppHandle, dep: &str) -> [DepSourcePref; 2] {
+    use DepSourcePref::*;
+    match dep_override(app, dep) {
+        Some(AppManaged) => [AppManaged, SystemPath],
+        Some(SystemPath) => [SystemPath, AppManaged],
+        None => match dep_mode(app) {
+            DepMode::Bundled => [AppManaged, SystemPath],
+            DepMode::Hybrid => [SystemPath, AppManaged],
+        },
+    }
+}
+
 /// Get the app-managed bin directory path.
 pub(super) fn app_bin_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("bin"))
@@ -140,11 +173,16 @@ fn augmented_path_app_suffix(app: &AppHandle) -> String {
 }
 
 /// Create a Command with a PATH built according to the active dependency mode.
+///
+/// At download time only deno is discovered through PATH — yt-dlp is launched by
+/// its resolved absolute path and ffmpeg is passed via `--ffmpeg-location` — so the
+/// app bin dir is ordered to match whichever deno source is effective.
 pub fn command_with_path_app(program: &str, app: &AppHandle) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(program);
-    let path = match dep_mode(app) {
-        DepMode::Bundled => augmented_path_with_app(app),
-        DepMode::Hybrid => augmented_path_app_suffix(app),
+    let path = if source_order(app, "deno")[0] == DepSourcePref::AppManaged {
+        augmented_path_with_app(app)
+    } else {
+        augmented_path_app_suffix(app)
     };
     cmd.env("PATH", path);
     cmd.env("PYTHONUTF8", "1");

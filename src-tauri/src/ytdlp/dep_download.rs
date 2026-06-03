@@ -352,7 +352,6 @@ pub async fn get_binary_version(binary_path: &Path, version_flag: &str) -> Optio
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 

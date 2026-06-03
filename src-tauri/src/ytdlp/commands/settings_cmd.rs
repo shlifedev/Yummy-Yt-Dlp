@@ -31,10 +31,8 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
     let mut settings = settings;
     settings.max_concurrent = security::clamp_max_concurrent(settings.max_concurrent);
 
-    // Check if dep_mode changed to invalidate cache
-    let old_dep_mode = crate::ytdlp::settings::get_settings(&app)
-        .map(|s| s.dep_mode)
-        .unwrap_or_default();
+    // Snapshot the dependency-affecting settings to know whether to drop the cache.
+    let old = crate::ytdlp::settings::get_settings(&app).ok();
 
     crate::ytdlp::settings::update_settings(&app, &settings)?;
 
@@ -42,8 +40,11 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
     let manager = app.state::<Arc<DownloadManager>>();
     manager.set_max_concurrent(settings.max_concurrent);
 
-    // Invalidate dep cache when dep_mode changes
-    if old_dep_mode != settings.dep_mode {
+    // Invalidate dep cache when the mode or any per-item override changes.
+    let dep_changed = old
+        .map(|s| s.dep_mode != settings.dep_mode || s.dep_overrides != settings.dep_overrides)
+        .unwrap_or(true);
+    if dep_changed {
         binary::invalidate_dep_cache();
     }
 

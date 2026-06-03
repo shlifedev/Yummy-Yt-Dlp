@@ -1,26 +1,27 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
-  import type { FullDependencyStatus, DepInstallEvent } from "$lib/bindings"
+  import type { FullDependencyStatus, DepInstallEvent, AppSettings } from "$lib/bindings"
   import { onMount } from "svelte"
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { t } from "$lib/i18n/index.svelte"
 
-  let settings = $state({
+  let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
     maxConcurrent: 3,
     filenameTemplate: "%(title)s.%(ext)s",
-    cookieBrowser: null as string | null,
+    cookieBrowser: null,
     autoUpdateYtdlp: true,
     useAdvancedTemplate: false,
     templateUploaderFolder: false,
     templateUploadDate: false,
     templateVideoId: false,
-    language: null as string | null,
-    theme: null as string | null,
-    minimizeToTray: null as boolean | null,
+    language: null,
+    theme: null,
+    minimizeToTray: null,
     depMode: "hybrid",
+    depOverrides: {},
     setupCompleted: true,
   })
 
@@ -42,6 +43,8 @@
   let installingAll = $state(false)
   let depActionResult = $state<{ dep: string, success: boolean, message: string } | null>(null)
   let installProgress = $state<Record<string, { stage: string, percent: number, message: string | null }>>({})
+  // Inline note shown when a user taps a source that isn't available for a dep.
+  let sourceHint = $state<{ dep: string, message: string } | null>(null)
 
   async function loadDepStatus(force = false) {
     depLoading = true
@@ -175,8 +178,42 @@
 
   async function handleDepModeChange(mode: string) {
     settings.depMode = mode
+    // The new global mode is authoritative; drop any per-item overrides so a
+    // lingering pick doesn't contradict it (e.g. a "system" pin under bundled).
+    settings.depOverrides = {}
     await autoSave()
     await loadDepStatus(true)
+  }
+
+  // Per-dependency source override (hybrid mode). Pins which copy — the app's
+  // bundled one or the system-PATH one — yt-dlp/ffmpeg/deno actually run from.
+  // Tapping a source that isn't installed can't switch to it, so we explain why.
+  async function handleSourceToggle(
+    depKey: string,
+    source: "appManaged" | "systemPath",
+    available: boolean | undefined,
+  ) {
+    if (!available) {
+      sourceHint = {
+        dep: depKey,
+        message: source === "systemPath"
+          ? t("settings.sourceUnavailableSystem")
+          : t("settings.sourceUnavailableBundled"),
+      }
+      return
+    }
+    sourceHint = null
+    settings.depOverrides = { ...(settings.depOverrides ?? {}), [depKey]: source }
+    await autoSave()
+    await loadDepStatus(true)
+  }
+
+  function activeSource(depKey: string, info: { source: string }): string | undefined {
+    const override = settings.depOverrides?.[depKey]
+    if (override) return override
+    if (info.source === "AppManaged") return "appManaged"
+    if (info.source === "SystemPath") return "systemPath"
+    return undefined
   }
 
   async function handleRevealPath(path: string) {
@@ -317,9 +354,34 @@
                       </p>
                     </div>
                   {/if}
+                  {#if sourceHint?.dep === dep.key}
+                    <p class="mt-1.5 flex items-start gap-1 text-[10px] text-yt-warning">
+                      <span class="material-symbols-outlined text-[12px] shrink-0">info</span>
+                      <span>{sourceHint.message}</span>
+                    </p>
+                  {/if}
                 </div>
               </div>
-              <div class="flex gap-2 shrink-0">
+              <div class="flex items-center gap-2 shrink-0">
+                {#if activeDepMode === "hybrid" && (dep.info.appAvailable || dep.info.systemAvailable)}
+                  {@const active = activeSource(dep.key, dep.info)}
+                  <div class="inline-flex rounded-md border border-yt-border overflow-hidden text-[11px]">
+                    <button
+                      onclick={() => handleSourceToggle(dep.key, "appManaged", dep.info.appAvailable)}
+                      title={t("settings.appManaged")}
+                      class="px-2.5 py-1 transition-colors {active === 'appManaged' ? 'bg-yt-primary text-white' : !dep.info.appAvailable ? 'text-yt-text-muted/40 hover:bg-yt-highlight/40' : 'text-yt-text-secondary hover:bg-yt-highlight'}"
+                    >
+                      {t("settings.appManaged")}
+                    </button>
+                    <button
+                      onclick={() => handleSourceToggle(dep.key, "systemPath", dep.info.systemAvailable)}
+                      title={t("settings.systemPath")}
+                      class="px-2.5 py-1 border-l border-yt-border transition-colors {active === 'systemPath' ? 'bg-yt-primary text-white' : !dep.info.systemAvailable ? 'text-yt-text-muted/40 hover:bg-yt-highlight/40' : 'text-yt-text-secondary hover:bg-yt-highlight'}"
+                    >
+                      {t("settings.systemPath")}
+                    </button>
+                  </div>
+                {/if}
                 {#if usesAppBin}
                   {#if !dep.info.installed}
                     <button
