@@ -170,6 +170,15 @@ pub struct DownloadTaskInfo {
     pub audio_quality: Option<String>,
 }
 
+/// Result of a batch enqueue. `group_id` is Some only when a group was actually
+/// created (i.e. 2+ items survived duplicate filtering).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchEnqueueResult {
+    pub group_id: Option<u64>,
+    pub task_ids: Vec<u64>,
+}
+
 // Global download event for app-wide event emission
 #[derive(Debug, Clone, Serialize, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
@@ -213,10 +222,31 @@ pub struct HistoryItem {
     pub downloaded_at: i64,
 }
 
+/// History group header — aggregate over the *completed* items of a batch group.
+/// `total_count` comes from `download_groups` (fixed at batch time), while
+/// `completed_count` is how many of them actually landed in history.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryGroupHeader {
+    pub group_id: u64,
+    pub title: String,
+    pub total_count: u64,
+    pub completed_count: u64,
+    pub latest_downloaded_at: i64,
+}
+
+/// A top-level history row: either a batch group header or a standalone item.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HistoryEntry {
+    Group { group: HistoryGroupHeader },
+    Single { item: HistoryItem },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryResult {
-    pub items: Vec<HistoryItem>,
+    pub items: Vec<HistoryEntry>,
     pub total_count: u64,
     pub page: u32,
     pub page_size: u32,
@@ -224,10 +254,36 @@ pub struct HistoryResult {
 
 // === Queue Pagination ===
 
+/// Queue group header — live aggregate over a batch group's queue rows.
+/// `total_count` is fixed (from `download_groups`); the per-status counts and
+/// `progress` are computed at read time.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueGroupHeader {
+    pub group_id: u64,
+    pub title: String,
+    pub kind: String,
+    pub total_count: u64,
+    pub completed_count: u64,
+    pub failed_count: u64,
+    pub active_count: u64,
+    pub pending_count: u64,
+    pub progress: f32,
+    pub created_at: i64,
+}
+
+/// A top-level queue row: either a batch group header or a standalone item.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum QueueEntry {
+    Group { group: QueueGroupHeader },
+    Single { item: DownloadTaskInfo },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueResult {
-    pub items: Vec<DownloadTaskInfo>,
+    pub items: Vec<QueueEntry>,
     pub total_count: u64,
     pub page: u32,
     pub page_size: u32,
@@ -247,6 +303,9 @@ pub struct QueueSummary {
     pub pending_count: u64,
     pub completed_count: u64,
     pub total_count: u64,
+    /// task_id -> group title, for active/pending items that belong to a group.
+    /// Drives the small group chip in the mini queue popup.
+    pub active_group_titles: std::collections::HashMap<u64, String>,
 }
 
 // === Duplicate Check ===

@@ -120,6 +120,30 @@ async getQueueSummary() : Promise<Result<QueueSummary, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getGroupQueueItems(groupId: number) : Promise<Result<DownloadTaskInfo[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_group_queue_items", { groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getGroupHistoryItems(groupId: number) : Promise<Result<HistoryItem[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_group_history_items", { groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteHistoryGroup(groupId: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_history_group", { groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Validate if a URL is a valid YouTube URL
  */
@@ -180,6 +204,19 @@ async addToQueue(request: DownloadRequest) : Promise<Result<number, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Add multiple downloads as one batch. When `group_title` is set and there are
+ * 2+ requests, they are wrapped in a download group; otherwise each is inserted
+ * standalone. All rows go in as `pending` and the scheduler is kicked once.
+ */
+async addToQueueBatch(requests: DownloadRequest[], groupTitle: string | null, groupKind: string | null) : Promise<Result<BatchEnqueueResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_to_queue_batch", { requests, groupTitle, groupKind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async cancelDownload(taskId: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_download", { taskId }) };
@@ -191,6 +228,18 @@ async cancelDownload(taskId: number) : Promise<Result<null, AppError>> {
 async cancelAllDownloads() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_all_downloads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel every still-active (pending/downloading) item in a group. Same pattern
+ * as cancel_all_downloads, scoped to the group.
+ */
+async cancelGroup(groupId: number) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_group", { groupId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -359,6 +408,11 @@ depOverrides?: Partial<{ [key in string]: string }>;
  * Whether the initial setup wizard has been completed
  */
 setupCompleted: boolean }
+/**
+ * Result of a batch enqueue. `group_id` is Some only when a group was actually
+ * created (i.e. 2+ items survived duplicate filtering).
+ */
+export type BatchEnqueueResult = { groupId: number | null; taskIds: number[] }
 export type DepInfo = { installed: boolean; version: string | null; 
 /**
  * The source currently active for this dependency (honoring any override).
@@ -389,16 +443,41 @@ export type DuplicateCheckResult = { inHistory: boolean; inQueue: boolean; histo
 export type FormatInfo = { formatId: string; ext: string; resolution: string | null; qualityLabel: string | null; filesize: number | null; vcodec: string | null; acodec: string | null; hasVideo: boolean; hasAudio: boolean }
 export type FullDependencyStatus = { ytdlp: DepInfo; ffmpeg: DepInfo; deno: DepInfo }
 export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null }
+/**
+ * A top-level history row: either a batch group header or a standalone item.
+ */
+export type HistoryEntry = { kind: "group"; group: HistoryGroupHeader } | { kind: "single"; item: HistoryItem }
+/**
+ * History group header — aggregate over the *completed* items of a batch group.
+ * `total_count` comes from `download_groups` (fixed at batch time), while
+ * `completed_count` is how many of them actually landed in history.
+ */
+export type HistoryGroupHeader = { groupId: number; title: string; totalCount: number; completedCount: number; latestDownloadedAt: number }
 export type HistoryItem = { id: number; videoUrl: string; videoId: string; title: string; qualityLabel: string; format: string; filePath: string; fileSize: number | null; downloadedAt: number }
-export type HistoryResult = { items: HistoryItem[]; totalCount: number; page: number; pageSize: number }
+export type HistoryResult = { items: HistoryEntry[]; totalCount: number; page: number; pageSize: number }
 export type LogEntry = { id: number; timestamp: number; level: string; category: string; message: string; details: string | null }
 export type LogQueryResult = { items: LogEntry[]; totalCount: number; page: number; pageSize: number }
 export type LogStats = { totalCount: number; errorCount: number; warnCount: number; infoCount: number }
 export type NewLogEvent = { entry: LogEntry }
 export type PlaylistEntry = { url: string; videoId: string; title: string | null; duration: number | null; thumbnail: string | null }
 export type PlaylistResult = { playlistId: string; title: string; url: string; videoCount: number | null; channelName: string | null; entries: PlaylistEntry[] }
-export type QueueResult = { items: DownloadTaskInfo[]; totalCount: number; page: number; pageSize: number; activeCount: number; pendingCount: number; completedCount: number; failedCount: number; cancelledCount: number }
-export type QueueSummary = { activeItems: DownloadTaskInfo[]; recentCompleted: DownloadTaskInfo[]; activeCount: number; pendingCount: number; completedCount: number; totalCount: number }
+/**
+ * A top-level queue row: either a batch group header or a standalone item.
+ */
+export type QueueEntry = { kind: "group"; group: QueueGroupHeader } | { kind: "single"; item: DownloadTaskInfo }
+/**
+ * Queue group header — live aggregate over a batch group's queue rows.
+ * `total_count` is fixed (from `download_groups`); the per-status counts and
+ * `progress` are computed at read time.
+ */
+export type QueueGroupHeader = { groupId: number; title: string; kind: string; totalCount: number; completedCount: number; failedCount: number; activeCount: number; pendingCount: number; progress: number; createdAt: number }
+export type QueueResult = { items: QueueEntry[]; totalCount: number; page: number; pageSize: number; activeCount: number; pendingCount: number; completedCount: number; failedCount: number; cancelledCount: number }
+export type QueueSummary = { activeItems: DownloadTaskInfo[]; recentCompleted: DownloadTaskInfo[]; activeCount: number; pendingCount: number; completedCount: number; totalCount: number; 
+/**
+ * task_id -> group title, for active/pending items that belong to a group.
+ * Drives the small group chip in the mini queue popup.
+ */
+activeGroupTitles: Partial<{ [key in number]: string }> }
 export type QuickMetadata = { videoId: string; title: string; channel: string; channelUrl: string; thumbnail: string }
 export type UrlType = "video" | "channel" | "playlist" | "unknown"
 export type UrlValidation = { valid: boolean; urlType: UrlType; normalizedUrl: string | null; videoId: string | null }

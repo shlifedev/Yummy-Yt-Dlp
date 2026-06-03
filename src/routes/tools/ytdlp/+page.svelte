@@ -549,63 +549,55 @@
     batchProgress = { current: 0, total: totalCount }
     const formatStr = buildFormatString()
     const qualityLabel = isAudioFormat ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`) : (quality === "best" ? "Best" : quality)
+
+    // Duplicate-check all entries in parallel (was sequential N round-trips).
+    const checks = await Promise.all(entries.map(async (entry) => {
+      try {
+        const dup = await commands.checkDuplicate(entry.videoId)
+        return { entry, dup: dup.status === "ok" ? dup.data : null }
+      } catch {
+        return { entry, dup: null }
+      }
+    }))
+
     let skippedQueue = 0
     let skippedExists = 0
-    let queued = 0
-
-    for (const entry of entries) {
-      if (!downloadingAll) break
-
-      try {
-        const dupResult = await commands.checkDuplicate(entry.videoId)
-        if (!downloadingAll) break
-        if (dupResult.status === "ok" && dupResult.data) {
-          if (dupResult.data.inQueue) {
-            skippedQueue++
-            batchProgress = { current: batchProgress.current + 1, total: totalCount }
-            continue
-          }
-          if (dupResult.data.inHistory && dupResult.data.fileExists) {
-            skippedExists++
-            batchProgress = { current: batchProgress.current + 1, total: totalCount }
-            continue
-          }
-        }
-      } catch (e) { /* proceed on error */ }
-
-      if (!downloadingAll) break
-
-      const request = {
-        videoUrl: entry.url,
-        videoId: entry.videoId,
-        title: entry.title || `Video ${entry.videoId}`,
-        formatId: formatStr,
-        qualityLabel,
-        outputDir: null,
-        cookieBrowser: null,
-        audioFormat: isAudioFormat ? format : null,
-        audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
-      }
-
-      const result = await commands.addToQueue(request)
-      if (!downloadingAll) break
-      if (result.status === "error") {
-        console.error(`Failed to queue ${entry.title}:`, extractError(result.error))
-      } else {
-        queued++
-      }
-
-      batchProgress = { current: batchProgress.current + 1, total: totalCount }
+    const survivors: typeof entries = []
+    for (const { entry, dup } of checks) {
+      if (dup?.inQueue) { skippedQueue++; continue }
+      if (dup?.inHistory && dup.fileExists) { skippedExists++; continue }
+      survivors.push(entry)
     }
+    batchProgress = { current: totalCount - survivors.length, total: totalCount }
 
-    if (skippedQueue > 0 || skippedExists > 0) {
-      const messages: string[] = []
-      if (skippedQueue > 0) messages.push(t("download.skippedQueue", { count: skippedQueue }))
-      if (skippedExists > 0) messages.push(t("download.skippedExists", { count: skippedExists }))
-      error = messages.join(" ")
-    }
-    if (queued > 0) {
-      window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: queued } }))
+    const messages: string[] = []
+    if (skippedQueue > 0) messages.push(t("download.skippedQueue", { count: skippedQueue }))
+    if (skippedExists > 0) messages.push(t("download.skippedExists", { count: skippedExists }))
+    if (messages.length) error = messages.join(" ")
+
+    if (survivors.length === 0) return
+
+    const requests = survivors.map((entry) => ({
+      videoUrl: entry.url,
+      videoId: entry.videoId,
+      title: entry.title || `Video ${entry.videoId}`,
+      formatId: formatStr,
+      qualityLabel,
+      outputDir: null,
+      cookieBrowser: null,
+      audioFormat: isAudioFormat ? format : null,
+      audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
+    }))
+
+    // Backend wraps these in a group iff a title is given AND 2+ requests survive.
+    const groupTitle = survivors.length >= 2 ? (playlistResult?.title ?? null) : null
+    const result = await commands.addToQueueBatch(requests, groupTitle, null)
+    batchProgress = { current: totalCount, total: totalCount }
+
+    if (result.status === "error") {
+      console.error("Batch enqueue failed:", extractError(result.error))
+    } else {
+      window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: survivors.length } }))
     }
   }
 

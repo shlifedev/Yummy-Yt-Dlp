@@ -137,6 +137,10 @@ const fr: Record<string, string> = {
   "history.searchPlaceholder": "Rechercher par titre...",
   "history.empty": "Aucun historique de téléchargement",
   "history.deleteConfirm": "Supprimer cet élément ?",
+  "history.deleteGroup": "Supprimer le groupe",
+  "history.deleteGroupConfirm": "Supprimer tout l'historique de ce groupe ?",
+  "queue.groupProgress": "{completed}/{total} terminé",
+  "queue.cancelGroup": "Annuler le groupe",
 
   "settings.title": "Paramètres",
   "settings.subtitle": "Configurer les préférences de téléchargement",

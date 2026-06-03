@@ -3,7 +3,7 @@ use crate::modules::types::AppError;
 use crate::ytdlp::types::*;
 use rusqlite::{params, OptionalExtension};
 
-fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
+pub(super) fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
     Ok(DownloadTaskInfo {
         id: row.get(0)?,
         video_url: row.get(1)?,
@@ -24,7 +24,7 @@ fn map_download_row(row: &rusqlite::Row) -> rusqlite::Result<DownloadTaskInfo> {
     })
 }
 
-const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality";
+pub(super) const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality";
 
 impl Database {
     pub fn insert_download(
@@ -52,45 +52,6 @@ impl Database {
         ).map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(conn.last_insert_rowid() as u64)
-    }
-
-    /// Insert multiple downloads in a single transaction for batch/playlist operations.
-    pub fn insert_downloads_batch(
-        &self,
-        items: &[(DownloadRequest, String)],
-    ) -> Result<Vec<u64>, AppError> {
-        let mut conn = self.conn();
-        let tx = conn
-            .transaction()
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let created_at = chrono::Utc::now().timestamp();
-        let mut ids = Vec::with_capacity(items.len());
-
-        for (req, output_path) in items {
-            tx.execute(
-                "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, created_at, audio_format, audio_quality)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    req.video_url,
-                    req.video_id,
-                    req.title,
-                    req.format_id,
-                    req.quality_label,
-                    output_path,
-                    created_at,
-                    req.audio_format,
-                    req.audio_quality,
-                ],
-            )
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-            ids.push(tx.last_insert_rowid() as u64);
-        }
-
-        tx.commit()
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        Ok(ids)
     }
 
     pub fn update_download_status(
@@ -219,9 +180,11 @@ impl Database {
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        // Copy the downloads row's group_id into history so completed batch items
+        // stay grouped in the history view (task id is the last param).
         tx.execute(
-            "INSERT INTO history (video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO history (video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at, group_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, group_id FROM downloads WHERE id = ?9",
             params![
                 history.video_url,
                 history.video_id,
@@ -231,6 +194,7 @@ impl Database {
                 history.file_path,
                 history.file_size,
                 history.downloaded_at,
+                id,
             ],
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
@@ -325,103 +289,6 @@ impl Database {
         Ok(rows as u32)
     }
 
-    pub fn get_download_queue_paginated(
-        &self,
-        page: u32,
-        page_size: u32,
-        status_filter: Option<&str>,
-    ) -> Result<QueueResult, AppError> {
-        let page_size = page_size.clamp(1, 100);
-        let offset = (page as u64) * (page_size as u64);
-        let conn = self.conn();
-
-        // Get status counts in one query
-        let mut count_stmt = conn
-            .prepare("SELECT status, COUNT(*) FROM downloads GROUP BY status")
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let mut active_count: u64 = 0;
-        let mut pending_count: u64 = 0;
-        let mut completed_count: u64 = 0;
-        let mut failed_count: u64 = 0;
-        let mut cancelled_count: u64 = 0;
-
-        let rows = count_stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
-            })
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        for row in rows {
-            let (status, count) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
-            match status.as_str() {
-                "downloading" => active_count = count,
-                "pending" => pending_count = count,
-                "completed" => completed_count = count,
-                "failed" => failed_count = count,
-                "cancelled" => cancelled_count = count,
-                _ => {}
-            }
-        }
-
-        // Get filtered total count and items
-        let (total_count, items) = if let Some(filter) = status_filter {
-            let total: u64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM downloads WHERE status = ?1",
-                    params![filter],
-                    |row| row.get(0),
-                )
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            let mut stmt = conn
-                .prepare(&format!(
-                    "SELECT {} FROM downloads WHERE status = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-                    DOWNLOAD_COLUMNS
-                ))
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            let tasks = stmt
-                .query_map(params![filter, page_size, offset], map_download_row)
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            (total, tasks)
-        } else {
-            let total: u64 = conn
-                .query_row("SELECT COUNT(*) FROM downloads", [], |row| row.get(0))
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            let mut stmt = conn
-                .prepare(&format!(
-                    "SELECT {} FROM downloads ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
-                    DOWNLOAD_COLUMNS
-                ))
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            let tasks = stmt
-                .query_map(params![page_size, offset], map_download_row)
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-            (total, tasks)
-        };
-
-        Ok(QueueResult {
-            items,
-            total_count,
-            page,
-            page_size,
-            active_count,
-            pending_count,
-            completed_count,
-            failed_count,
-            cancelled_count,
-        })
-    }
-
     pub fn get_queue_summary(&self, recent_completed_limit: u32) -> Result<QueueSummary, AppError> {
         let conn = self.conn();
 
@@ -480,6 +347,27 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        // Group titles for active/pending items that belong to a group (popup chips).
+        let mut active_group_titles = std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT d.id, g.title FROM downloads d
+                     JOIN download_groups g ON g.id = d.group_id
+                     WHERE d.status IN ('downloading', 'pending')",
+                )
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            for row in rows {
+                let (id, title) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+                active_group_titles.insert(id, title);
+            }
+        }
+
         Ok(QueueSummary {
             active_items,
             recent_completed,
@@ -487,6 +375,7 @@ impl Database {
             pending_count,
             completed_count,
             total_count,
+            active_group_titles,
         })
     }
 

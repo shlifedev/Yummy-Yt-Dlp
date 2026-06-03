@@ -143,11 +143,12 @@
       if (result.status === "ok") {
         const data = result.data
         activeDownloads = data.activeItems.map((item: any) => {
+          const groupTitle = data.activeGroupTitles[item.id] ?? null
           const cached = progressCache.get(item.id)
           if (cached && item.status === "downloading") {
-            return { ...item, ...cached }
+            return { ...item, ...cached, groupTitle }
           }
-          return item
+          return { ...item, groupTitle }
         })
         recentCompleted = data.recentCompleted
         // 더 이상 활성이 아닌 다운로드의 캐시 정리
@@ -930,6 +931,12 @@
         {#each activeDownloads as item (item.id)}
           <div class="bg-yt-bg rounded border border-yt-border p-2.5 relative overflow-hidden group">
             <p class="text-xs font-medium text-yt-text truncate relative z-10">{item.title}</p>
+            {#if item.groupTitle}
+              <p class="text-[9px] text-yt-text-muted truncate relative z-10 flex items-center gap-0.5 mt-0.5">
+                <span class="material-symbols-outlined text-[11px]">playlist_play</span>
+                {item.groupTitle}
+              </p>
+            {/if}
             <div class="flex items-center justify-between mt-1.5 relative z-10">
               <span class="text-[10px] text-yt-text-secondary font-mono">{(item.progress || 0).toFixed(0)}%</span>
               <span class="text-[10px] text-yt-text-muted">{item.speed || ""}</span>

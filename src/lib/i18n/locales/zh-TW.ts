@@ -137,6 +137,10 @@ const zhTW: Record<string, string> = {
   "history.searchPlaceholder": "依標題搜尋...",
   "history.empty": "尚無下載紀錄",
   "history.deleteConfirm": "確定要刪除此項目嗎？",
+  "history.deleteGroup": "刪除群組",
+  "history.deleteGroupConfirm": "刪除此群組的所有記錄？",
+  "queue.groupProgress": "{completed}/{total} 完成",
+  "queue.cancelGroup": "取消群組",
 
   "settings.title": "設定",
   "settings.subtitle": "設定下載偏好",

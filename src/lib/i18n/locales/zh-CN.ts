@@ -137,6 +137,10 @@ const zhCN: Record<string, string> = {
   "history.searchPlaceholder": "按标题搜索...",
   "history.empty": "暂无下载历史",
   "history.deleteConfirm": "确定要删除此项吗？",
+  "history.deleteGroup": "删除分组",
+  "history.deleteGroupConfirm": "删除此分组的所有记录？",
+  "queue.groupProgress": "{completed}/{total} 完成",
+  "queue.cancelGroup": "取消分组",
 
   "settings.title": "设置",
   "settings.subtitle": "配置下载偏好",

@@ -1,9 +1,12 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
+  import type { HistoryItem } from "$lib/bindings"
   import { onMount, onDestroy } from "svelte"
   import { t, getDateLocale } from "$lib/i18n/index.svelte"
   import { formatSize } from "$lib/utils/format"
+  import GroupHeader from "$lib/components/GroupHeader.svelte"
 
+  // Each entry is a HistoryEntry: { kind: "group", group } | { kind: "single", item }
   let items = $state<any[]>([])
   let totalCount = $state(0)
   let currentPage = $state(0)
@@ -12,7 +15,11 @@
   let loading = $state(true)
   let searchTimeout: ReturnType<typeof setTimeout>
 
-  // 5-2: Clean up searchTimeout on unmount
+  // Group fold-out state — history groups default to collapsed (everything is done).
+  let expandedGroups = $state<Set<number>>(new Set())
+  let userTouchedGroups = $state<Set<number>>(new Set())
+  let groupItems = $state<Map<number, HistoryItem[]>>(new Map())
+
   onDestroy(() => { clearTimeout(searchTimeout) })
 
   let totalPages = $derived(Math.ceil(totalCount / pageSize))
@@ -26,9 +33,40 @@
       if (result.status === "ok") {
         items = result.data.items
         totalCount = result.data.totalCount
+        for (const entry of items) {
+          if (entry.kind === "group" && isExpanded(entry.group)) {
+            loadGroupItems(entry.group.groupId)
+          }
+        }
       }
     } catch (e) { console.error(e) }
     finally { loading = false }
+  }
+
+  async function loadGroupItems(groupId: number) {
+    try {
+      const r = await commands.getGroupHistoryItems(groupId)
+      if (r.status === "ok") {
+        groupItems.set(groupId, r.data)
+        groupItems = new Map(groupItems)
+      }
+    } catch (e) {
+      console.error("Failed to load group history items:", e)
+    }
+  }
+
+  function isExpanded(group: any): boolean {
+    return userTouchedGroups.has(group.groupId) && expandedGroups.has(group.groupId)
+  }
+
+  function toggleGroup(group: any) {
+    const id = group.groupId
+    const open = isExpanded(group)
+    const next = new Set(expandedGroups)
+    if (open) next.delete(id)
+    else { next.add(id); loadGroupItems(id) }
+    expandedGroups = next
+    userTouchedGroups = new Set(userTouchedGroups).add(id)
   }
 
   function handleSearch(value: string) {
@@ -37,7 +75,6 @@
     searchTimeout = setTimeout(() => { currentPage = 0; loadHistory() }, 300)
   }
 
-  // 4-2: Add try/catch to prevent unhandled errors
   async function handleDelete(id: number) {
     if (!confirm(t("history.deleteConfirm"))) return
     try {
@@ -48,6 +85,16 @@
     }
   }
 
+  async function handleDeleteGroup(groupId: number) {
+    if (!confirm(t("history.deleteGroupConfirm"))) return
+    try {
+      const result = await commands.deleteHistoryGroup(groupId)
+      if (result.status === "ok") await loadHistory()
+    } catch (e) {
+      console.error("Failed to delete history group:", e)
+    }
+  }
+
   function prevPage() { if (currentPage > 0) { currentPage--; loadHistory() } }
   function nextPage() { if (currentPage < totalPages - 1) { currentPage++; loadHistory() } }
 
@@ -55,6 +102,34 @@
     return new Date(ts * 1000).toLocaleString(getDateLocale(), { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
   }
 </script>
+
+{#snippet historyItemCard(item: any, indented: boolean)}
+  <div class="flex gap-4 items-center group transition-colors {indented ? 'px-4 py-3 pl-12 hover:bg-yt-overlay' : 'bg-yt-highlight rounded-xl p-4 hover:bg-yt-overlay border border-yt-border'}">
+    <div class="w-20 h-14 bg-yt-overlay-subtle rounded-lg overflow-hidden shrink-0 relative">
+      <div class="w-full h-full bg-gradient-to-br from-yt-overlay-subtle to-yt-overlay-strong flex items-center justify-center">
+        <span class="material-symbols-outlined text-yt-success/60">check_circle</span>
+      </div>
+    </div>
+
+    <div class="flex-1 min-w-0">
+      <h4 class="font-medium text-yt-text text-sm truncate mb-1">{item.title}</h4>
+      <div class="flex items-center gap-3 text-xs text-yt-text-secondary">
+        <span class="px-2 py-0.5 rounded bg-yt-overlay text-yt-text-secondary">{item.qualityLabel || "N/A"}</span>
+        <span class="px-2 py-0.5 rounded bg-yt-overlay text-yt-text-secondary">{item.format}</span>
+        <span>{formatSize(item.fileSize, "-")}</span>
+        <span class="text-yt-text-secondary">{formatDate(item.downloadedAt)}</span>
+      </div>
+    </div>
+
+    <button
+      class="opacity-0 group-hover:opacity-100 text-yt-text-secondary hover:text-yt-error transition-all p-2 rounded-lg hover:bg-yt-error/10"
+      onclick={() => handleDelete(item.id)}
+      aria-label="Delete"
+    >
+      <span class="material-symbols-outlined text-[20px]">delete</span>
+    </button>
+  </div>
+{/snippet}
 
 <div class="flex-1 flex flex-col h-full overflow-y-auto hide-scrollbar">
   <header class="px-6 py-4 shrink-0">
@@ -91,32 +166,29 @@
         <p class="text-yt-text-secondary mt-4 text-lg">{t("history.empty")}</p>
       </div>
     {:else}
-      {#each items as item (item.id)}
-        <div class="bg-yt-highlight rounded-xl p-4 flex gap-4 items-center group hover:bg-yt-overlay transition-colors border border-yt-border">
-          <div class="w-20 h-14 bg-yt-overlay-subtle rounded-lg overflow-hidden shrink-0 relative">
-            <div class="w-full h-full bg-gradient-to-br from-yt-overlay-subtle to-yt-overlay-strong flex items-center justify-center">
-              <span class="material-symbols-outlined text-yt-success/60">check_circle</span>
-            </div>
+      {#each items as entry (entry.kind === "group" ? `g${entry.group.groupId}` : `s${entry.item.id}`)}
+        {#if entry.kind === "group"}
+          <div class="bg-yt-highlight rounded-xl border border-yt-border overflow-hidden">
+            <GroupHeader
+              title={entry.group.title}
+              completedCount={entry.group.completedCount}
+              totalCount={entry.group.totalCount}
+              expanded={isExpanded(entry.group)}
+              variant="history"
+              onToggle={() => toggleGroup(entry.group)}
+              onAction={() => handleDeleteGroup(entry.group.groupId)}
+            />
+            {#if isExpanded(entry.group)}
+              <div class="divide-y divide-yt-border/30 border-t border-yt-border bg-yt-bg/30">
+                {#each (groupItems.get(entry.group.groupId) ?? []) as item (item.id)}
+                  {@render historyItemCard(item, true)}
+                {/each}
+              </div>
+            {/if}
           </div>
-
-          <div class="flex-1 min-w-0">
-            <h4 class="font-medium text-yt-text text-sm truncate mb-1">{item.title}</h4>
-            <div class="flex items-center gap-3 text-xs text-yt-text-secondary">
-              <span class="px-2 py-0.5 rounded bg-yt-overlay text-yt-text-secondary">{item.qualityLabel || "N/A"}</span>
-              <span class="px-2 py-0.5 rounded bg-yt-overlay text-yt-text-secondary">{item.format}</span>
-              <span>{formatSize(item.fileSize, "-")}</span>
-              <span class="text-yt-text-secondary">{formatDate(item.downloadedAt)}</span>
-            </div>
-          </div>
-
-          <button
-            class="opacity-0 group-hover:opacity-100 text-yt-text-secondary hover:text-yt-error transition-all p-2 rounded-lg hover:bg-yt-error/10"
-            onclick={() => handleDelete(item.id)}
-            aria-label="Delete"
-          >
-            <span class="material-symbols-outlined text-[20px]">delete</span>
-          </button>
-        </div>
+        {:else}
+          {@render historyItemCard(entry.item, false)}
+        {/if}
       {/each}
 
       <!-- Pagination -->

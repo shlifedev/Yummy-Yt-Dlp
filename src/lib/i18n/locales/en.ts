@@ -140,6 +140,10 @@ const en: Record<string, string> = {
   "history.searchPlaceholder": "Search by title...",
   "history.empty": "No download history",
   "history.deleteConfirm": "Delete this item?",
+  "history.deleteGroup": "Delete group",
+  "history.deleteGroupConfirm": "Delete all history in this group?",
+  "queue.groupProgress": "{completed}/{total} done",
+  "queue.cancelGroup": "Cancel group",
 
   // Settings page
   "settings.title": "Settings",

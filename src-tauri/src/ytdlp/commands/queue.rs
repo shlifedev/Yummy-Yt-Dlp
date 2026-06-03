@@ -72,7 +72,7 @@ pub async fn get_download_queue_paginated(
     status_filter: Option<String>,
 ) -> Result<QueueResult, AppError> {
     let db = app.state::<crate::DbState>();
-    db.get_download_queue_paginated(page, page_size, status_filter.as_deref())
+    db.get_queue_grouped(page, page_size, status_filter.as_deref())
 }
 
 #[tauri::command]
@@ -80,4 +80,14 @@ pub async fn get_download_queue_paginated(
 pub async fn get_queue_summary(app: AppHandle) -> Result<QueueSummary, AppError> {
     let db = app.state::<crate::DbState>();
     db.get_queue_summary(5)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_group_queue_items(
+    app: AppHandle,
+    group_id: u64,
+) -> Result<Vec<DownloadTaskInfo>, AppError> {
+    let db = app.state::<crate::DbState>();
+    db.get_group_queue_items(group_id)
 }

@@ -135,6 +135,10 @@ const ko: Record<string, string> = {
   "history.searchPlaceholder": "제목으로 검색...",
   "history.empty": "다운로드 이력이 없습니다",
   "history.deleteConfirm": "이 항목을 삭제하시겠습니까?",
+  "history.deleteGroup": "그룹 삭제",
+  "history.deleteGroupConfirm": "이 그룹의 모든 기록을 삭제하시겠습니까?",
+  "queue.groupProgress": "{completed}/{total} 완료",
+  "queue.cancelGroup": "그룹 취소",
 
   "settings.title": "설정",
   "settings.subtitle": "다운로드 환경 설정",

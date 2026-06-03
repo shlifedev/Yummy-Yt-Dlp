@@ -135,6 +135,10 @@ const de: Record<string, string> = {
   "history.searchPlaceholder": "Nach Titel suchen...",
   "history.empty": "Kein Download-Verlauf",
   "history.deleteConfirm": "Diesen Eintrag löschen?",
+  "history.deleteGroup": "Gruppe löschen",
+  "history.deleteGroupConfirm": "Den gesamten Verlauf dieser Gruppe löschen?",
+  "queue.groupProgress": "{completed}/{total} fertig",
+  "queue.cancelGroup": "Gruppe abbrechen",
 
   "settings.title": "Einstellungen",
   "settings.subtitle": "Download-Einstellungen konfigurieren",

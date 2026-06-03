@@ -135,6 +135,10 @@ const ja: Record<string, string> = {
   "history.searchPlaceholder": "タイトルで検索...",
   "history.empty": "ダウンロード履歴がありません",
   "history.deleteConfirm": "この項目を削除しますか？",
+  "history.deleteGroup": "グループを削除",
+  "history.deleteGroupConfirm": "このグループのすべての履歴を削除しますか？",
+  "queue.groupProgress": "{completed}/{total} 完了",
+  "queue.cancelGroup": "グループをキャンセル",
 
   "settings.title": "設定",
   "settings.subtitle": "ダウンロード設定",

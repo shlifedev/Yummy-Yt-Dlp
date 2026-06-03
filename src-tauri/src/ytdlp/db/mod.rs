@@ -1,3 +1,4 @@
+mod groups;
 mod history;
 mod queue;
 
@@ -11,7 +12,7 @@ pub struct Database {
 }
 
 /// Current schema version. Increment when adding new migrations.
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 7;
 
 impl Database {
     pub fn new(app_data_dir: &Path) -> Result<Self, AppError> {
@@ -99,6 +100,29 @@ impl Database {
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 
+        if current < 7 {
+            // v7: Download groups for batch playlist/channel downloads.
+            // (v6 is used by another branch's `error_detail` migration on the
+            //  shared app-data DB — same app identifier — so we take v7 to avoid
+            //  a version-number clash that would silently skip this migration.)
+            // total_count is fixed at batch time so history headers can show
+            // "N/total done" even after the queue rows are cleared.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS download_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'playlist',
+                    total_count INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                );
+                ALTER TABLE downloads ADD COLUMN group_id INTEGER;
+                ALTER TABLE history ADD COLUMN group_id INTEGER;
+                CREATE INDEX IF NOT EXISTS idx_downloads_group_id ON downloads(group_id);
+                CREATE INDEX IF NOT EXISTS idx_history_group_id ON history(group_id);",
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
+
         if current < SCHEMA_VERSION {
             Self::set_schema_version(conn, SCHEMA_VERSION)?;
         }
@@ -115,8 +139,10 @@ impl Database {
     /// Uses the live connection instead of deleting DB files to avoid stale state.
     pub fn clear_all_data(&self) -> Result<(), AppError> {
         let conn = self.conn();
-        conn.execute_batch("DELETE FROM downloads; DELETE FROM history;")
-            .map_err(|e| AppError::DatabaseError(format!("Failed to clear database: {}", e)))?;
+        conn.execute_batch(
+            "DELETE FROM downloads; DELETE FROM history; DELETE FROM download_groups;",
+        )
+        .map_err(|e| AppError::DatabaseError(format!("Failed to clear database: {}", e)))?;
         // Reclaim disk space
         conn.execute_batch("VACUUM;")
             .map_err(|e| AppError::DatabaseError(format!("Failed to vacuum database: {}", e)))?;
