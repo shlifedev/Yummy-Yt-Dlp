@@ -23,6 +23,16 @@ impl Database {
         let conn =
             Connection::open(&db_path).map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        // WAL + relaxed sync: far fewer fsyncs per write (the queue does frequent
+        // progress/status updates) and readers don't block the single writer.
+        // busy_timeout avoids spurious SQLITE_BUSY under brief contention.
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;",
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
         Self::create_tables(&conn)?;
         Self::run_migrations(&conn)?;
 
