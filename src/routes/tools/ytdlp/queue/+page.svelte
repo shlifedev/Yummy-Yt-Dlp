@@ -66,8 +66,9 @@
 
   async function handleCancel(id: number) {
     try {
-      await commands.cancelDownload(id)
-      await loadQueue()
+      const result = await commands.cancelDownload(id)
+      if (result.status === "ok") await loadQueue()
+      else console.error("Failed to cancel download:", Object.values(result.error)[0])
     } catch (e) {
       console.error("Failed to cancel download:", e)
     }

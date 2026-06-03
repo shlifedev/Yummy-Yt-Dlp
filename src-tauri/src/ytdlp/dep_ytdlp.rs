@@ -36,6 +36,9 @@ fn get_binary_name() -> &'static str {
 
 /// Install yt-dlp by downloading from GitHub releases.
 pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
+    // Serialize against any concurrent yt-dlp install/update/delete so they don't
+    // corrupt the shared temp file or race the final binary swap.
+    let _lock = lock_dependency("yt-dlp").await;
     let bin_dir = ensure_bin_dir(app)?;
     let url = get_download_url();
     let temp_name = format!("{}.tmp", get_binary_name());

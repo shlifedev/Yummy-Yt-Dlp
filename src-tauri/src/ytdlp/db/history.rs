@@ -56,7 +56,8 @@ impl Database {
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?
         };
 
-        let offset = page * page_size;
+        // Widen before multiplying so a large page can't overflow u32 (matches db/queue.rs).
+        let offset = (page as u64) * (page_size as u64);
         let query = format!(
             "SELECT id, video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at
              FROM history
