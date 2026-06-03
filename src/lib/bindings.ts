@@ -355,6 +355,13 @@ newLogEvent: "new-log-event"
 
 /** user-defined types **/
 
+/**
+ * Global advanced yt-dlp options exposed via the "Advanced" panel on the download page.
+ * All options are global (not per-download) and persisted in settings.json. The container-level
+ * `#[serde(default)]` + a custom `Default` impl keeps old settings.json files (and partial objects
+ * sent from the frontend) loading cleanly even as new fields are added later.
+ */
+export type AdvancedOptions = { writeSubs: boolean; writeAutoSubs: boolean; embedSubs: boolean; subLangs: string; convertSubs: string; sponsorblockMode: string; sponsorblockCategories: string[]; embedThumbnail: boolean; embedMetadata: boolean; embedChapters: boolean; writeThumbnail: boolean; writeInfoJson: boolean; videoCodec: string; limitRate: string; concurrentFragments: number; retries: number | null; sleepInterval: number; mergeOutputFormat: string; remuxVideo: string; downloadSections: string; splitChapters: boolean; proxy: string; noMtime: boolean; restrictFilenames: boolean }
 export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string } | { DependencyInstallError: string } | { ChecksumError: string } | { NotImplemented: string }
 export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null; minimizeToTray: boolean | null; 
 /**
@@ -369,6 +376,10 @@ depMode: string;
  * an entry follows `dep_mode`.
  */
 depOverrides?: Partial<{ [key in string]: string }>; 
+/**
+ * Global advanced download options (subtitles, SponsorBlock, embedding, codec, etc.)
+ */
+advanced?: AdvancedOptions; 
 /**
  * Whether the initial setup wizard has been completed
  */

@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { commands, type PlaylistResult, type DuplicateCheckResult, type QuickMetadata } from "$lib/bindings"
+  import { commands, type PlaylistResult, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions } from "$lib/bindings"
+  import {
+    defaultAdvancedOptions,
+    validateAdvancedField,
+    type AdvancedTextField,
+    SPONSORBLOCK_CATEGORIES,
+    CONTAINER_FORMATS,
+    SUB_CONVERT_FORMATS,
+  } from "$lib/advanced"
   import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
   import { onMount, onDestroy } from "svelte"
@@ -22,7 +30,17 @@
   let format = $state<"mp4" | "mkv" | "mp3" | "flac" | "opus" | "wav">("mp4")
   let quality = $state("best")
   let audioQuality = $state("0")
-  let embedSubs = $state(true)
+
+  // Advanced options panel (global settings, persisted in AppSettings.advanced)
+  let advancedExpanded = $state(false)
+  let advanced = $state<AdvancedOptions>(defaultAdvancedOptions())
+
+  // Shared control classes for the advanced panel
+  const cbCls = "rounded border-yt-border text-yt-primary focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+  const selCls = "bg-yt-bg border border-yt-border rounded px-1.5 py-0.5 text-xs text-yt-text focus:ring-1 focus:ring-yt-primary focus:outline-none cursor-pointer"
+  const txtCls = "bg-yt-bg border border-yt-border rounded px-2 py-0.5 text-xs text-yt-text w-28 focus:ring-1 focus:ring-yt-primary focus:outline-none"
+  const numCls = "bg-yt-bg border border-yt-border rounded px-2 py-0.5 text-xs text-yt-text w-16 focus:ring-1 focus:ring-yt-primary focus:outline-none"
+  const hdrCls = "text-[10px] font-semibold uppercase tracking-wider text-yt-text-secondary/70"
 
   const audioFormats = ["mp3", "flac", "opus", "wav"] as const
   const isAudioFormat = $derived((audioFormats as readonly string[]).includes(format))
@@ -220,6 +238,7 @@
         templateUploaderFolder = result.data.templateUploaderFolder
         templateUploadDate = result.data.templateUploadDate
         templateVideoId = result.data.templateVideoId
+        advanced = result.data.advanced ?? defaultAdvancedOptions()
       }
     } catch (e) { console.error("Failed to load settings:", e) }
   }
@@ -231,6 +250,40 @@
       await commands.updateSettings(updated)
       fullSettings = updated
     } catch (e) { console.error("Failed to auto-save settings:", e) }
+  }
+
+  // Persist the advanced options. $state.snapshot unwraps the reactive proxy so Tauri can
+  // serialize a plain object.
+  function saveAdvanced() {
+    autoSaveSettings({ advanced: $state.snapshot(advanced) })
+  }
+
+  // Save a free-text advanced field only when it's valid (or empty); the backend rejects bad
+  // values too, but this keeps settings.json clean and gives instant inline feedback.
+  function saveAdvancedText(field: AdvancedTextField) {
+    if (validateAdvancedField(field, (advanced as any)[field])) saveAdvanced()
+  }
+
+  function toggleSponsorblockCategory(cat: string) {
+    advanced.sponsorblockCategories = advanced.sponsorblockCategories.includes(cat)
+      ? advanced.sponsorblockCategories.filter((c) => c !== cat)
+      : [...advanced.sponsorblockCategories, cat]
+    saveAdvanced()
+  }
+
+  function setConcurrentFragments(v: string) {
+    advanced.concurrentFragments = Math.max(1, Math.min(16, parseInt(v) || 1))
+    saveAdvanced()
+  }
+
+  function setRetries(v: string) {
+    advanced.retries = v.trim() === "" ? null : Math.max(0, Math.min(100, parseInt(v) || 0))
+    saveAdvanced()
+  }
+
+  function setSleepInterval(v: string) {
+    advanced.sleepInterval = Math.max(0, parseInt(v) || 0)
+    saveAdvanced()
   }
 
   async function handleSelectDir() {
@@ -897,7 +950,234 @@
                 />
                 <span class="text-xs font-mono text-yt-text font-bold w-4 text-center">{maxConcurrent}</span>
              </div>
+
+             <!-- Advanced toggle -->
+             <button
+               type="button"
+               class="shrink-0 flex items-center gap-1 px-2 py-1 rounded hover:bg-yt-highlight text-xs font-medium text-yt-text-secondary transition-colors"
+               onclick={() => advancedExpanded = !advancedExpanded}
+             >
+                <span class="material-symbols-outlined text-[15px]">tune</span>
+                <span>{t("download.advanced")}</span>
+                <span class="material-symbols-outlined text-[16px] transition-transform duration-200" style="transform: rotate({advancedExpanded ? 180 : 0}deg)">expand_more</span>
+             </button>
           </div>
+
+          {#if advancedExpanded && fullSettings?.advanced}
+            <div class="border-t border-yt-border/50 pt-3 space-y-3 text-xs text-yt-text-secondary">
+
+              <!-- Subtitles -->
+              <div class="space-y-1.5">
+                <div class={hdrCls}>{t("download.advSubsHeader")}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.writeSubs} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advWriteSubs")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.writeAutoSubs} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advWriteAutoSubs")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.embedSubs} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advEmbedSubs")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advSubLangs")}</span>
+                    <input
+                      type="text"
+                      bind:value={advanced.subLangs}
+                      oninput={() => saveAdvancedText("subLangs")}
+                      placeholder={t("download.advSubLangsPlaceholder")}
+                      class="{txtCls} {advanced.subLangs.trim() !== '' && !validateAdvancedField('subLangs', advanced.subLangs) ? 'border-yt-error' : ''}"
+                    />
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advConvertSubs")}</span>
+                    <select bind:value={advanced.convertSubs} onchange={saveAdvanced} class={selCls}>
+                      {#each SUB_CONVERT_FORMATS as f}
+                        <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
+                      {/each}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <!-- SponsorBlock -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advSbHeader")} <span class="font-normal normal-case text-yt-text-secondary/50">· {t("download.advNeedsFfmpeg")}</span></div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advSbMode")}</span>
+                    <select bind:value={advanced.sponsorblockMode} onchange={saveAdvanced} class={selCls}>
+                      <option value="off">{t("download.advSbOff")}</option>
+                      <option value="mark">{t("download.advSbMark")}</option>
+                      <option value="remove">{t("download.advSbRemove")}</option>
+                    </select>
+                  </label>
+                  {#if advanced.sponsorblockMode === "remove"}
+                    <span class="text-[10px] text-amber-500">{t("download.advSbRemoveWarn")}</span>
+                  {/if}
+                </div>
+                {#if advanced.sponsorblockMode !== "off"}
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span class="opacity-70">{t("download.advSbCategories")}</span>
+                    {#each SPONSORBLOCK_CATEGORIES as cat}
+                      <label class="flex items-center gap-1 hover:text-yt-text cursor-pointer">
+                        <input type="checkbox" checked={advanced.sponsorblockCategories.includes(cat)} onchange={() => toggleSponsorblockCategory(cat)} class={cbCls} />
+                        <span>{cat}</span>
+                      </label>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Embedding & metadata -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advEmbedHeader")} <span class="font-normal normal-case text-yt-text-secondary/50">· {t("download.advNeedsFfmpeg")}</span></div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.embedThumbnail} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advEmbedThumbnail")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.embedMetadata} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advEmbedMetadata")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.embedChapters} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advEmbedChapters")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.writeThumbnail} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advWriteThumbnail")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.writeInfoJson} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advWriteInfoJson")}</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Format & codec -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advFormatHeader")}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advVideoCodec")}</span>
+                    <select bind:value={advanced.videoCodec} onchange={saveAdvanced} class={selCls}>
+                      <option value="auto">{t("download.advCodecAuto")}</option>
+                      <option value="av01">AV1</option>
+                      <option value="vp9">VP9</option>
+                      <option value="h264">H.264</option>
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advLimitRate")}</span>
+                    <input
+                      type="text"
+                      bind:value={advanced.limitRate}
+                      oninput={() => saveAdvancedText("limitRate")}
+                      placeholder="1M"
+                      class="{numCls} {advanced.limitRate.trim() !== '' && !validateAdvancedField('limitRate', advanced.limitRate) ? 'border-yt-error' : ''}"
+                    />
+                  </label>
+                </div>
+                {#if advanced.videoCodec !== "auto"}
+                  <p class="text-[10px] text-yt-text-secondary/60">{t("download.advCodecHint")}</p>
+                {/if}
+              </div>
+
+              <!-- Network -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advNetHeader")}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advConcurrentFragments")}</span>
+                    <input type="number" min="1" max="16" value={advanced.concurrentFragments} oninput={(e) => setConcurrentFragments(e.currentTarget.value)} class={numCls} />
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advRetries")}</span>
+                    <input type="number" min="0" max="100" value={advanced.retries ?? ""} oninput={(e) => setRetries(e.currentTarget.value)} class={numCls} />
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advSleepInterval")}</span>
+                    <input type="number" min="0" value={advanced.sleepInterval} oninput={(e) => setSleepInterval(e.currentTarget.value)} class={numCls} />
+                  </label>
+                </div>
+              </div>
+
+              <!-- Container -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advContainerHeader")}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advMergeFormat")}</span>
+                    <select bind:value={advanced.mergeOutputFormat} onchange={saveAdvanced} class={selCls}>
+                      {#each CONTAINER_FORMATS as f}
+                        <option value={f}>{f === "" ? t("download.advCodecAuto") : f.toUpperCase()}</option>
+                      {/each}
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advRemuxVideo")}</span>
+                    <select bind:value={advanced.remuxVideo} onchange={saveAdvanced} class={selCls}>
+                      {#each CONTAINER_FORMATS as f}
+                        <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
+                      {/each}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Sections / chapters -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advSectionsHeader")} <span class="font-normal normal-case text-yt-text-secondary/50">· {t("download.advNeedsFfmpeg")}</span></div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advDownloadSections")}</span>
+                    <input
+                      type="text"
+                      bind:value={advanced.downloadSections}
+                      oninput={() => saveAdvancedText("downloadSections")}
+                      placeholder={t("download.advDownloadSectionsPlaceholder")}
+                      class="{txtCls} {advanced.downloadSections.trim() !== '' && !validateAdvancedField('downloadSections', advanced.downloadSections) ? 'border-yt-error' : ''}"
+                    />
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.splitChapters} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advSplitChapters")}</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Proxy / timestamp / filename -->
+              <div class="space-y-1.5 border-t border-yt-border/30 pt-2.5">
+                <div class={hdrCls}>{t("download.advMiscHeader")}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <label class="flex items-center gap-1.5">
+                    <span class="opacity-70">{t("download.advProxy")}</span>
+                    <input
+                      type="text"
+                      bind:value={advanced.proxy}
+                      oninput={() => saveAdvancedText("proxy")}
+                      placeholder="http://127.0.0.1:8080"
+                      class="{txtCls} w-44 {advanced.proxy.trim() !== '' && !validateAdvancedField('proxy', advanced.proxy) ? 'border-yt-error' : ''}"
+                    />
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.noMtime} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advNoMtime")}</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 hover:text-yt-text cursor-pointer">
+                    <input type="checkbox" bind:checked={advanced.restrictFilenames} onchange={saveAdvanced} class={cbCls} />
+                    <span>{t("download.advRestrictFilenames")}</span>
+                  </label>
+                </div>
+              </div>
+
+            </div>
+          {/if}
        </div>
     </div>
 

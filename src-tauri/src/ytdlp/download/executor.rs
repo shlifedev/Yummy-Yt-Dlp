@@ -515,10 +515,15 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         args.push("--windows-filenames".to_string());
     }
 
-    // Pass ffmpeg location explicitly if available
-    if let Some(ffmpeg_path) = binary::resolve_ffmpeg_path_with_app(&app).await {
-        args.extend(["--ffmpeg-location".to_string(), ffmpeg_path]);
-    }
+    // Pass ffmpeg location explicitly if available. Capture availability so advanced options can
+    // skip ffmpeg-dependent flags (embedding, remux, sponsorblock-remove, etc.).
+    let ffmpeg_available = match binary::resolve_ffmpeg_path_with_app(&app).await {
+        Some(ffmpeg_path) => {
+            args.extend(["--ffmpeg-location".to_string(), ffmpeg_path]);
+            true
+        }
+        None => false,
+    };
 
     // Add cookie browser from settings if available (validated)
     if let Some(browser) = &settings.cookie_browser {
@@ -534,6 +539,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             );
         }
     }
+
+    // Apply global advanced options (subtitles, SponsorBlock, embedding, codec, network, etc.)
+    args.extend(super::advanced::build_advanced_args(
+        &settings.advanced,
+        task.audio_format.is_some(),
+        ffmpeg_available,
+    ));
 
     // Add video URL
     args.push(task.video_url.clone());

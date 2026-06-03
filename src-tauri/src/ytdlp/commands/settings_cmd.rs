@@ -27,6 +27,22 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
         security::sanitize_cookie_browser(browser)?;
     }
 
+    // Validate advanced free-text options (empty = unset, allowed). Enum/allowlist fields are
+    // additionally re-checked at download time in download::advanced::build_advanced_args.
+    let adv = &settings.advanced;
+    if !adv.sub_langs.is_empty() {
+        security::sanitize_sub_langs(&adv.sub_langs)?;
+    }
+    if !adv.limit_rate.is_empty() {
+        security::sanitize_limit_rate(&adv.limit_rate)?;
+    }
+    if !adv.download_sections.is_empty() {
+        security::sanitize_download_sections(&adv.download_sections)?;
+    }
+    if !adv.proxy.is_empty() {
+        security::sanitize_proxy(&adv.proxy)?;
+    }
+
     // Clamp max_concurrent to safe range
     let mut settings = settings;
     settings.max_concurrent = security::clamp_max_concurrent(settings.max_concurrent);

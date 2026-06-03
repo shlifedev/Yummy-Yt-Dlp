@@ -1,6 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
   import type { FullDependencyStatus, DepInstallEvent, AppSettings } from "$lib/bindings"
+  import { defaultAdvancedOptions } from "$lib/advanced"
   import { onMount } from "svelte"
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
@@ -22,6 +23,7 @@
     minimizeToTray: null,
     depMode: "hybrid",
     depOverrides: {},
+    advanced: defaultAdvancedOptions(),
     setupCompleted: true,
   })
 

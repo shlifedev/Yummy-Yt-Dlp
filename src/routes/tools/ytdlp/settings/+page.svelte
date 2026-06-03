@@ -1,6 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
   import type { AppSettings } from "$lib/bindings"
+  import { defaultAdvancedOptions } from "$lib/advanced"
   import { onMount } from "svelte"
   import { t, setLocale, getLocale, supportedLocales } from "$lib/i18n/index.svelte"
   import { setTheme, getTheme } from "$lib/theme/index.svelte"
@@ -22,6 +23,7 @@
     minimizeToTray: null,
     depMode: "external",
     depOverrides: {},
+    advanced: defaultAdvancedOptions(),
     setupCompleted: true,
   })
 
