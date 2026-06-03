@@ -12,7 +12,7 @@ pub struct Database {
 }
 
 /// Current schema version. Increment when adding new migrations.
-const SCHEMA_VERSION: u32 = 7;
+const SCHEMA_VERSION: u32 = 8;
 
 impl Database {
     pub fn new(app_data_dir: &Path) -> Result<Self, AppError> {
@@ -137,10 +137,57 @@ impl Database {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         }
 
+        if current < 8 {
+            // v8: Repair installs stuck on v7. v7 bundled `ALTER TABLE history ADD COLUMN group_id`
+            // into one execute_batch; where `downloads.group_id` already existed that batch aborted
+            // early and left `history.group_id` missing, so every completed download failed to
+            // record into history and duplicate detection never recognized anything. ensure_column
+            // re-adds whatever is absent, idempotently.
+            Self::ensure_column(conn, "downloads", "group_id", "INTEGER")?;
+            Self::ensure_column(conn, "history", "group_id", "INTEGER")?;
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_downloads_group_id ON downloads(group_id);
+                 CREATE INDEX IF NOT EXISTS idx_history_group_id ON history(group_id);",
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
+
         if current < SCHEMA_VERSION {
             Self::set_schema_version(conn, SCHEMA_VERSION)?;
         }
 
+        Ok(())
+    }
+
+    /// Add `column` to `table` only when it isn't already present. SQLite's `ALTER TABLE ADD
+    /// COLUMN` errors on a duplicate column, which inside an `execute_batch` aborts every later
+    /// statement — exactly how v7 left `history.group_id` missing on some installs. Checking first
+    /// keeps the migration idempotent and safe to re-run.
+    fn ensure_column(
+        conn: &Connection,
+        table: &str,
+        column: &str,
+        decl: &str,
+    ) -> Result<(), AppError> {
+        let present = {
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({})", table))
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            let names: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            names.iter().any(|name| name.as_str() == column)
+        };
+
+        if !present {
+            conn.execute(
+                &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, decl),
+                [],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        }
         Ok(())
     }
 
@@ -206,3 +253,62 @@ impl Database {
 }
 
 use rusqlite::OptionalExtension;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+        conn.prepare(&format!("PRAGMA table_info({})", table))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn ensure_column_adds_when_missing_and_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE history (id INTEGER PRIMARY KEY, video_id TEXT NOT NULL);",
+        )
+        .unwrap();
+
+        // First call adds the column; the second is a no-op (must not error on a duplicate column).
+        Database::ensure_column(&conn, "history", "group_id", "INTEGER").unwrap();
+        Database::ensure_column(&conn, "history", "group_id", "INTEGER").unwrap();
+
+        assert!(column_names(&conn, "history")
+            .iter()
+            .any(|c| c == "group_id"));
+
+        // Regression: a group_id-referencing insert (what complete_and_record does) must succeed.
+        conn.execute(
+            "INSERT INTO history (video_id, group_id) VALUES ('abc', 1)",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migration_repairs_v7_install_missing_history_group_id() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Reproduce a v7 install where the batch added downloads.group_id but never reached
+        // history.group_id — the exact state that broke history recording in the field.
+        conn.execute_batch(
+            "CREATE TABLE downloads (id INTEGER PRIMARY KEY, video_id TEXT NOT NULL, group_id INTEGER);
+             CREATE TABLE history (id INTEGER PRIMARY KEY, video_id TEXT NOT NULL);
+             CREATE TABLE _schema_version (version INTEGER NOT NULL);
+             INSERT INTO _schema_version (version) VALUES (7);",
+        )
+        .unwrap();
+
+        Database::run_migrations(&conn).unwrap();
+
+        assert!(column_names(&conn, "history")
+            .iter()
+            .any(|c| c == "group_id"));
+        assert_eq!(Database::get_schema_version(&conn).unwrap(), SCHEMA_VERSION);
+    }
+}

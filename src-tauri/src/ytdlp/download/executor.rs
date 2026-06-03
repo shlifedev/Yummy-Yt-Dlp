@@ -129,6 +129,13 @@ pub(super) fn parse_output_destination(line: &str) -> Option<String> {
     None
 }
 
+/// Whether `path` is a concrete file path yt-dlp resolved, not the unexpanded `%(...)s` output
+/// template. Only resolved paths belong in history: duplicate detection stats the file on disk, and
+/// a template like `%(title)s.%(ext)s` would never match anything there.
+fn is_resolved_path(path: Option<&str>) -> bool {
+    matches!(path, Some(p) if !p.is_empty() && !p.contains("%("))
+}
+
 /// Map a finished yt-dlp process's exit code + stderr to a stable i18n error key.
 /// Extracted as a pure function so the classification (cookie failures, network errors,
 /// Windows cp949 encoding crashes) is testable. The frontend translates the key; the raw
@@ -614,9 +621,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             file_path,
             already_existed,
         } => {
-            // Use the actual file path parsed from yt-dlp stdout, falling back to the template path
-            let file_path = file_path.unwrap_or_else(|| task.output_path.clone());
-            let file_size = tokio::fs::metadata(&file_path)
+            // Trust the path yt-dlp actually reported; only fall back to the (still-templated)
+            // output path for the completion event. A templated path must never reach history —
+            // duplicate detection stats the file on disk and "%(title)s.%(ext)s" can't be found.
+            let resolved_path = file_path;
+            let event_path = resolved_path
+                .clone()
+                .unwrap_or_else(|| task.output_path.clone());
+            let file_size = tokio::fs::metadata(&event_path)
                 .await
                 .ok()
                 .map(|m| m.len())
@@ -624,34 +636,19 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
 
             let completed_at = chrono::Utc::now().timestamp();
 
-            if already_existed {
-                // File was already on disk (--no-overwrites skip). Mark completed but skip the
-                // history insert so the same video isn't recorded twice; the original download's
-                // history row is what duplicate detection keeps relying on.
-                let _ = db_state.mark_completed(task_id, completed_at);
-                logger::info_cat(
-                    "download",
-                    &format!(
-                        "[download:{}] file already exists, marked completed",
-                        task_id
-                    ),
-                );
-                let _ = app.emit(
-                    "download-event",
-                    GlobalDownloadEvent {
-                        task_id,
-                        event_type: "completed".to_string(),
-                        percent: Some(100.0),
-                        speed: None,
-                        eta: None,
-                        file_path: Some(file_path),
-                        file_size: Some(file_size),
-                        message: None,
-                        detail: None,
-                    },
-                );
+            // A fresh download always records history. A --no-overwrites skip (already_existed)
+            // usually relies on the original download's history row — but that row can be missing
+            // (e.g. a past migration failure left history empty), and then the same video keeps
+            // getting re-queued and re-spawned forever. So when the file already existed, still
+            // record it if history has no row for this video and we know the real on-disk path.
+            let record_history = if already_existed {
+                is_resolved_path(resolved_path.as_deref())
+                    && matches!(db_state.check_duplicate(&task.video_id), Ok(None))
             } else {
-                // Mark as completed and insert history in a single transaction
+                true
+            };
+
+            if record_history {
                 let history_item = HistoryItem {
                     id: 0,
                     video_url: task.video_url.clone(),
@@ -659,7 +656,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     title: task.title.clone(),
                     quality_label: task.quality_label.clone(),
                     format: task.format_id.clone(),
-                    file_path: file_path.clone(),
+                    file_path: event_path.clone(),
                     file_size: Some(file_size),
                     downloaded_at: completed_at,
                 };
@@ -690,27 +687,43 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 logger::info_cat(
                     "download",
                     &format!(
-                        "[download:{}] completed successfully, file_size={}",
-                        task_id, file_size
+                        "[download:{}] completed successfully ({}), file_size={}",
+                        task_id,
+                        if already_existed {
+                            "existing file recorded"
+                        } else {
+                            "new download"
+                        },
+                        file_size
                     ),
                 );
-
-                // Send completion event
-                let _ = app.emit(
-                    "download-event",
-                    GlobalDownloadEvent {
-                        task_id,
-                        event_type: "completed".to_string(),
-                        percent: Some(100.0),
-                        speed: None,
-                        eta: None,
-                        file_path: Some(file_path),
-                        file_size: Some(file_size),
-                        message: None,
-                        detail: None,
-                    },
+            } else {
+                // File already on disk and either already in history or its path is unknown:
+                // just finalize the queue row, no history change.
+                let _ = db_state.mark_completed(task_id, completed_at);
+                logger::info_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] file already exists, marked completed",
+                        task_id
+                    ),
                 );
             }
+
+            let _ = app.emit(
+                "download-event",
+                GlobalDownloadEvent {
+                    task_id,
+                    event_type: "completed".to_string(),
+                    percent: Some(100.0),
+                    speed: None,
+                    eta: None,
+                    file_path: Some(event_path),
+                    file_size: Some(file_size),
+                    message: None,
+                    detail: None,
+                },
+            );
         }
         AttemptOutcome::Failed { code, stderr } => {
             let error_message = classify_download_error(code, &stderr);
