@@ -128,6 +128,9 @@ const de: Record<string, string> = {
   "download.advNoMtime": "Dateizeit nicht setzen",
   "download.advRestrictFilenames": "ASCII-sichere Namen",
   "download.advNeedsFfmpeg": "benötigt ffmpeg",
+  "download.advReset": "Zurücksetzen",
+  "download.advDone": "Fertig",
+  "download.advClose": "Schließen",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "Untertitel als separate Datei neben dem Video speichern.",
   "download.advWriteAutoSubsHelp": "Automatisch erzeugte (ASR) Untertitel einbeziehen – oft die einzigen auf YouTube.",

@@ -130,6 +130,9 @@ const fr: Record<string, string> = {
   "download.advNoMtime": "Ne pas définir la date du fichier",
   "download.advRestrictFilenames": "Noms ASCII sûrs",
   "download.advNeedsFfmpeg": "nécessite ffmpeg",
+  "download.advReset": "Réinitialiser",
+  "download.advDone": "Terminé",
+  "download.advClose": "Fermer",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "Enregistrer les sous-titres dans un fichier séparé à côté de la vidéo.",
   "download.advWriteAutoSubsHelp": "Inclure les sous-titres auto-générés (ASR), souvent les seuls sur YouTube.",

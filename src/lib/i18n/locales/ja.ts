@@ -128,6 +128,9 @@ const ja: Record<string, string> = {
   "download.advNoMtime": "ファイル時刻を設定しない",
   "download.advRestrictFilenames": "ASCII安全なファイル名",
   "download.advNeedsFfmpeg": "ffmpegが必要",
+  "download.advReset": "リセット",
+  "download.advDone": "完了",
+  "download.advClose": "閉じる",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "字幕を動画の隣に別ファイルとして保存します。",
   "download.advWriteAutoSubsHelp": "自動生成(ASR)字幕を含めます。YouTubeではこれだけの場合が多いです。",

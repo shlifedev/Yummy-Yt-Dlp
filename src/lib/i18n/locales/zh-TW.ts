@@ -130,6 +130,9 @@ const zhTW: Record<string, string> = {
   "download.advNoMtime": "不設定檔案時間",
   "download.advRestrictFilenames": "ASCII 安全檔名",
   "download.advNeedsFfmpeg": "需要 ffmpeg",
+  "download.advReset": "重設",
+  "download.advDone": "完成",
+  "download.advClose": "關閉",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "將字幕儲存為影片旁邊的獨立檔案。",
   "download.advWriteAutoSubsHelp": "包含自動產生(ASR)字幕，YouTube 上常常只有這種。",

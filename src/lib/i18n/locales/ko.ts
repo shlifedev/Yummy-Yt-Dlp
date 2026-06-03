@@ -128,6 +128,9 @@ const ko: Record<string, string> = {
   "download.advNoMtime": "파일 시간 설정 안 함",
   "download.advRestrictFilenames": "ASCII 안전 파일명",
   "download.advNeedsFfmpeg": "ffmpeg 필요",
+  "download.advReset": "초기화",
+  "download.advDone": "완료",
+  "download.advClose": "닫기",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "자막을 영상 옆에 별도 파일로 저장합니다.",
   "download.advWriteAutoSubsHelp": "자동 생성(ASR) 자막 포함. 유튜브에선 이게 유일한 경우가 많습니다.",

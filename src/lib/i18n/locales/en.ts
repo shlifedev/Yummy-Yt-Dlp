@@ -131,6 +131,9 @@ const en: Record<string, string> = {
   "download.advNoMtime": "Don't set file time",
   "download.advRestrictFilenames": "ASCII-safe names",
   "download.advNeedsFfmpeg": "needs ffmpeg",
+  "download.advReset": "Reset",
+  "download.advDone": "Done",
+  "download.advClose": "Close",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "Save subtitles as a separate file next to the video.",
   "download.advWriteAutoSubsHelp": "Include auto-generated (ASR) captions, often the only ones on YouTube.",

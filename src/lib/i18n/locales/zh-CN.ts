@@ -130,6 +130,9 @@ const zhCN: Record<string, string> = {
   "download.advNoMtime": "不设置文件时间",
   "download.advRestrictFilenames": "ASCII 安全文件名",
   "download.advNeedsFfmpeg": "需要 ffmpeg",
+  "download.advReset": "重置",
+  "download.advDone": "完成",
+  "download.advClose": "关闭",
   // Advanced options help (tooltips)
   "download.advWriteSubsHelp": "将字幕保存为视频旁边的单独文件。",
   "download.advWriteAutoSubsHelp": "包含自动生成(ASR)字幕，YouTube 上常常只有这种。",
