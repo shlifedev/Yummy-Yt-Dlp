@@ -38,28 +38,50 @@
   // Dependency management state
   let depStatus = $state<FullDependencyStatus | null>(null)
   let depLoading = $state(true)
-  let updatingDep = $state<string | null>(null)
-  let installingDep = $state<string | null>(null)
+  // Per-dependency in-flight flags so concurrent installs/updates each track and
+  // disable only their own button. A single `string | null` would re-enable the
+  // first button (and drop its spinner) the moment a second operation started.
+  let updatingDeps = $state<Record<string, boolean>>({})
+  let installingDeps = $state<Record<string, boolean>>({})
   let installingAll = $state(false)
-  let depActionResult = $state<{ dep: string, success: boolean, message: string } | null>(null)
+  // Per-dependency action result so two operations in flight at once don't clobber
+  // each other's message. The "all" key holds the Install All result.
+  let depActionResults = $state<Record<string, { success: boolean, message: string }>>({})
   let installProgress = $state<Record<string, { stage: string, percent: number, message: string | null }>>({})
   // Inline note shown when a user taps a source that isn't available for a dep.
   let sourceHint = $state<{ dep: string, message: string } | null>(null)
+  // In-flight loadDepStatus count: only stop the spinner when the last call resolves.
+  let depLoadCount = $state(0)
+
+  function setResult(dep: string, success: boolean, message: string) {
+    depActionResults = { ...depActionResults, [dep]: { success, message } }
+  }
+
+  function clearResult(dep: string) {
+    const next = { ...depActionResults }
+    delete next[dep]
+    depActionResults = next
+  }
 
   async function loadDepStatus(force = false) {
+    depLoadCount++
     depLoading = true
     try {
       const result = await commands.checkFullDependencies(force)
       if (result.status === "ok") {
         depStatus = result.data
       }
-    } catch (e) { console.error("Failed to load dep status:", e) }
-    depLoading = false
+    } catch (e) {
+      console.error("Failed to load dep status:", e)
+    } finally {
+      depLoadCount--
+      if (depLoadCount === 0) depLoading = false
+    }
   }
 
   async function handleInstallDep(depName: string) {
-    installingDep = depName
-    depActionResult = null
+    installingDeps = { ...installingDeps, [depName]: true }
+    clearResult(depName)
 
     let unlistenFn: (() => void) | null = null
     try {
@@ -85,14 +107,14 @@
     try {
       const result = await commands.installDependency(depName)
       if (result.status === "ok") {
-        depActionResult = { dep: depName, success: true, message: result.data }
+        setResult(depName, true, result.data)
       } else {
-        depActionResult = { dep: depName, success: false, message: Object.values(result.error)[0] as string }
+        setResult(depName, false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: depName, success: false, message: e?.message || String(e) }
+      setResult(depName, false, e?.message || String(e))
     } finally {
-      installingDep = null
+      installingDeps = { ...installingDeps, [depName]: false }
       if (unlistenFn) unlistenFn()
       await loadDepStatus(true)
     }
@@ -100,7 +122,7 @@
 
   async function handleInstallAll() {
     installingAll = true
-    depActionResult = null
+    clearResult("all")
     installProgress = {}
 
     let unlistenFn: (() => void) | null = null
@@ -136,15 +158,15 @@
       if (result.status === "ok") {
         const failures = result.data.filter(r => r.includes("FAILED"))
         if (failures.length > 0) {
-          depActionResult = { dep: "all", success: false, message: failures.join("\n") }
+          setResult("all", false, failures.join("\n"))
         } else {
-          depActionResult = { dep: "all", success: true, message: t("layout.installSuccess") }
+          setResult("all", true, t("layout.installSuccess"))
         }
       } else {
-        depActionResult = { dep: "all", success: false, message: Object.values(result.error)[0] as string }
+        setResult("all", false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: "all", success: false, message: e?.message || String(e) }
+      setResult("all", false, e?.message || String(e))
     } finally {
       installingAll = false
       if (unlistenFn) unlistenFn()
@@ -154,19 +176,19 @@
   }
 
   async function handleUpdateDep(depName: string) {
-    updatingDep = depName
-    depActionResult = null
+    updatingDeps = { ...updatingDeps, [depName]: true }
+    clearResult(depName)
     try {
       const result = await commands.updateDependency(depName)
       if (result.status === "ok") {
-        depActionResult = { dep: depName, success: true, message: result.data }
+        setResult(depName, true, result.data)
       } else {
-        depActionResult = { dep: depName, success: false, message: Object.values(result.error)[0] as string }
+        setResult(depName, false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: depName, success: false, message: e?.message || String(e) }
+      setResult(depName, false, e?.message || String(e))
     } finally {
-      updatingDep = null
+      updatingDeps = { ...updatingDeps, [depName]: false }
       await loadDepStatus(true)
     }
   }
@@ -386,10 +408,10 @@
                   {#if !dep.info.installed}
                     <button
                       onclick={() => handleInstallDep(dep.key)}
-                      disabled={installingDep === dep.key || installingAll}
+                      disabled={installingDeps[dep.key] || installingAll}
                       class="px-3 py-1.5 text-xs font-medium bg-yt-primary hover:bg-yt-primary-hover text-white rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
                     >
-                      {#if installingDep === dep.key}
+                      {#if installingDeps[dep.key]}
                         <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
                       {/if}
                       {t("settings.install")}
@@ -397,10 +419,10 @@
                   {:else if dep.info.source === "AppManaged"}
                     <button
                       onclick={() => handleUpdateDep(dep.key)}
-                      disabled={updatingDep === dep.key || installingAll}
+                      disabled={updatingDeps[dep.key] || installingAll}
                       class="px-3 py-1.5 text-xs font-medium bg-yt-highlight hover:bg-yt-border text-yt-text rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
                     >
-                      {#if updatingDep === dep.key}
+                      {#if updatingDeps[dep.key]}
                         <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
                         {t("settings.updating")}
                       {:else}
@@ -412,13 +434,13 @@
               </div>
             </div>
           {/each}
-          {#if depActionResult}
-            <div class="p-3 {depActionResult.success ? 'bg-green-500/5' : 'bg-red-500/5'}">
-              <p class="text-xs {depActionResult.success ? 'text-yt-success' : 'text-red-400'}">
-                {depActionResult.dep === "all" ? "" : `${depActionResult.dep}: `}{depActionResult.message}
+          {#each Object.entries(depActionResults) as [dep, res] (dep)}
+            <div class="p-3 {res.success ? 'bg-green-500/5' : 'bg-red-500/5'}">
+              <p class="text-xs {res.success ? 'text-yt-success' : 'text-red-400'}">
+                {dep === "all" ? "" : `${dep}: `}{res.message}
               </p>
             </div>
-          {/if}
+          {/each}
         {/if}
       </div>
     </section>

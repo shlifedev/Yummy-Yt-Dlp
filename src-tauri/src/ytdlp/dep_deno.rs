@@ -34,6 +34,9 @@ fn get_binary_name() -> &'static str {
 
 /// Install deno by downloading from GitHub releases.
 pub async fn install_deno(app: &AppHandle) -> Result<String, AppError> {
+    // Serialize against any concurrent deno install/update/delete so they don't
+    // corrupt the shared archive temp file or race the extracted binary.
+    let _lock = lock_dependency("deno").await;
     let bin_dir = ensure_bin_dir(app)?;
     let url = get_download_url()?;
     let binary_name = get_binary_name();
