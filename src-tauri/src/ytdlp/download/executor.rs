@@ -15,7 +15,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Kill a child process and all its descendants (e.g., ffmpeg spawned by yt-dlp).
 /// On Windows, uses `taskkill /F /T /PID` to kill the entire process tree.
-/// On Unix, sends SIGKILL to the process directly. Falls back to tokio child.kill().
+/// On Unix, sends SIGKILL to the child's process group. Falls back to tokio child.kill().
 /// Includes a timeout to prevent hanging if the process doesn't respond.
 async fn kill_process_tree(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
@@ -30,9 +30,9 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
         }
         #[cfg(unix)]
         {
-            // Send SIGKILL to the process directly.
+            // Send SIGKILL to the process group created for yt-dlp.
             unsafe {
-                libc::kill(pid as i32, libc::SIGKILL);
+                libc::kill(-(pid as i32), libc::SIGKILL);
             }
         }
     }
@@ -226,6 +226,11 @@ async fn run_download_attempt(
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    #[cfg(unix)]
+    {
+        cmd.process_group(0);
     }
 
     // Final cancellation check before the point of no return. Binary/ffmpeg resolution can take
@@ -498,8 +503,8 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 "download",
                 &format!("[download:{}] failed to get settings: {}", task_id, e),
             );
-            manager.release();
-            process_next_pending(app);
+            let error_msg = format!("Failed to load settings: {}", e);
+            handle_download_failure(&app, task_id, &error_msg, &db_state, &manager);
             return;
         }
     };

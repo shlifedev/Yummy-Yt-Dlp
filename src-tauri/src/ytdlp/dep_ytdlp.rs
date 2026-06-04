@@ -53,18 +53,15 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
         DepInstallStage::Verifying,
         Some("Verifying checksum..."),
     );
-    match fetch_ytdlp_checksums().await {
-        Ok(checksums) => {
-            let expected_name = get_checksum_filename();
-            if let Some((_name, hash)) = checksums.iter().find(|(name, _)| name == expected_name) {
-                verify_sha256(&temp_path, hash).await?;
-            }
-        }
-        Err(e) => {
-            // Non-fatal: log warning but continue
-            crate::modules::logger::warn(&format!("Failed to verify yt-dlp checksum: {}", e));
-        }
-    }
+    let checksums = fetch_ytdlp_checksums().await?;
+    let expected_name = get_checksum_filename();
+    let Some((_name, hash)) = checksums.iter().find(|(name, _)| name == expected_name) else {
+        return Err(AppError::DependencyInstallError(format!(
+            "Checksum for {} not found",
+            expected_name
+        )));
+    };
+    verify_sha256(&temp_path, hash).await?;
 
     // Set executable + remove quarantine
     emit_stage(

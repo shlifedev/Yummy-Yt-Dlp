@@ -285,18 +285,6 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn get_active_count(&self) -> Result<u32, AppError> {
-        let conn = self.conn();
-        let count: u32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM downloads WHERE status = 'downloading'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        Ok(count)
-    }
-
     pub fn get_cancellable_ids(&self) -> Result<Vec<u64>, AppError> {
         let conn = self.conn();
         let mut stmt = conn

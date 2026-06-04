@@ -126,12 +126,6 @@ pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
         }
     }
 
-    // Sync active_count with actual DB state to correct any drift.
-    // Cancel signals are processed asynchronously, so the DB may still show
-    // some tasks as 'downloading' briefly. We sync to the current DB truth.
-    let actual_active = db_state.get_active_count().unwrap_or(0);
-    manager.sync_active_count(actual_active);
-
     Ok(cancelled)
 }
 
@@ -193,9 +187,6 @@ pub async fn cancel_group(app: AppHandle, group_id: u64) -> Result<u32, AppError
             cancelled += 1;
         }
     }
-
-    let actual_active = db_state.get_active_count().unwrap_or(0);
-    manager.sync_active_count(actual_active);
 
     Ok(cancelled)
 }

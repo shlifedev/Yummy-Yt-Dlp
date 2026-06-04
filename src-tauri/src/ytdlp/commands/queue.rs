@@ -91,7 +91,6 @@ pub async fn clear_all_queue_and_history(app: AppHandle) -> Result<(), AppError>
     }
 
     db.clear_all_data()?;
-    manager.sync_active_count(0);
     Ok(())
 }
 
