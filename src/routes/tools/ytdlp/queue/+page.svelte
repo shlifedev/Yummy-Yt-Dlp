@@ -90,7 +90,10 @@
   }
   async function loadHistoryGroupItems(gid: number) {
     try {
+      const requestId = (groupLoadSeq.get(gid) ?? 0) + 1
+      groupLoadSeq.set(gid, requestId)
       const r = await commands.getGroupHistoryItems(gid)
+      if (requestId !== groupLoadSeq.get(gid)) return
       if (r.status === "ok") {
         historyGroupItems.set(gid, r.data)
         historyGroupItems = new Map(historyGroupItems)
@@ -99,6 +102,9 @@
   }
 
   let interval: ReturnType<typeof setInterval>
+  let activeLoadSeq = 0
+  let historyLoadSeq = 0
+  let groupLoadSeq = new Map<number, number>()
   onMount(async () => {
     await Promise.all([loadActive(), loadHistory()])
     firstLoad = false
@@ -109,20 +115,29 @@
   })
 
   onDestroy(() => {
+    activeLoadSeq++
+    historyLoadSeq++
+    groupLoadSeq.clear()
     if (interval) clearInterval(interval)
     clearTimeout(searchTimeout)
   })
 
   async function loadActive() {
+    const requestId = ++activeLoadSeq
     try {
       const r = await commands.getActiveQueue()
+      if (requestId !== activeLoadSeq) return
       if (r.status === "ok") active = r.data
     } catch (e) { console.error("Failed to load active queue:", e) }
   }
 
   async function loadHistory() {
+    const requestId = ++historyLoadSeq
+    const requestedPage = page
+    const requestedSearch = search
     try {
-      const r = await commands.getDownloadHistory(page, pageSize, search || null)
+      const r = await commands.getDownloadHistory(requestedPage, pageSize, requestedSearch || null)
+      if (requestId !== historyLoadSeq || requestedPage !== page || requestedSearch !== search) return
       if (r.status === "ok") {
         history = r.data.items
         historyTotal = r.data.totalCount

@@ -2,6 +2,7 @@ use crate::modules::types::AppError;
 use crate::ytdlp::download::DownloadManager;
 use crate::ytdlp::types::*;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -66,11 +67,12 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
     } else {
         // No slot free: reset to pending so process_next_pending picks it up atomically when a
         // slot frees. The extra trigger covers a slot freeing up between try_acquire and now.
-        db.update_download_status(task_id, &DownloadStatus::Pending, None, None)?;
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            crate::ytdlp::download::process_next_pending_public(app_clone);
-        });
+        if db.queue_for_retry(task_id)? {
+            let app_clone = app.clone();
+            tokio::spawn(async move {
+                crate::ytdlp::download::process_next_pending_public(app_clone);
+            });
+        }
     }
 
     Ok(())
@@ -90,6 +92,7 @@ pub async fn clear_all_queue_and_history(app: AppHandle) -> Result<(), AppError>
         manager.send_cancel(id);
     }
 
+    let _ = manager.wait_until_idle(Duration::from_secs(5)).await;
     db.clear_all_data()?;
     Ok(())
 }

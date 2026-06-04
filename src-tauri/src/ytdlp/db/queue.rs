@@ -285,6 +285,22 @@ impl Database {
         Ok(rows > 0)
     }
 
+    /// Re-queue a retry only from retryable states. This is used when no execution slot is
+    /// currently available, so the scheduler can claim the task later without resurrecting
+    /// completed or already-running rows.
+    pub fn queue_for_retry(&self, id: u64) -> Result<bool, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads
+                 SET status = 'pending', error_message = NULL, progress = 0.0, completed_at = NULL
+                 WHERE id = ?1 AND status IN ('failed', 'cancelled', 'pending')",
+                params![id],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows > 0)
+    }
+
     pub fn get_cancellable_ids(&self) -> Result<Vec<u64>, AppError> {
         let conn = self.conn();
         let mut stmt = conn
