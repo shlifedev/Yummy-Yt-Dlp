@@ -77,6 +77,7 @@ const de: Record<string, string> = {
   "download.skippedExists": "{count} Video(s) übersprungen (bereits heruntergeladen).",
   "download.cancel": "Abbrechen",
   "download.close": "Schließen",
+  "download.downloadAnyway": "Trotzdem herunterladen",
   "download.alreadyDownloaded": "\u201E{title}\u201C wurde bereits heruntergeladen.",
   "download.error": "Fehler",
   "download.duplicateFound": "Duplikat gefunden",

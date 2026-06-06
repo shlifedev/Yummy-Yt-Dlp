@@ -79,6 +79,7 @@ const zhTW: Record<string, string> = {
   "download.skippedExists": "{count}部影片已略過（已下載）。",
   "download.cancel": "取消",
   "download.close": "關閉",
+  "download.downloadAnyway": "仍然下載",
   "download.alreadyDownloaded": "「{title}」已經下載過。",
   "download.error": "錯誤",
   "download.duplicateFound": "發現重複",
