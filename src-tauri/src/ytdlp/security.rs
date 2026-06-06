@@ -334,6 +334,16 @@ pub fn sanitize_proxy(proxy: &str) -> Result<String, AppError> {
             "Proxy must be like http://host:port or socks5://127.0.0.1:1080".to_string(),
         ));
     }
+    let without_slash = proxy.trim_end_matches('/');
+    if let Some((_, port)) = without_slash.rsplit_once(':') {
+        if port.chars().all(|c| c.is_ascii_digit())
+            && port.parse::<u16>().ok().filter(|p| *p > 0).is_none()
+        {
+            return Err(AppError::Custom(
+                "Proxy port must be between 1 and 65535".to_string(),
+            ));
+        }
+    }
     Ok(proxy.to_string())
 }
 
@@ -493,6 +503,10 @@ mod tests {
         assert!(sanitize_proxy("http://127.0.0.1:8080").is_ok());
         assert!(sanitize_proxy("https://proxy.example.com:3128").is_ok());
         assert!(sanitize_proxy("socks5://127.0.0.1:1080").is_ok());
+        assert!(sanitize_proxy("http://proxy.example.com:65535").is_ok());
+        assert!(sanitize_proxy("http://proxy.example.com:0").is_err());
+        assert!(sanitize_proxy("http://proxy.example.com:65536").is_err());
+        assert!(sanitize_proxy("http://proxy.example.com:99999").is_err());
         assert!(sanitize_proxy("javascript:alert(1)").is_err());
         assert!(sanitize_proxy("not a url").is_err());
     }
