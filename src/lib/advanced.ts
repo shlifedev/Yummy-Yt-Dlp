@@ -63,5 +63,9 @@ export function validateAdvancedField(field: AdvancedTextField, value: string): 
   const v = value.trim()
   if (v === "") return true
   if (field === "subLangs" && v.length > 200) return false
+  if (field === "limitRate") {
+    const numeric = v.replace(/[KMGkmg]$/, "")
+    if (Number(numeric) <= 0) return false
+  }
   return RE[field].test(v)
 }

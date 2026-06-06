@@ -302,6 +302,13 @@ pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
             "Rate limit must look like 1M, 500K or 4.2M (no spaces or units like MB/s)".to_string(),
         ));
     }
+    let numeric = rate
+        .trim_end_matches(|c: char| matches!(c, 'K' | 'M' | 'G' | 'k' | 'm' | 'g'));
+    if numeric.parse::<f64>().ok().filter(|v| *v > 0.0).is_none() {
+        return Err(AppError::Custom(
+            "Rate limit must be greater than zero".to_string(),
+        ));
+    }
     Ok(rate.to_string())
 }
 
@@ -475,6 +482,9 @@ mod tests {
         assert!(sanitize_limit_rate("500K").is_ok());
         assert!(sanitize_limit_rate("4.2M").is_ok());
         assert!(sanitize_limit_rate("1000").is_ok());
+        assert!(sanitize_limit_rate("0").is_err());
+        assert!(sanitize_limit_rate("0K").is_err());
+        assert!(sanitize_limit_rate("0.0M").is_err());
         assert!(sanitize_limit_rate("1 MB/s").is_err());
         assert!(sanitize_limit_rate("fast").is_err());
     }
