@@ -19,6 +19,7 @@
   let expandedErrors = $state<Set<number>>(new Set())
   let searchTimeout: ReturnType<typeof setTimeout>
   let activeFilter = $state<string | null>(null)
+  let busyActions = $state<Set<string>>(new Set())
 
   // Batch-group fold-out state. Active groups default expanded (you're watching them
   // download); history groups default collapsed. Both survive the 2s poll since they
@@ -105,6 +106,23 @@
   let activeLoadSeq = 0
   let historyLoadSeq = 0
   let groupLoadSeq = new Map<number, number>()
+
+  function isBusy(key: string): boolean {
+    return busyActions.has(key)
+  }
+
+  async function withBusy(key: string, action: () => Promise<void>) {
+    if (busyActions.has(key)) return
+    busyActions = new Set([...busyActions, key])
+    try {
+      await action()
+    } finally {
+      const next = new Set(busyActions)
+      next.delete(key)
+      busyActions = next
+    }
+  }
+
   onMount(async () => {
     await Promise.all([loadActive(), loadHistory()])
     firstLoad = false
@@ -156,58 +174,72 @@
   }
 
   async function handleCancel(id: number) {
-    try {
-      const r = await commands.cancelDownload(id)
-      if (r.status === "ok") await loadActive()
-    } catch (e) { console.error("Failed to cancel:", e) }
+    await withBusy(`cancel:${id}`, async () => {
+      try {
+        const r = await commands.cancelDownload(id)
+        if (r.status === "ok") await loadActive()
+      } catch (e) { console.error("Failed to cancel:", e) }
+    })
   }
 
   async function handleRetry(id: number) {
-    try {
-      const r = await commands.retryDownload(id)
-      if (r.status === "ok") await loadActive()
-    } catch (e) { console.error("Failed to retry:", e) }
+    await withBusy(`retry:${id}`, async () => {
+      try {
+        const r = await commands.retryDownload(id)
+        if (r.status === "ok") await loadActive()
+      } catch (e) { console.error("Failed to retry:", e) }
+    })
   }
 
   async function handleCancelAll() {
-    try {
-      const r = await commands.cancelAllDownloads()
-      if (r.status === "ok") await loadActive()
-    } catch (e) { console.error("Failed to cancel all:", e) }
+    await withBusy("cancel-all", async () => {
+      try {
+        const r = await commands.cancelAllDownloads()
+        if (r.status === "ok") await loadActive()
+      } catch (e) { console.error("Failed to cancel all:", e) }
+    })
   }
 
   async function handleCancelGroup(gid: number) {
-    try {
-      const r = await commands.cancelGroup(gid)
-      if (r.status === "ok") await loadActive()
-    } catch (e) { console.error("Failed to cancel group:", e) }
+    await withBusy(`cancel-group:${gid}`, async () => {
+      try {
+        const r = await commands.cancelGroup(gid)
+        if (r.status === "ok") await loadActive()
+      } catch (e) { console.error("Failed to cancel group:", e) }
+    })
   }
 
   async function handleClearAll() {
     if (!confirm(t("queue.clearAllConfirm"))) return
-    try {
-      const r = await commands.clearAllQueueAndHistory()
-      if (r.status === "ok") {
-        activeFilter = null
-        await Promise.all([loadActive(), loadHistory()])
-      }
-    } catch (e) { console.error("Failed to clear all:", e) }
+    await withBusy("clear-all", async () => {
+      try {
+        const r = await commands.clearAllQueueAndHistory()
+        if (r.status === "ok") {
+          activeFilter = null
+          await Promise.all([loadActive(), loadHistory()])
+        }
+      } catch (e) { console.error("Failed to clear all:", e) }
+    })
   }
 
   async function handleDeleteHistory(id: number) {
     if (!confirm(t("history.deleteConfirm"))) return
-    try {
-      const r = await commands.deleteHistoryItem(id)
-      if (r.status === "ok") await loadHistory()
-    } catch (e) { console.error("Failed to delete history item:", e) }
+    await withBusy(`delete-history:${id}`, async () => {
+      try {
+        const r = await commands.deleteHistoryItem(id)
+        if (r.status === "ok") await loadHistory()
+      } catch (e) { console.error("Failed to delete history item:", e) }
+    })
   }
 
   async function handleDeleteHistoryGroup(gid: number) {
     if (!confirm(t("history.deleteGroupConfirm"))) return
-    try {
-      const r = await commands.deleteHistoryGroup(gid)
-      if (r.status === "ok") await loadHistory()
-    } catch (e) { console.error("Failed to delete history group:", e) }
+    await withBusy(`delete-history-group:${gid}`, async () => {
+      try {
+        const r = await commands.deleteHistoryGroup(gid)
+        if (r.status === "ok") await loadHistory()
+      } catch (e) { console.error("Failed to delete history group:", e) }
+    })
   }
 
   function handleSearch(value: string) {
@@ -289,12 +321,12 @@
 
     <div class="shrink-0">
       {#if item.status === "downloading" || item.status === "pending"}
-        <button class="p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors" onclick={() => handleCancel(item.id)} title={t("download.cancel")}>
-          <span class="material-symbols-outlined text-[18px]">close</span>
+        <button class="p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick={() => handleCancel(item.id)} disabled={isBusy(`cancel:${item.id}`)} title={t("download.cancel")}>
+          <span class="material-symbols-outlined text-[18px] {isBusy(`cancel:${item.id}`) ? 'animate-spin' : ''}">{isBusy(`cancel:${item.id}`) ? "progress_activity" : "close"}</span>
         </button>
       {:else if item.status === "failed" || item.status === "cancelled"}
-        <button class="p-1.5 rounded-md hover:bg-yt-primary/10 text-yt-text-muted hover:text-yt-primary transition-colors" onclick={() => handleRetry(item.id)} title={t("queue.retry")}>
-          <span class="material-symbols-outlined text-[18px]">refresh</span>
+        <button class="p-1.5 rounded-md hover:bg-yt-primary/10 text-yt-text-muted hover:text-yt-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick={() => handleRetry(item.id)} disabled={isBusy(`retry:${item.id}`)} title={t("queue.retry")}>
+          <span class="material-symbols-outlined text-[18px] {isBusy(`retry:${item.id}`) ? 'animate-spin' : ''}">{isBusy(`retry:${item.id}`) ? "progress_activity" : "refresh"}</span>
         </button>
       {/if}
     </div>
@@ -319,6 +351,7 @@
     <button
       class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-error transition-all p-1.5 rounded-md hover:bg-yt-error/10 shrink-0"
       onclick={() => handleDeleteHistory(item.id)}
+      disabled={isBusy(`delete-history:${item.id}`)}
       aria-label="Delete"
     >
       <span class="material-symbols-outlined text-[18px]">delete</span>
@@ -336,15 +369,17 @@
       <div class="flex items-center gap-2 shrink-0">
         {#if runningCount > 0}
           <button
-            class="px-3 py-1.5 rounded-md bg-yt-warning/10 text-yt-warning hover:bg-yt-warning/20 text-xs font-medium transition-colors"
+            class="px-3 py-1.5 rounded-md bg-yt-warning/10 text-yt-warning hover:bg-yt-warning/20 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={handleCancelAll}
+            disabled={isBusy("cancel-all")}
           >
             {t("queue.cancelAll")}
           </button>
         {/if}
         <button
-          class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-error/10 hover:text-yt-error border border-yt-border text-yt-text-secondary text-xs font-medium transition-colors"
+          class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-error/10 hover:text-yt-error border border-yt-border text-yt-text-secondary text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={handleClearAll}
+          disabled={isBusy("clear-all")}
         >
           {t("queue.clearAll")}
         </button>
@@ -387,6 +422,7 @@
                 onAction={() => handleCancelGroup(row.groupId)}
                 actionIcon="close"
                 actionTitle={t("queue.cancelGroup")}
+                actionDisabled={isBusy(`cancel-group:${row.groupId}`)}
               />
               {#if isActiveExpanded(row.groupId)}
                 <div class="pl-6 space-y-2">
@@ -438,6 +474,7 @@
                 onAction={() => handleDeleteHistoryGroup(entry.group.groupId)}
                 actionIcon="delete"
                 actionTitle={t("history.deleteGroup")}
+                actionDisabled={isBusy(`delete-history-group:${entry.group.groupId}`)}
               />
               {#if isHistoryExpanded(entry.group.groupId)}
                 <div class="pl-6 space-y-2">

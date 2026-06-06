@@ -11,6 +11,7 @@
     onAction,
     actionIcon = "close",
     actionTitle = "",
+    actionDisabled = false,
   }: {
     title: string
     subtitle: string
@@ -20,6 +21,7 @@
     onAction?: () => void
     actionIcon?: string
     actionTitle?: string
+    actionDisabled?: boolean
   } = $props()
 </script>
 
@@ -49,9 +51,10 @@
 
   {#if onAction}
     <button
-      class="shrink-0 p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors opacity-0 group-hover:opacity-100"
+      class="shrink-0 p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
       onclick={onAction}
       title={actionTitle}
+      disabled={actionDisabled}
     >
       <span class="material-symbols-outlined text-[18px]">{actionIcon}</span>
     </button>
