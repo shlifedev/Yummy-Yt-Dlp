@@ -229,8 +229,9 @@
     loadHistory()
   }
 
-  function thumbUrl(videoId: string): string {
-    return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
+  function thumbUrl(videoId: string | null | undefined): string | null {
+    const id = videoId?.trim()
+    return id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : null
   }
 
   function hideThumb(e: Event) {
@@ -243,10 +244,13 @@
 </script>
 
 {#snippet activeItemCard(item: any)}
+  {@const thumbnail = thumbUrl(item.videoId)}
   <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-yt-surface border border-yt-border/60" in:fade>
     <div class="relative w-16 h-10 rounded overflow-hidden bg-yt-overlay-subtle shrink-0">
       <span class="absolute inset-0 flex items-center justify-center material-symbols-outlined text-yt-text-muted text-[18px]">movie</span>
-      <img src={thumbUrl(item.videoId)} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
+      {#if thumbnail}
+        <img src={thumbnail} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
+      {/if}
       {#if item.status === "downloading"}
         <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
           <span class="material-symbols-outlined text-white text-[16px] animate-spin">progress_activity</span>
@@ -302,10 +306,13 @@
 {/snippet}
 
 {#snippet historyItemCard(item: any)}
+  {@const thumbnail = thumbUrl(item.videoId)}
   <div class="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-yt-highlight/40 transition-colors">
     <div class="relative w-16 h-10 rounded overflow-hidden bg-yt-overlay-subtle shrink-0">
       <span class="absolute inset-0 flex items-center justify-center material-symbols-outlined text-yt-success/60 text-[18px]">check_circle</span>
-      <img src={thumbUrl(item.videoId)} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
+      {#if thumbnail}
+        <img src={thumbnail} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
+      {/if}
     </div>
     <div class="flex-1 min-w-0">
       <h4 class="font-medium text-yt-text text-sm truncate mb-0.5">{item.title}</h4>
