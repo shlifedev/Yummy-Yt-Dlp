@@ -52,7 +52,7 @@ export const SUB_CONVERT_FORMATS = ["", "srt", "ass", "vtt", "lrc"] as const
 const RE = {
   subLangs: /^[A-Za-z0-9,.\-_*]+$/,
   limitRate: /^\d+(\.\d+)?[KMGkmg]?$/,
-  downloadSections: /^\*?\d{1,2}:\d{2}(:\d{2})?-\d{1,2}:\d{2}(:\d{2})?$/,
+  downloadSections: /^\*?(?:\d{1,2}:)?[0-5]?\d:[0-5]\d-(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$/,
   proxy: /^(https?|socks4|socks5):\/\/[A-Za-z0-9.\-_]+(:\d{1,5})?\/?$/i,
 } as const
 
