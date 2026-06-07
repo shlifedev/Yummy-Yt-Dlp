@@ -106,6 +106,7 @@
 
   // "Load more" end-of-list flag
   let noMoreEntries = $state(false)
+  let loadMoreSeq = 0
 
   // Tooltip state (appended to document.body to escape stacking context)
   let tooltipEl: HTMLDivElement | null = null
@@ -388,6 +389,8 @@
     loadingFormats = false
     playlistResult = null
     playlistPage = 0
+    loadingMore = false
+    loadMoreSeq++
     selectedEntries = new Set()
     noMoreEntries = false
     // Dismiss any stale duplicate-warning dialog so its captured request can't be confirmed
@@ -482,10 +485,13 @@
 
   async function handleLoadMore() {
     if (!playlistResult || loadingMore) return
+    const requestId = ++loadMoreSeq
+    const requestedUrl = playlistResult.url
     loadingMore = true
     try {
       const nextPage = playlistPage + 1
-      const result = await commands.fetchPlaylistInfo(playlistResult.url, nextPage, 50)
+      const result = await commands.fetchPlaylistInfo(requestedUrl, nextPage, 50)
+      if (requestId !== loadMoreSeq || !playlistResult || playlistResult.url !== requestedUrl) return
       if (result.status === "ok" && result.data.entries.length > 0) {
         playlistResult = {
           ...playlistResult,
@@ -496,26 +502,35 @@
         noMoreEntries = true
       }
     } catch (e: any) {
+      if (requestId !== loadMoreSeq) return
       error = e.message || String(e)
     } finally {
-      loadingMore = false
+      if (requestId === loadMoreSeq) loadingMore = false
     }
   }
 
   async function handleSelectVideo(entry: { url: string; videoId: string; title: string | null }) {
+    const currentGeneration = ++analyzeGeneration
     analyzing = true
     error = null
+    quickInfo = null
+    loadingFormats = true
     try {
       const infoResult = await commands.fetchVideoInfo(entry.url)
+      if (currentGeneration !== analyzeGeneration) return
       if (infoResult.status === "error") {
         error = extractError(infoResult.error)
         return
       }
       videoInfo = infoResult.data
     } catch (e: any) {
+      if (currentGeneration !== analyzeGeneration) return
       error = e.message || String(e)
     } finally {
-      analyzing = false
+      if (currentGeneration === analyzeGeneration) {
+        analyzing = false
+        loadingFormats = false
+      }
     }
   }
 
