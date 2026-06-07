@@ -151,13 +151,13 @@
             <ul class="space-y-2 text-xs">
                <li class="flex flex-wrap items-baseline gap-x-2">
                   <span class="font-medium text-yt-text">yt-dlp</span>
-                  <span class="text-yt-text-secondary">The Unlicense</span>
+                  <span class="text-yt-text-secondary">source: The Unlicense; standalone binaries: GPLv3+</span>
                   <span class="text-yt-text-secondary/70">github.com/yt-dlp/yt-dlp</span>
                </li>
                <li class="flex flex-wrap items-baseline gap-x-2">
                   <span class="font-medium text-yt-text">FFmpeg</span>
                   <span class="text-yt-text-secondary">GPL v3</span>
-                  <span class="text-yt-text-secondary/70">github.com/BtbN/FFmpeg-Builds · github.com/vanloctech/ffmpeg-macos</span>
+                  <span class="text-yt-text-secondary/70">github.com/BtbN/FFmpeg-Builds (Windows/Linux); macOS uses system FFmpeg or a compliant bundled sidecar</span>
                </li>
                <li class="flex flex-wrap items-baseline gap-x-2">
                   <span class="font-medium text-yt-text">Deno</span>

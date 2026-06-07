@@ -71,8 +71,8 @@ Kết quả biên dịch sản xuất nằm trong `src-tauri/target/release/bund
 
 Ứng dụng này đóng gói hoặc tải xuống các tệp nhị phân mã nguồn mở sau:
 
-- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
-- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **yt-dlp** — Source: The Unlicense; standalone release binaries: GPLv3+ — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — app-managed Windows/Linux builds: https://github.com/BtbN/FFmpeg-Builds; macOS: system FFmpeg or compliant bundled sidecar only; source: https://ffmpeg.org
 - **Deno** — MIT — https://github.com/denoland/deno
 
 FFmpeg được cấp phép theo GNU General Public License v3. Bản build GPL chính xác đi kèm với mỗi phiên bản được liên kết ở trên, mã nguồn tương ứng có thể tìm thấy tại dự án FFmpeg và các nhà cung cấp bản build.

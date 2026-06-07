@@ -256,7 +256,7 @@ const de: Record<string, string> = {
   // About / licenses
   "settings.about": "Über",
   "settings.licensesDesc": "Diese App bündelt oder lädt folgende Open-Source-Tools herunter:",
-  "settings.ffmpegGplNotice": "FFmpeg wird unter der GPLv3 vertrieben; der mitgelieferte GPL-Build und sein Quellcode sind über die obigen Projektlinks verfügbar.",
+  "settings.ffmpegGplNotice": "Unter Windows/Linux nutzt die App verwaltete, weiterverteilbare GPLv3-FFmpeg-Builds. Unter macOS wird System-FFmpeg oder ein konformer gebündelter Sidecar genutzt; Lizenzdateien liegen in third_party_licenses.",
   "settings.openLocation": "Dateispeicherort öffnen",
 
   // Errors (backend i18n keys)

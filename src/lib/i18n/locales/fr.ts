@@ -260,7 +260,7 @@ const fr: Record<string, string> = {
   // About / licenses
   "settings.about": "À propos",
   "settings.licensesDesc": "Cette application intègre ou télécharge les outils open source suivants :",
-  "settings.ffmpegGplNotice": "FFmpeg est distribué sous licence GPLv3 ; la version GPL fournie et son code source sont disponibles via les liens de projet ci-dessus.",
+  "settings.ffmpegGplNotice": "Sur Windows/Linux, FFmpeg géré par l'application utilise des versions GPLv3 redistribuables. Sur macOS, l'application utilise FFmpeg système ou un sidecar conforme ; les licences sont dans third_party_licenses.",
   "settings.openLocation": "Ouvrir l'emplacement du fichier",
 
   // Errors (backend i18n keys)

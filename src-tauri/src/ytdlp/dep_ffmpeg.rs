@@ -6,17 +6,9 @@ use tauri::AppHandle;
 /// Get ffmpeg download URL and archive format for the current platform.
 fn get_download_info() -> Result<(&'static str, ArchiveFormat), AppError> {
     if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            Ok((
-                "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-arm64.tar.gz",
-                ArchiveFormat::TarGz,
-            ))
-        } else {
-            Ok((
-                "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-x64.tar.gz",
-                ArchiveFormat::TarGz,
-            ))
-        }
+        Err(AppError::DependencyInstallError(
+            "macOS FFmpeg auto-download is disabled until a redistributable GPL/LGPL build is configured. Install FFmpeg with Homebrew or ship a compliant bundled ffmpeg/ffprobe sidecar.".to_string(),
+        ))
     } else if cfg!(target_os = "windows") {
         Ok((
             "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
@@ -40,7 +32,6 @@ fn get_download_info() -> Result<(&'static str, ArchiveFormat), AppError> {
 
 enum ArchiveFormat {
     Zip,
-    TarGz,
     TarXz,
 }
 
@@ -66,7 +57,6 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
         "ffmpeg_archive.{}",
         match format {
             ArchiveFormat::Zip => "zip",
-            ArchiveFormat::TarGz => "tar.gz",
             ArchiveFormat::TarXz => "tar.xz",
         }
     );
@@ -84,7 +74,6 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
 
     let extracted = match format {
         ArchiveFormat::Zip => extract_zip(&archive_path, &bin_dir, binary_names).await?,
-        ArchiveFormat::TarGz => extract_tar_gz(&archive_path, &bin_dir, binary_names).await?,
         ArchiveFormat::TarXz => extract_tar_xz(&archive_path, &bin_dir, binary_names).await?,
     };
 
@@ -118,7 +107,7 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
         "ffmpeg"
     };
     let ffmpeg_path = bin_dir.join(ffmpeg_bin);
-    // BtbN/vanloctech "latest" builds publish no stable per-release checksum, so a
+    // Third-party "latest" FFmpeg builds publish no stable per-release checksum, so a
     // successful `ffmpeg -version` is our integrity/sanity gate instead. If the
     // extracted binary does not run, treat the install as failed and remove the
     // broken binaries so a later dependency check does not report them as installed.
@@ -148,29 +137,30 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
 /// Get the latest ffmpeg version info.
 pub async fn get_latest_version() -> Result<String, AppError> {
     // BtbN builds use rolling "latest" tag, so we just return a placeholder.
-    // For vanloctech/ffmpeg-macos, check the latest release.
     if cfg!(target_os = "macos") {
-        let client = reqwest::Client::new();
-        let resp = client
-            .get("https://api.github.com/repos/vanloctech/ffmpeg-macos/releases/latest")
-            .header("User-Agent", "modern-ytdlp-gui")
-            .send()
-            .await
-            .map_err(|e| {
-                AppError::NetworkError(format!("Failed to check ffmpeg version: {}", e))
-            })?;
-
-        let json = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| AppError::NetworkError(format!("Failed to parse response: {}", e)))?;
-
-        json["tag_name"]
-            .as_str()
-            .map(|s: &str| s.to_string())
-            .ok_or_else(|| AppError::NetworkError("No tag_name in response".to_string()))
+        Ok("system-or-bundled".to_string())
     } else {
         // BtbN uses "latest" rolling release
         Ok("latest".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_ffmpeg_download_does_not_use_nonredistributable_builds() {
+        let err = match get_download_info() {
+            Ok((_url, _format)) => panic!(
+                "macOS FFmpeg auto-download should be disabled until a redistributable build is configured"
+            ),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(message.contains("macOS"), "{message}");
+        assert!(message.contains("FFmpeg"), "{message}");
     }
 }

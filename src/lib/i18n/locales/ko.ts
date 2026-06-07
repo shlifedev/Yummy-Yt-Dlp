@@ -258,7 +258,7 @@ const ko: Record<string, string> = {
   // About / licenses
   "settings.about": "정보",
   "settings.licensesDesc": "이 앱은 다음 오픈소스 도구를 포함하거나 다운로드합니다:",
-  "settings.ffmpegGplNotice": "FFmpeg는 GPLv3 라이선스로 배포됩니다. 번들된 GPL 빌드와 소스 코드는 위 프로젝트 링크에서 확인할 수 있습니다.",
+  "settings.ffmpegGplNotice": "Windows/Linux 앱 관리 FFmpeg는 재배포 가능한 GPLv3 빌드를 사용합니다. macOS는 시스템 FFmpeg 또는 준수 번들 사이드카를 사용하며, 라이선스 파일은 third_party_licenses에 포함됩니다.",
   "settings.openLocation": "파일 위치 열기",
 
   // Errors (백엔드 i18n 키; src-tauri metadata/mod.rs, download/executor.rs 참고)
