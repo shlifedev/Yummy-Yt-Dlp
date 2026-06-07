@@ -10,6 +10,7 @@
   let currentPage = $state(0)
   let pageSize = $state(50)
   let loading = $state(true)
+  let clearingLogs = $state(false)
   let stats = $state<LogStats | null>(null)
 
   // Filters
@@ -142,7 +143,9 @@
   }
 
   async function handleClear() {
+    if (clearingLogs) return
     if (!confirm(t("logs.clearConfirm"))) return
+    clearingLogs = true
     try {
       const result = await commands.clearLogs(null)
       if (result.status === "ok") {
@@ -152,6 +155,8 @@
       }
     } catch (e) {
       console.error("Failed to clear logs:", e)
+    } finally {
+      clearingLogs = false
     }
   }
 
@@ -235,9 +240,10 @@
         <!-- Clear -->
         <button
           onclick={handleClear}
-          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-yt-highlight text-yt-text-secondary ring-1 ring-yt-border hover:bg-red-500/10 hover:text-red-400 hover:ring-red-500/30 transition-colors"
+          disabled={clearingLogs}
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-yt-highlight text-yt-text-secondary ring-1 ring-yt-border hover:bg-red-500/10 hover:text-red-400 hover:ring-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span class="material-symbols-outlined text-[14px]">delete</span>
+          <span class="material-symbols-outlined text-[14px] {clearingLogs ? 'animate-spin' : ''}">{clearingLogs ? "progress_activity" : "delete"}</span>
           {t("logs.clearLogs")}
         </button>
       </div>
