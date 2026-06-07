@@ -8,7 +8,6 @@
     CONTAINER_FORMATS,
     SUB_CONVERT_FORMATS,
   } from "$lib/advanced"
-  import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
   import { onMount, onDestroy } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
@@ -70,13 +69,8 @@
   let fullSettings = $state<any>(null)
   let savingTemplate = $state(false)
 
-  // Download state
+  // Download state (live progress/cancel lives in the queue popup; this page only enqueues)
   let downloading = $state(false)
-  let downloadStatus = $state<string>("idle")
-  let progress = $state(0)
-  let speed = $state("")
-  let eta = $state("")
-  let taskId = $state<number | null>(null)
 
   // Multi-select state
   let selectedEntries = $state<Set<string>>(new Set())
@@ -171,8 +165,6 @@
   let browsers = $state<string[]>([])
   let currentPlatform = $state<string>("")
 
-  let unlisten: (() => void) | null = null
-
   $effect(() => {
     const currentUrl = url // Only tracked dependency
     if (analyzeTimeoutId) {
@@ -203,38 +195,9 @@
     try {
       browsers = await commands.getAvailableBrowsers()
     } catch (e) { console.error("Failed to load browsers:", e) }
-
-    // Listen for global download events
-    unlisten = await listen("download-event", (event: any) => {
-      const data = event.payload
-      if (data.taskId === taskId) {
-        switch (data.eventType) {
-          case "started":
-            downloadStatus = "downloading"
-            downloading = true
-            break
-          case "progress":
-            progress = data.percent || 0
-            speed = data.speed || ""
-            eta = data.eta || ""
-            break
-          case "completed":
-            downloadStatus = "completed"
-            downloading = false
-            progress = 100
-            break
-          case "error":
-            downloadStatus = "failed"
-            downloading = false
-            error = data.detail || (data.message ? t(data.message) : t("error.downloadFailed"))
-            break
-        }
-      }
-    })
   })
 
   onDestroy(() => {
-    if (unlisten) unlisten()
     stopAnalyzeTimer()
     if (tooltipTimerId) clearTimeout(tooltipTimerId)
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
@@ -478,6 +441,9 @@
       if (currentGeneration === analyzeGeneration) {
         analyzing = false
         loadingFormats = false
+        // Drop the quick-preview card on any non-success path so it doesn't
+        // spin "Loading formats" forever when the full fetch failed/was cancelled.
+        if (!videoInfo) quickInfo = null
         stopAnalyzeTimer()
       }
     }
@@ -588,10 +554,6 @@
 
   async function executeDownload(request: any) {
     downloading = true
-    downloadStatus = "downloading"
-    progress = 0
-    speed = ""
-    eta = ""
     error = null
     duplicateCheck = null
     pendingRequest = null
@@ -599,20 +561,16 @@
     try {
       const result = await commands.addToQueue(request)
       if (result.status === "error") {
-        downloadStatus = "failed"
         downloading = false
         error = extractError(result.error)
       } else {
         window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: 1 } }))
         downloading = false
-        downloadStatus = "idle"
         url = ""
         videoInfo = null
         playlistResult = null
-        taskId = null
       }
     } catch (e: any) {
-      downloadStatus = "failed"
       downloading = false
       error = e.message || String(e)
     }
@@ -629,16 +587,6 @@
     pendingRequest = null
     if (!request) return
     await executeDownload(request)
-  }
-
-  async function handleCancelDownload() {
-    if (taskId) {
-      try {
-        await commands.cancelDownload(taskId)
-        downloadStatus = "cancelled"
-        downloading = false
-      } catch (e) { console.error("Failed to cancel download:", e) }
-    }
   }
 
   function toggleSelect(videoId: string) {
@@ -840,6 +788,15 @@
             <div class="absolute inset-y-0 right-3 flex items-center gap-2">
                <span class="material-symbols-outlined text-yt-primary text-[18px] animate-spin">progress_activity</span>
                {#if analyzeElapsed > 0}<span class="text-xs text-yt-text-secondary font-mono">{analyzeElapsed}s</span>{/if}
+               <button
+                 type="button"
+                 onclick={handleCancelAnalyze}
+                 aria-label={t("download.cancel")}
+                 title={t("download.cancel")}
+                 class="text-yt-text-muted hover:text-yt-warning transition-colors flex items-center"
+               >
+                 <span class="material-symbols-outlined text-[18px]">close</span>
+               </button>
             </div>
            {/if}
         </div>
