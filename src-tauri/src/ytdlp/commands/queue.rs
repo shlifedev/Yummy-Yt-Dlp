@@ -50,7 +50,10 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
                     })
                     .await;
                     if let Err(e) = result {
-                        eprintln!("Download task panicked: {:?}", e);
+                        crate::modules::logger::error_cat(
+                            "download",
+                            &format!("[download:{}] task panicked: {:?}", task_id, e),
+                        );
                         let manager = app_panic_guard.state::<Arc<DownloadManager>>();
                         manager.release();
                         crate::ytdlp::download::process_next_pending_public(app_panic_guard);
