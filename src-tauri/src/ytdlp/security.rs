@@ -25,15 +25,6 @@ const DANGEROUS_TEMPLATE_PATTERNS: &[&str] = &[
     "%(#)", // might expand unpredictably
 ];
 
-/// Sanitize and validate a URL for safe use with yt-dlp.
-///
-/// This checks:
-/// - URL is not empty and within length limits
-/// - Only http/https schemes are allowed (blocks file://, data://, javascript://, etc.)
-/// - SSRF protection: blocks localhost, loopback, private/link-local IP ranges
-///
-/// Note: This intentionally does NOT restrict to specific hostnames,
-/// because yt-dlp supports 1000+ sites.
 pub fn sanitize_url(url: &str) -> Result<String, AppError> {
     let url = url.trim();
 
@@ -48,69 +39,123 @@ pub fn sanitize_url(url: &str) -> Result<String, AppError> {
         )));
     }
 
-    // Check allowed schemes
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(AppError::InvalidUrl(
+            "URL must not contain whitespace or control characters".to_string(),
+        ));
+    }
+
     let lower = url.to_lowercase();
+
     if !ALLOWED_SCHEMES.iter().any(|s| lower.starts_with(s)) {
         return Err(AppError::InvalidUrl(
             "Only http:// and https:// URLs are supported".to_string(),
         ));
     }
 
-    // Extract host for SSRF checks
-    if let Some(host) = extract_host(&lower) {
-        if is_ssrf_target(&host) {
-            return Err(AppError::InvalidUrl(
-                "URLs pointing to local or private network addresses are not allowed".to_string(),
-            ));
-        }
+    let host = extract_host(&lower)
+        .ok_or_else(|| AppError::InvalidUrl("URL must include a host".to_string()))?;
+    if is_ssrf_target(&host) {
+        return Err(AppError::InvalidUrl(
+            "URLs pointing to local or private network addresses are not allowed".to_string(),
+        ));
     }
 
     Ok(url.to_string())
 }
 
-/// Extract the hostname from a URL string (simple parser, no external deps).
 fn extract_host(url: &str) -> Option<String> {
-    // Skip scheme
+    fn normalize_host(host: &str) -> Option<String> {
+        let host = host.trim().trim_end_matches('.');
+        if host.is_empty() {
+            None
+        } else {
+            Some(host.to_string())
+        }
+    }
+
     let after_scheme = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
 
-    // Strip userinfo (user:pass@)
-    let after_userinfo = if let Some(at_pos) = after_scheme.find('@') {
+    let after_userinfo = if let Some(at_pos) = after_scheme.rfind('@') {
         &after_scheme[at_pos + 1..]
     } else {
         after_scheme
     };
 
-    // Handle IPv6 addresses in brackets: [::1], [fe80::1], etc.
     if after_userinfo.starts_with('[') {
         if let Some(bracket_end) = after_userinfo.find(']') {
-            let host = &after_userinfo[..=bracket_end]; // includes brackets
-            return if host.len() > 2 {
-                Some(host.to_string())
-            } else {
-                None
-            };
+            let host = &after_userinfo[..=bracket_end];
+            return normalize_host(host);
         }
-        return None; // malformed IPv6
+        return None;
     }
 
-    // Take until port, path, query, or fragment
     let host = after_userinfo
         .split([':', '/', '?', '#'])
         .next()
         .unwrap_or("");
 
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_string())
-    }
+    normalize_host(host)
 }
 
-/// Check if a hostname is a potential SSRF target (local/private network).
 fn is_ssrf_target(host: &str) -> bool {
-    // Check common local hostnames
+    fn parse_component(part: &str) -> Option<u32> {
+        if part.is_empty() {
+            return None;
+        }
+
+        if let Some(hex) = part.strip_prefix("0x").or_else(|| part.strip_prefix("0X")) {
+            if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            return u32::from_str_radix(hex, 16).ok();
+        }
+
+        if part.len() > 1 && part.starts_with('0') {
+            if !part.chars().all(|c| matches!(c, '0'..='7')) {
+                return None;
+            }
+            return u32::from_str_radix(part, 8).ok();
+        }
+
+        if !part.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        part.parse::<u32>().ok()
+    }
+
+    fn parse_legacy_ipv4(host: &str) -> Option<std::net::Ipv4Addr> {
+        if host.contains(':') {
+            return None;
+        }
+
+        let parts: Vec<&str> = host.split('.').collect();
+        if parts.is_empty() || parts.len() > 4 || parts.iter().any(|p| p.is_empty()) {
+            return None;
+        }
+
+        let nums: Vec<u32> = parts
+            .iter()
+            .map(|part| parse_component(part))
+            .collect::<Option<Vec<_>>>()?;
+
+        let value = match nums.as_slice() {
+            [a] => *a,
+            [a, b] if *a <= 0xff && *b <= 0x00ff_ffff => (*a << 24) | *b,
+            [a, b, c] if *a <= 0xff && *b <= 0xff && *c <= 0xffff => (*a << 24) | (*b << 16) | *c,
+            [a, b, c, d] if [a, b, c, d].iter().all(|n| **n <= 0xff) => {
+                (*a << 24) | (*b << 16) | (*c << 8) | *d
+            }
+            _ => return None,
+        };
+
+        Some(std::net::Ipv4Addr::from(value))
+    }
+
+    let host = host.trim_end_matches('.');
+
     if host == "localhost"
         || host == "localhost.localdomain"
         || host.ends_with(".localhost")
@@ -120,33 +165,38 @@ fn is_ssrf_target(host: &str) -> bool {
         return true;
     }
 
-    // Try to parse as IP address
-    // Strip brackets for IPv6
     let ip_str = host.trim_start_matches('[').trim_end_matches(']');
+    if ip_str.contains('%') {
+        return true;
+    }
+
     if let Ok(ip) = ip_str.parse::<IpAddr>() {
         return match ip {
             IpAddr::V4(v4) => is_blocked_v4(v4),
             IpAddr::V6(v6) => {
-                // Native v6 checks first so ::1 / :: are caught before to_ipv4()
-                // (which would otherwise remap ::1 to 0.0.0.1 and slip through).
-                if v6.is_loopback()        // ::1
-                    || v6.is_unspecified() // ::
+                // ::1 / :: are caught before to_ipv4()
+                if v6.is_loopback()
+                    || v6.is_unspecified()
                     || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 (link-local)
                     || (v6.segments()[0] & 0xfe00) == 0xfc00
                 // fc00::/7 (unique local)
                 {
                     return true;
                 }
+
                 // `::ffff:a.b.c.d` (IPv4-mapped) and the deprecated `::a.b.c.d`
-                // (IPv4-compatible) forms both route to the embedded v4 address,
-                // so re-check it as v4 to avoid bypassing the v4 allowlist.
-                // to_ipv4() (not to_ipv4_mapped()) catches both forms.
+                // forms both route to the embedded v4 address, re-check it as v4 to
+                // avoid bypassing the v4 blocklist.
                 match v6.to_ipv4() {
                     Some(v4) => is_blocked_v4(v4),
                     None => false,
                 }
             }
         };
+    }
+
+    if let Some(v4) = parse_legacy_ipv4(ip_str) {
+        return is_blocked_v4(v4);
     }
 
     false
@@ -163,12 +213,6 @@ fn is_blocked_v4(v4: std::net::Ipv4Addr) -> bool {
         || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
 }
 
-/// Validate and sanitize a download output path.
-///
-/// Ensures the path:
-/// - Is not empty and within length limits
-/// - Is an absolute path
-/// - Does not contain path traversal sequences after normalization
 pub fn sanitize_output_path(path: &str) -> Result<String, AppError> {
     let path = path.trim();
 
@@ -185,20 +229,24 @@ pub fn sanitize_output_path(path: &str) -> Result<String, AppError> {
         )));
     }
 
-    let p = Path::new(path);
-
-    // Must be absolute
-    if !p.is_absolute() {
+    if path.chars().any(|c| c == '\0' || c.is_control()) {
         return Err(AppError::FileError(
-            "Download path must be an absolute path".to_string(),
+            "Download path must not contain control characters".to_string(),
         ));
     }
 
-    // Check for path traversal in any component
+    let p = Path::new(path);
+
+    if !p.is_absolute() {
+        return Err(AppError::FileError(
+            "Download path must be absolute".to_string(),
+        ));
+    }
+
     for component in p.components() {
         if let std::path::Component::ParentDir = component {
             return Err(AppError::FileError(
-                "Download path must not contain '..' traversal".to_string(),
+                "Download path must not contain '..'".to_string(),
             ));
         }
     }
@@ -206,10 +254,6 @@ pub fn sanitize_output_path(path: &str) -> Result<String, AppError> {
     Ok(path.to_string())
 }
 
-/// Validate a yt-dlp filename template string.
-///
-/// Allows standard yt-dlp template variables like %(title)s, %(ext)s, etc.
-/// Blocks path traversal and other dangerous patterns.
 pub fn sanitize_filename_template(template: &str) -> Result<String, AppError> {
     let template = template.trim();
 
@@ -225,6 +269,12 @@ pub fn sanitize_filename_template(template: &str) -> Result<String, AppError> {
         ));
     }
 
+    if template.chars().any(|c| c == '\0' || c.is_control()) {
+        return Err(AppError::Custom(
+            "Filename template must not contain control characters".to_string(),
+        ));
+    }
+
     for pattern in DANGEROUS_TEMPLATE_PATTERNS {
         if template.contains(pattern) {
             return Err(AppError::Custom(format!(
@@ -234,7 +284,6 @@ pub fn sanitize_filename_template(template: &str) -> Result<String, AppError> {
         }
     }
 
-    // Disallow absolute paths in template (should be relative, joined with output_dir)
     if Path::new(template).is_absolute() {
         return Err(AppError::Custom(
             "Filename template must be a relative path".to_string(),
@@ -244,7 +293,6 @@ pub fn sanitize_filename_template(template: &str) -> Result<String, AppError> {
     Ok(template.to_string())
 }
 
-/// Validate the cookie browser name against known yt-dlp supported browsers.
 pub fn sanitize_cookie_browser(browser: &str) -> Result<String, AppError> {
     let browser = browser.trim().to_lowercase();
 
@@ -255,8 +303,10 @@ pub fn sanitize_cookie_browser(browser: &str) -> Result<String, AppError> {
     }
 
     // yt-dlp accepts browser names, optionally with profile: "chrome:Profile 1"
-    // Extract just the browser name (before the colon)
-    let browser_name = browser.split(':').next().unwrap_or(&browser);
+    let (browser_name, profile) = match browser.split_once(':') {
+        Some((name, profile)) => (name, Some(profile)),
+        None => (browser.as_str(), None),
+    };
 
     if !VALID_COOKIE_BROWSERS.contains(&browser_name) {
         return Err(AppError::Custom(format!(
@@ -264,6 +314,21 @@ pub fn sanitize_cookie_browser(browser: &str) -> Result<String, AppError> {
             browser_name,
             VALID_COOKIE_BROWSERS.join(", ")
         )));
+    }
+
+    if let Some(profile) = profile {
+        let valid_profile = !profile.is_empty()
+            && profile.len() <= 128
+            && !profile.contains("..")
+            && profile.chars().all(|c| {
+                c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-' | '.' | '(' | ')')
+            });
+
+        if !valid_profile {
+            return Err(AppError::Custom(
+                "Cookie browser profile contains unsupported characters".to_string(),
+            ));
+        }
     }
 
     Ok(browser.to_string())
@@ -309,21 +374,34 @@ pub fn sanitize_sub_langs(langs: &str) -> Result<String, AppError> {
     Ok(langs.to_string())
 }
 
-/// Validate a yt-dlp rate limit (e.g. "1M", "500K", "4.2M", "1000").
 pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
     let rate = rate.trim();
+
+    if rate.is_empty() || rate.len() > 32 {
+        return Err(AppError::Custom(
+            "Rate limit must be 1-32 characters".to_string(),
+        ));
+    }
+
     let re = regex::Regex::new(r"^\d+(\.\d+)?[KMGkmg]?$").unwrap();
     if !re.is_match(rate) {
         return Err(AppError::Custom(
             "Rate limit must look like 1M, 500K or 4.2M (no spaces or units like MB/s)".to_string(),
         ));
     }
+
     let numeric = rate.trim_end_matches(['K', 'M', 'G', 'k', 'm', 'g']);
-    if numeric.parse::<f64>().ok().filter(|v| *v > 0.0).is_none() {
+    if numeric
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .is_none()
+    {
         return Err(AppError::Custom(
             "Rate limit must be greater than zero".to_string(),
         ));
     }
+
     Ok(rate.to_string())
 }
 
@@ -341,32 +419,41 @@ pub fn sanitize_download_sections(sections: &str) -> Result<String, AppError> {
     Ok(sections.to_string())
 }
 
-/// Validate a proxy URL for yt-dlp's --proxy. Unlike `sanitize_url`, this intentionally ALLOWS
-/// localhost / private addresses, since proxies are very commonly local (e.g. 127.0.0.1:8080).
 pub fn sanitize_proxy(proxy: &str) -> Result<String, AppError> {
+    if proxy.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(AppError::Custom(
+            "Proxy URL must not contain whitespace or control characters".to_string(),
+        ));
+    }
+
     let proxy = proxy.trim();
     if proxy.is_empty() || proxy.len() > 2048 {
         return Err(AppError::Custom(
             "Proxy URL must be 1-2048 characters".to_string(),
         ));
     }
+
     let re =
-        regex::Regex::new(r"^(?i)(https?|socks4|socks5)://[A-Za-z0-9.\-_]+(:\d{1,5})?/?$").unwrap();
+        regex::Regex::new(r"(?i)^(https?|socks4|socks5)://[a-z0-9.\-_]+(:\d{1,5})?/?$").unwrap();
     if !re.is_match(proxy) {
         return Err(AppError::Custom(
-            "Proxy must be like http://host:port or socks5://127.0.0.1:1080".to_string(),
+            "Proxy must be a valid http(s), socks4 or socks5 URL".to_string(),
         ));
     }
-    let without_slash = proxy.trim_end_matches('/');
-    if let Some((_, port)) = without_slash.rsplit_once(':') {
-        if port.chars().all(|c| c.is_ascii_digit())
-            && port.parse::<u16>().ok().filter(|p| *p > 0).is_none()
-        {
+
+    let authority = proxy
+        .split_once("://")
+        .map(|(_, rest)| rest.trim_end_matches('/'))
+        .unwrap_or("");
+
+    if let Some(port) = authority.rsplit_once(':').map(|(_, port)| port) {
+        if port.parse::<u16>().ok().filter(|p| *p > 0).is_none() {
             return Err(AppError::Custom(
                 "Proxy port must be between 1 and 65535".to_string(),
             ));
         }
     }
+
     Ok(proxy.to_string())
 }
 
@@ -553,5 +640,68 @@ mod tests {
         assert!(sanitize_proxy("http://proxy.example.com:99999").is_err());
         assert!(sanitize_proxy("javascript:alert(1)").is_err());
         assert!(sanitize_proxy("not a url").is_err());
+    }
+}
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+
+    #[test]
+    fn url_rejects_empty_host_and_whitespace() {
+        assert!(sanitize_url("https://").is_err());
+        assert!(sanitize_url("https:///watch?v=dQw4w9WgXcQ").is_err());
+        assert!(sanitize_url("https://example.com/watch v").is_err());
+        assert!(sanitize_url("https://example.com/watch\n--output=/tmp/x").is_err());
+    }
+
+    #[test]
+    fn ssrf_trailing_dot_and_userinfo_bypasses() {
+        assert!(sanitize_url("http://localhost./admin").is_err());
+        assert!(sanitize_url("http://127.0.0.1./admin").is_err());
+        assert!(sanitize_url("http://user@example.com@127.0.0.1/admin").is_err());
+    }
+
+    #[test]
+    fn ssrf_legacy_ipv4_notation() {
+        assert!(sanitize_url("http://2130706433/admin").is_err());
+        assert!(sanitize_url("http://0177.0.0.1/admin").is_err());
+        assert!(sanitize_url("http://0x7f.0.0.1/admin").is_err());
+        assert!(sanitize_url("http://127.1/admin").is_err());
+    }
+
+    #[test]
+    fn ssrf_ipv6_zone_identifier() {
+        assert!(sanitize_url("http://[fe80::1%25lo0]/admin").is_err());
+    }
+
+    #[test]
+    fn control_characters_rejected_in_paths_and_templates() {
+        assert!(sanitize_output_path("/tmp/downloads\0x").is_err());
+        assert!(sanitize_filename_template("%(title)s\n%(ext)s").is_err());
+    }
+
+    #[test]
+    fn cookie_browser_profile_is_sanitized() {
+        assert!(sanitize_cookie_browser("chrome:Profile 1").is_ok());
+        assert!(sanitize_cookie_browser("firefox:default-release").is_ok());
+        assert!(sanitize_cookie_browser("chrome:../../Default").is_err());
+        assert!(sanitize_cookie_browser("chrome:Default\n--output=/tmp/x").is_err());
+        assert!(sanitize_cookie_browser("chrome:Profile:Other").is_err());
+    }
+
+    #[test]
+    fn limit_rate_rejects_unreasonable_values() {
+        assert!(sanitize_limit_rate(
+            "999999999999999999999999999999999999999999999999999999999999999G"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn proxy_rejects_whitespace_and_controls() {
+        assert!(
+            sanitize_proxy("http://proxy.example.com:8080\n--proxy http://127.0.0.1:1").is_err()
+        );
+        assert!(sanitize_proxy("http://proxy.example.com:8080 ").is_err());
     }
 }
