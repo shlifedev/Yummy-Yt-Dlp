@@ -318,8 +318,7 @@ pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
             "Rate limit must look like 1M, 500K or 4.2M (no spaces or units like MB/s)".to_string(),
         ));
     }
-    let numeric = rate
-        .trim_end_matches(|c: char| matches!(c, 'K' | 'M' | 'G' | 'k' | 'm' | 'g'));
+    let numeric = rate.trim_end_matches(['K', 'M', 'G', 'k', 'm', 'g']);
     if numeric.parse::<f64>().ok().filter(|v| *v > 0.0).is_none() {
         return Err(AppError::Custom(
             "Rate limit must be greater than zero".to_string(),
@@ -332,9 +331,8 @@ pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
 /// optionally prefixed with "*"). Only a single time range is accepted.
 pub fn sanitize_download_sections(sections: &str) -> Result<String, AppError> {
     let sections = sections.trim();
-    let re =
-        regex::Regex::new(r"^\*?(?:\d{1,2}:)?[0-5]?\d:[0-5]\d-(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$")
-            .unwrap();
+    let re = regex::Regex::new(r"^\*?(?:\d{1,2}:)?[0-5]?\d:[0-5]\d-(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$")
+        .unwrap();
     if !re.is_match(sections) {
         return Err(AppError::Custom(
             "Section must be a time range like 1:30-2:45 or 00:01:30-00:02:45".to_string(),
