@@ -6,6 +6,12 @@ Tauri 2.0（Rust）と SvelteKit で構築された、ビデオダウンロー�
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | **日本語** | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
+## ビデオ
+
+<p align="center">
+  <img src="Video.gif" alt="yt-dlp Modern GUI デモ" width="700">
+</p>
+
 ## 機能
 
 - フォーマットと品質を選択してビデオとプレイリストをダウンロード

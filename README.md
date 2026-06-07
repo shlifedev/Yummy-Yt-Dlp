@@ -6,6 +6,12 @@ Built with Tauri 2.0 (Rust) and SvelteKit, providing a clean and intuitive inter
 
 [**한국어**](docs/README.ko.md) | [**日本語**](docs/README.ja.md) | [**中文(简体)**](docs/README.zh-CN.md) | [**中文(繁體)**](docs/README.zh-TW.md) | [**Español**](docs/README.es.md) | [**Français**](docs/README.fr.md) | [**Deutsch**](docs/README.de.md) | [**Português**](docs/README.pt-BR.md) | [**Русский**](docs/README.ru.md) | [**Tiếng Việt**](docs/README.vi.md)
 
+## Video
+
+<p align="center">
+  <img src="docs/Video.gif" alt="yt-dlp Modern GUI demo" width="700">
+</p>
+
 ## Features
 
 - Video & playlist download with format and quality selection

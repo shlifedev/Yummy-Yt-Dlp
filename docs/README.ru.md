@@ -6,6 +6,12 @@
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | **Русский** | [**Tiếng Việt**](README.vi.md)
 
+## Видео
+
+<p align="center">
+  <img src="Video.gif" alt="Демонстрация yt-dlp Modern GUI" width="700">
+</p>
+
 ## Возможности
 
 - Загрузка видео и плейлистов с выбором формата и качества

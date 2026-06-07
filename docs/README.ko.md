@@ -6,6 +6,12 @@ Tauri 2.0 (Rust)과 SvelteKit으로 구축되어 비디오 다운로드를 관�
 
 [**English**](../README.md) | **한국어** | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
+## 비디오
+
+<p align="center">
+  <img src="Video.gif" alt="yt-dlp Modern GUI 데모" width="700">
+</p>
+
 ## 기능
 
 - 형식 및 화질 선택을 통한 비디오 및 플레이리스트 다운로드

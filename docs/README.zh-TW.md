@@ -6,6 +6,12 @@
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
+## 影片
+
+<p align="center">
+  <img src="Video.gif" alt="yt-dlp Modern GUI 示範" width="700">
+</p>
+
 ## 功能
 
 - 支援影片和播放清單下載，可選擇格式和畫質

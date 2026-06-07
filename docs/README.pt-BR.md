@@ -6,6 +6,12 @@ Construído com Tauri 2.0 (Rust) e SvelteKit, fornecendo uma interface limpa e i
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md) | **Português**
 
+## Video
+
+<p align="center">
+  <img src="Video.gif" alt="Demonstração do yt-dlp Modern GUI" width="700">
+</p>
+
 ## Recursos
 
 - Download de vídeos e playlists com seleção de formato e qualidade
