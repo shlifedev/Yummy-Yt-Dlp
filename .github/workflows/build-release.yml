@@ -61,9 +61,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            name: linux
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows
@@ -75,13 +72,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: matrix.name == 'linux'
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev
-          version: 1.0
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -129,27 +119,6 @@ jobs:
 
       # Sidecar binaries (yt-dlp, ffmpeg, ffprobe, deno) are bundled via bundle.resources.
       # URLs mirror dep_ytdlp.rs / dep_ffmpeg.rs / dep_deno.rs. ffprobe is optional (skip if absent).
-      - name: Prepare bundled binaries (Linux)
-        if: matrix.name == 'linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          BIN=src-tauri/binaries
-          mkdir -p "$BIN"
-          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" -o "$BIN/yt-dlp"
-          chmod +x "$BIN/yt-dlp"
-          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" -o /tmp/ffmpeg.tar.xz
-          mkdir -p /tmp/ffx && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffx
-          cp "$(find /tmp/ffx -type f -name ffmpeg | head -1)" "$BIN/ffmpeg"
-          chmod +x "$BIN/ffmpeg"
-          PROBE=$(find /tmp/ffx -type f -name ffprobe | head -1 || true)
-          [ -n "$PROBE" ] && { cp "$PROBE" "$BIN/ffprobe"; chmod +x "$BIN/ffprobe"; }
-          curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip" -o /tmp/deno.zip
-          unzip -q /tmp/deno.zip -d /tmp/denox
-          cp "$(find /tmp/denox -type f -name deno | head -1)" "$BIN/deno"
-          chmod +x "$BIN/deno"
-          ls -la "$BIN"
-
       - name: Prepare bundled binaries (Windows)
         if: matrix.name == 'windows'
         shell: bash
@@ -231,10 +200,6 @@ jobs:
         with:
           name: build-${{ matrix.name }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
-            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.sig
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
@@ -381,7 +346,6 @@ jobs:
           fi
           WIN_MSI_SIG=$(read_sig "*.msi.sig")
           MACOS_SIG=$(read_sig "*.app.tar.gz.sig")
-          LINUX_SIG=$(read_sig "*.AppImage.sig")
 
           # Find actual filenames for URLs
           WIN_NSIS_FILE=$(find artifacts -name "*.nsis.exe" -not -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename "{}" 2>/dev/null || true)
@@ -390,7 +354,6 @@ jobs:
           fi
           WIN_MSI_FILE=$(find artifacts -name "*.msi" -not -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename "{}" 2>/dev/null || true)
           MACOS_FILE=$(find artifacts -name "*.app.tar.gz" -not -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename "{}" 2>/dev/null || true)
-          LINUX_FILE=$(find artifacts -name "*.AppImage" -not -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename "{}" 2>/dev/null || true)
 
           # Build platforms JSON
           PLATFORMS="{}"
@@ -407,13 +370,6 @@ jobs:
               --arg sig "$MACOS_SIG" \
               --arg url "${BASE_URL}/${MACOS_FILE}" \
               '. + {"darwin-aarch64": {"signature": $sig, "url": $url}, "darwin-x86_64": {"signature": $sig, "url": $url}}')
-          fi
-
-          if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_FILE" ]; then
-            PLATFORMS=$(echo "$PLATFORMS" | jq \
-              --arg sig "$LINUX_SIG" \
-              --arg url "${BASE_URL}/${LINUX_FILE}" \
-              '. + {"linux-x86_64": {"signature": $sig, "url": $url}}')
           fi
 
           # Create latest.json
@@ -542,9 +498,6 @@ jobs:
           | Windows (portable) | `_portable.exe` |
           | Windows (MSI) | `.msi` |
           | macOS (Universal) | `.dmg` |
-          | Linux (AppImage) | `.AppImage` |
-          | Linux (deb) | `.deb` |
-          | Linux (rpm) | `.rpm` |
           TABLE_EOF
           } > release_body.md
 
@@ -564,10 +517,6 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.app.tar.gz
             artifacts/**/*.app.tar.gz.sig
-            artifacts/**/*.AppImage
-            artifacts/**/*.AppImage.sig
-            artifacts/**/*.deb
-            artifacts/**/*.rpm
             latest.json
           draft: false
           prerelease: false

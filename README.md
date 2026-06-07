@@ -65,8 +65,8 @@ The production build output will be in `src-tauri/target/release/bundle/`.
 ## Release Deployment
 
 Pushing to `main` runs the release workflow. It bumps the next patch version,
-builds the signed Tauri artifacts, uploads the release files to GitHub Releases,
-and publishes the updater payload to Cloudflare R2.
+builds the signed Windows and macOS Tauri artifacts, uploads the release files
+to GitHub Releases, and publishes the updater payload to Cloudflare R2.
 
 The updater is served from:
 
