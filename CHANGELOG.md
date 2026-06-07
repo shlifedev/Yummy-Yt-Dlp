@@ -1,6 +1,29 @@
 # Changelog
 
 
+## v1.1.45 (2026-06-07)
+
+### Features
+- show channel auto-loading status
+
+### Bug Fixes
+- refresh tauri updater signing key
+- satisfy rust lint gates
+- sync bun lockfile
+- reject zero rate limits
+- validate download section times
+- reject invalid proxy ports
+- skip thumbnails without video ids
+- ignore stale log loads
+- ignore stale playlist responses
+- allow duplicate download override
+- 메인 페이지 분석/다운로드 상태 버그 정리
+
+### Other Changes
+- release windows and macos only
+- deploy updater artifacts to r2
+- 릴리스 빌드에 lint/타입 검사 게이트 추가 + release 프로파일 최적화
+
 ## v1.1.44 (2026-06-04)
 
 ## v1.1.43 (2026-06-03)
