@@ -71,8 +71,8 @@ A saída da compilação de produção estará em `src-tauri/target/release/bund
 
 Este aplicativo inclui ou baixa os seguintes binários de código aberto:
 
-- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
-- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **yt-dlp** — Source: The Unlicense; standalone release binaries: GPLv3+ — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — app-managed Windows/Linux builds: https://github.com/BtbN/FFmpeg-Builds; macOS: system FFmpeg or compliant bundled sidecar only; source: https://ffmpeg.org
 - **Deno** — MIT — https://github.com/denoland/deno
 
 FFmpeg está licenciado sob a GNU General Public License v3. A versão GPL exata incluída em cada lançamento está vinculada acima, com o código-fonte correspondente disponível no projeto FFmpeg e nos provedores de compilação.

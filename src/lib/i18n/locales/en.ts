@@ -266,7 +266,7 @@ const en: Record<string, string> = {
   // About / licenses
   "settings.about": "About",
   "settings.licensesDesc": "This app bundles or downloads these open-source tools:",
-  "settings.ffmpegGplNotice": "FFmpeg is distributed under the GPLv3; the bundled GPL build and its source are available from the project links above.",
+  "settings.ffmpegGplNotice": "Windows/Linux app-managed FFmpeg uses redistributable GPLv3 builds. macOS uses system FFmpeg or a compliant bundled sidecar; license files are included in third_party_licenses.",
   "settings.openLocation": "Open file location",
 
   // Errors (backend i18n keys; see src-tauri metadata/mod.rs, download/executor.rs)

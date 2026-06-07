@@ -256,7 +256,7 @@ const ja: Record<string, string> = {
   // About / licenses
   "settings.about": "このアプリについて",
   "settings.licensesDesc": "このアプリは以下のオープンソースツールを同梱またはダウンロードします：",
-  "settings.ffmpegGplNotice": "FFmpeg は GPLv3 ライセンスで配布されています。同梱の GPL ビルドとそのソースコードは上記プロジェクトリンクから入手できます。",
+  "settings.ffmpegGplNotice": "Windows/Linux のアプリ管理 FFmpeg は再配布可能な GPLv3 ビルドを使用します。macOS はシステム FFmpeg または準拠した同梱サイドカーを使用し、ライセンスファイルは third_party_licenses に含まれます。",
   "settings.openLocation": "ファイルの場所を開く",
 
   // Errors (backend i18n keys)

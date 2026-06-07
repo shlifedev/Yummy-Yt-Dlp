@@ -71,8 +71,8 @@ bun run tauri build
 
 Это приложение поставляется в комплекте или загружает следующие бинарные файлы с открытым исходным кодом:
 
-- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
-- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **yt-dlp** — Source: The Unlicense; standalone release binaries: GPLv3+ — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — app-managed Windows/Linux builds: https://github.com/BtbN/FFmpeg-Builds; macOS: system FFmpeg or compliant bundled sidecar only; source: https://ffmpeg.org
 - **Deno** — MIT — https://github.com/denoland/deno
 
 FFmpeg распространяется под лицензией GNU General Public License v3. Точная GPL-сборка, поставляемая с каждым выпуском, указана по ссылкам выше; соответствующий исходный код доступен на сайте проекта FFmpeg и у поставщиков сборок.

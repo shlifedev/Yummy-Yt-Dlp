@@ -234,63 +234,6 @@ pub async fn extract_zip(
     .map_err(|e| AppError::DependencyInstallError(format!("Extract task failed: {}", e)))?
 }
 
-/// Extract a tar.gz archive, finding the specified binaries inside.
-pub async fn extract_tar_gz(
-    archive_path: &Path,
-    dest_dir: &Path,
-    binary_names: &[&str],
-) -> Result<Vec<PathBuf>, AppError> {
-    let archive = archive_path.to_path_buf();
-    let dest = dest_dir.to_path_buf();
-    let names: Vec<String> = binary_names.iter().map(|s| s.to_string()).collect();
-
-    tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, AppError> {
-        let file = std::fs::File::open(&archive).map_err(|e| {
-            AppError::DependencyInstallError(format!("Failed to open tar.gz: {}", e))
-        })?;
-        let decoder = flate2::read::GzDecoder::new(file);
-        let mut tar = tar::Archive::new(decoder);
-
-        let mut extracted = Vec::new();
-
-        for entry_result in tar
-            .entries()
-            .map_err(|e| AppError::DependencyInstallError(format!("Tar entries error: {}", e)))?
-        {
-            let mut entry = entry_result
-                .map_err(|e| AppError::DependencyInstallError(format!("Tar entry error: {}", e)))?;
-
-            let path = entry
-                .path()
-                .map_err(|e| AppError::DependencyInstallError(format!("Tar path error: {}", e)))?
-                .to_path_buf();
-
-            let file_name = path
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            if names.contains(&file_name) {
-                let out_path = dest.join(&file_name);
-                let mut out_file = std::fs::File::create(&out_path).map_err(|e| {
-                    AppError::DependencyInstallError(format!(
-                        "Failed to create extracted file: {}",
-                        e
-                    ))
-                })?;
-                std::io::copy(&mut entry, &mut out_file).map_err(|e| {
-                    AppError::DependencyInstallError(format!("Failed to extract file: {}", e))
-                })?;
-                extracted.push(out_path);
-            }
-        }
-
-        Ok(extracted)
-    })
-    .await
-    .map_err(|e| AppError::DependencyInstallError(format!("Extract task failed: {}", e)))?
-}
-
 /// Extract a tar.xz archive, finding the specified binaries inside.
 pub async fn extract_tar_xz(
     archive_path: &Path,

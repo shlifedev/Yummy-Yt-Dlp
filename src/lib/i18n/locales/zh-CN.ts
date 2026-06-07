@@ -260,7 +260,7 @@ const zhCN: Record<string, string> = {
   // About / licenses
   "settings.about": "关于",
   "settings.licensesDesc": "本应用内置或下载了以下开源工具：",
-  "settings.ffmpegGplNotice": "FFmpeg 遵循 GPLv3 协议发布，内置的 GPL 构建版本及其源代码可通过上方项目链接获取。",
+  "settings.ffmpegGplNotice": "Windows/Linux 的应用托管 FFmpeg 使用可再分发的 GPLv3 构建。macOS 使用系统 FFmpeg 或合规的内置 sidecar；许可文件包含在 third_party_licenses 中。",
   "settings.openLocation": "打开文件位置",
 
   // Errors (backend i18n keys)

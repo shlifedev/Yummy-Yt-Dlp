@@ -102,11 +102,13 @@ artifacts are uploaded to R2.
 
 This app bundles or downloads the following open-source binaries:
 
-- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
-- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **yt-dlp** — Source: The Unlicense; standalone release binaries: GPLv3+ — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — app-managed Windows/Linux builds: https://github.com/BtbN/FFmpeg-Builds; macOS: system FFmpeg or compliant bundled sidecar only; source: https://ffmpeg.org
 - **Deno** — MIT — https://github.com/denoland/deno
 
-FFmpeg is licensed under the GNU General Public License v3. The exact GPL build shipped with each release is linked above, with corresponding source available from the FFmpeg project and the build providers.
+FFmpeg is licensed under the GNU General Public License v3 when the app uses the BtbN GPL builds. Windows and Linux app-managed downloads use those redistributable GPL builds. macOS FFmpeg auto-download is disabled until a redistributable GPL/LGPL build is configured; macOS users can use a system FFmpeg installation, or a release can ship a compliant bundled sidecar with matching source and build instructions.
+
+Packaged releases include third-party license notices under `third_party_licenses/`.
 
 ## License
 
