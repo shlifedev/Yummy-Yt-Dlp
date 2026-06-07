@@ -102,6 +102,19 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      # Gate the release build on the same lint/type checks as CI, so a broken
+      # commit landing on main (e.g. a direct push or a merge that skipped CI)
+      # can never ship in a release.
+      - name: Svelte/TypeScript check
+        run: bun run check
+
+      - name: Rust fmt & clippy
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo fmt -- --check
+          cargo clippy --target ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin' || matrix.target }} -- -D warnings
+
       - name: Set version
         shell: bash
         env:
