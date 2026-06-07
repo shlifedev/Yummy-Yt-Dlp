@@ -1,5 +1,6 @@
-use super::types::AppSettings;
+use super::types::{AdvancedOptions, AppSettings};
 use crate::modules::types::AppError;
+use crate::ytdlp::security;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -26,7 +27,7 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         .unwrap_or(defaults.default_quality);
 
     let max_concurrent = getter("maxConcurrent")
-        .and_then(|v| v.as_u64().map(|n| (n as u32).clamp(1, 20)))
+        .and_then(|v| v.as_u64().map(|n| security::clamp_max_concurrent(n as u32)))
         .unwrap_or(defaults.max_concurrent);
 
     let filename_template = getter("filenameTemplate")
@@ -65,9 +66,17 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| defaults.dep_mode.clone());
 
+    let dep_overrides = getter("depOverrides")
+        .and_then(|v| serde_json::from_value::<std::collections::HashMap<String, String>>(v).ok())
+        .unwrap_or_else(|| defaults.dep_overrides.clone());
+
     let setup_completed = getter("setupCompleted")
         .and_then(|v| v.as_bool())
         .unwrap_or(defaults.setup_completed);
+
+    let advanced = getter("advanced")
+        .and_then(|v| serde_json::from_value::<AdvancedOptions>(v).ok())
+        .unwrap_or_default();
 
     AppSettings {
         download_path,
@@ -84,6 +93,8 @@ fn parse_settings(getter: impl Fn(&str) -> Option<serde_json::Value>) -> AppSett
         theme,
         minimize_to_tray,
         dep_mode,
+        dep_overrides,
+        advanced,
         setup_completed,
     }
 }
@@ -115,7 +126,7 @@ pub fn update_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), Ap
 
     store.set(
         "maxConcurrent",
-        serde_json::to_value(settings.max_concurrent.clamp(1, 20))
+        serde_json::to_value(security::clamp_max_concurrent(settings.max_concurrent))
             .map_err(|e| AppError::Custom(e.to_string()))?,
     );
 
@@ -180,6 +191,17 @@ pub fn update_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), Ap
     store.set(
         "depMode",
         serde_json::to_value(&settings.dep_mode).map_err(|e| AppError::Custom(e.to_string()))?,
+    );
+
+    store.set(
+        "depOverrides",
+        serde_json::to_value(&settings.dep_overrides)
+            .map_err(|e| AppError::Custom(e.to_string()))?,
+    );
+
+    store.set(
+        "advanced",
+        serde_json::to_value(&settings.advanced).map_err(|e| AppError::Custom(e.to_string()))?,
     );
 
     store.set(

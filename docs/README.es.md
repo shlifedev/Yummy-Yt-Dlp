@@ -28,7 +28,7 @@ Construida con Tauri 2.0 (Rust) y SvelteKit, proporcionando una interfaz limpia 
 - 4 temas de colores (Dark, Violet, Red, Light)
 - Soporte multiplataforma (Windows, macOS, Linux)
 
-> **💡 Consejo:** La aplicación descarga automáticamente yt-dlp, FFmpeg y Deno en el primer inicio. Sin embargo, los binarios gestionados automáticamente (empaquetados con PyInstaller) pueden ser lentos en el arranque inicial. Para una obtención de metadatos y descargas **significativamente más rápidas**, instálelos previamente con su gestor de paquetes — [Homebrew](https://brew.sh/) en macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) en Windows (`winget install yt-dlp.yt-dlp ffmpeg`), o `apt`/`pacman` en Linux. La aplicación detectará y priorizará automáticamente las versiones instaladas en el sistema desde su PATH.
+> **💡 Consejo:** La aplicación configura automáticamente yt-dlp, FFmpeg y Deno en el primer inicio (incluidos con la aplicación y descargados/actualizados según sea necesario). La compilación de yt-dlp gestionada automáticamente se autoextrae en cada ejecución, por lo que su primer arranque puede ser lento. Para una obtención de metadatos y descargas **significativamente más rápidas**, instálelos previamente con su gestor de paquetes — [Homebrew](https://brew.sh/) en macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) en Windows (`winget install yt-dlp.yt-dlp ffmpeg`), o `apt`/`pacman` en Linux. De forma predeterminada, la aplicación detecta y prioriza las versiones instaladas en el sistema desde su PATH.
 
 ## Compilar desde el código fuente
 
@@ -62,6 +62,16 @@ La compilación de producción se genera en `src-tauri/target/release/bundle/`.
 
 1. Aplicación de descarga para usuarios móviles (puede alojar su propio servidor yt-dlp)
 2. Actualizador de versiones
+
+## Créditos y Licencias de Terceros
+
+Esta aplicación incluye o descarga los siguientes binarios de código abierto:
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg está licenciado bajo la GNU General Public License v3. La versión GPL exacta incluida en cada lanzamiento se enlaza arriba, con el código fuente correspondiente disponible en el proyecto FFmpeg y los proveedores de compilación.
 
 ## Licencia
 

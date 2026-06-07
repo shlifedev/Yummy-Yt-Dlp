@@ -24,6 +24,8 @@ pub fn run() {
             ytdlp::commands::check_dependencies,
             ytdlp::commands::update_ytdlp,
             ytdlp::commands::get_download_queue,
+            ytdlp::commands::get_active_queue,
+            ytdlp::commands::clear_all_queue_and_history,
             ytdlp::commands::clear_completed,
             ytdlp::commands::retry_download,
             ytdlp::commands::get_settings,
@@ -34,16 +36,20 @@ pub fn run() {
             ytdlp::commands::check_duplicate,
             ytdlp::commands::delete_history_item,
             ytdlp::commands::get_active_downloads,
-            ytdlp::commands::get_download_queue_paginated,
             ytdlp::commands::get_queue_summary,
+            ytdlp::commands::get_group_history_items,
+            ytdlp::commands::delete_history_group,
             ytdlp::metadata::validate_url,
+            ytdlp::metadata::detect_url_type,
             ytdlp::metadata::fetch_video_info,
             ytdlp::metadata::fetch_playlist_info,
             ytdlp::metadata::fetch_quick_metadata,
             ytdlp::download::start_download,
             ytdlp::download::add_to_queue,
+            ytdlp::download::add_to_queue_batch,
             ytdlp::download::cancel_download,
             ytdlp::download::cancel_all_downloads,
+            ytdlp::download::cancel_group,
             ytdlp::download::pause_download,
             ytdlp::download::resume_download,
             ytdlp::commands::set_minimize_to_tray,
@@ -132,8 +138,24 @@ pub fn run() {
             ));
             app.manage(download_manager);
 
-            // Setup system tray
-            ytdlp::tray::setup_tray(&app.handle().clone()).expect("Failed to setup system tray");
+            // Setup system tray. Treat tray setup as best-effort: if the OS doesn't provide a
+            // window icon (or tray creation otherwise fails), log and continue rather than
+            // aborting launch — a missing tray must not brick the whole app.
+            if let Err(e) = ytdlp::tray::setup_tray(&app.handle().clone()) {
+                modules::logger::warn_cat(
+                    "app",
+                    &format!("Failed to setup system tray (continuing without it): {}", e),
+                );
+            }
+
+            // Seed bundled yt-dlp/ffmpeg into app_data_dir/bin before warmup/dep checks.
+            // Runs from a writable copy so `yt-dlp --update` keeps working; deno stays dynamic.
+            ytdlp::dep_seed::seed_bundled_binaries(app.handle());
+
+            // Keep the seeded copies fresh: a background, throttled check that
+            // re-downloads an outdated yt-dlp (and stale ffmpeg/deno) so a frozen
+            // bundle doesn't silently break downloads. Gated by `autoUpdateYtdlp`.
+            ytdlp::dep_autoupdate::auto_update_bundled_deps(app.handle());
 
             // Process any pending downloads left from a previous session.
             // These are items that were 'pending' (not 'downloading') when the app closed,

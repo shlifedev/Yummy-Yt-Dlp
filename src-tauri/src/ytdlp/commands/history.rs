@@ -12,7 +12,24 @@ pub async fn get_download_history(
     search: Option<String>,
 ) -> Result<HistoryResult, AppError> {
     let db = app.state::<crate::DbState>();
-    db.get_history(page, page_size, search.as_deref())
+    db.get_history_grouped(page, page_size, search.as_deref())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_group_history_items(
+    app: AppHandle,
+    group_id: u64,
+) -> Result<Vec<HistoryItem>, AppError> {
+    let db = app.state::<crate::DbState>();
+    db.get_group_history_items(group_id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_history_group(app: AppHandle, group_id: u64) -> Result<(), AppError> {
+    let db = app.state::<crate::DbState>();
+    db.delete_group_history(group_id)
 }
 
 #[tauri::command]

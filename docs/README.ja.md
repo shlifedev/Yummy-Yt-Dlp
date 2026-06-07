@@ -28,7 +28,7 @@ Tauri 2.0（Rust）と SvelteKit で構築された、ビデオダウンロー�
 - 4つのカラーテーマ（Dark、Violet、Red、Light）
 - クロスプラットフォーム対応（Windows、macOS、Linux）
 
-> **💡 ヒント:** アプリは初回起動時に yt-dlp、FFmpeg、Deno を自動的にダウンロードします。ただし、自動管理されるバイナリ（PyInstaller パッケージ）は初回起動が遅くなる場合があります。**大幅に高速な**メタデータ取得とダウンロードのため、システムのパッケージマネージャーで事前にインストールすることをお勧めします — macOS は [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`）、Windows は [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`）、Linux は `apt`/`pacman`。アプリは自動的にシステム PATH のバージョンを検出して優先使用します。
+> **💡 ヒント:** アプリは初回起動時に yt-dlp、FFmpeg、Deno を自動的にセットアップします（アプリに同梱、または必要に応じてダウンロード・更新）。自動管理される yt-dlp ビルドは実行のたびに自己展開するため、初回起動が遅くなる場合があります。**大幅に高速な**メタデータ取得とダウンロードのため、システムのパッケージマネージャーで事前にインストールすることをお勧めします — macOS は [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`）、Windows は [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`）、Linux は `apt`/`pacman`。デフォルトでは、アプリはシステム PATH にインストールされたバージョンを検出して優先使用します。
 
 ## ソースからビルド
 
@@ -62,6 +62,16 @@ bun run tauri build
 
 1. モバイルユーザー向けダウンローダーアプリ（yt-dlpサーバーを自分でホスティングできます）
 2. バージョンアップデーター
+
+## クレジット・サードパーティライセンス
+
+このアプリは以下のオープンソースバイナリをバンドルまたはダウンロードします：
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg は GNU General Public License v3 のもとでライセンスされています。各リリースに同梱される GPL ビルドは上記リンクから確認でき、ソースコードは FFmpeg プロジェクトおよびビルド提供者から入手できます。
 
 ## ライセンス
 

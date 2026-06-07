@@ -2,8 +2,33 @@ use super::types::{DepInstallEvent, DepInstallStage};
 use crate::modules::types::AppError;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+
+/// Per-dependency install/update/delete locks.
+///
+/// Every operation on a single dependency shares one fixed temp file name and
+/// one final binary path, so two running at once would truncate each other's
+/// in-flight download/extraction or race finalize-vs-delete. Serializing per
+/// dependency closes that hole while still letting different dependencies (which
+/// use different paths) install in parallel.
+static DEP_LOCKS: std::sync::LazyLock<StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>> =
+    std::sync::LazyLock::new(|| StdMutex::new(HashMap::new()));
+
+/// Acquire the lock for `dep`, serializing all filesystem-mutating work on it.
+/// Hold the returned guard for the whole install/update/delete operation.
+pub async fn lock_dependency(dep: &str) -> OwnedMutexGuard<()> {
+    let lock = {
+        let mut map = DEP_LOCKS.lock().unwrap_or_else(|e| e.into_inner());
+        map.entry(dep.to_string())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    };
+    lock.lock_owned().await
+}
 
 /// Ensure the `app_data_dir/bin/` directory exists and return its path.
 pub fn ensure_bin_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -138,6 +163,25 @@ pub async fn fetch_ytdlp_checksums() -> Result<Vec<(String, String)>, AppError> 
         }
     }
     Ok(results)
+}
+
+/// Fetch a sibling `<asset>.sha256sum` file and return the lowercase hex hash.
+/// The file format is `<sha256>  <filename>`, so the leading token is the hash.
+pub async fn fetch_sha256sum(url: &str) -> Result<String, AppError> {
+    let text = reqwest::get(url)
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to fetch checksum: {}", e)))?
+        .error_for_status()
+        .map_err(|e| AppError::ChecksumError(format!("checksum file unavailable: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to read checksum: {}", e)))?;
+
+    text.split_whitespace()
+        .next()
+        .map(|h| h.trim().to_lowercase())
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| AppError::ChecksumError(format!("malformed checksum file at {}", url)))
 }
 
 /// Extract a zip archive, finding the specified binary inside.
@@ -335,7 +379,13 @@ pub fn remove_quarantine(_path: &Path) -> Result<(), AppError> {
 
 /// Atomically move a temporary file to its final path.
 pub fn finalize_binary(temp_path: &Path, final_path: &Path) -> Result<(), AppError> {
-    // Remove existing binary if present
+    // Prefer a single atomic rename: on Unix it replaces the destination in one
+    // step, so there is never a window where the binary is missing and a process
+    // already running the old copy keeps its inode. Windows `rename` refuses to
+    // overwrite an existing file, so fall back to remove-then-rename there.
+    if std::fs::rename(temp_path, final_path).is_ok() {
+        return Ok(());
+    }
     if final_path.exists() {
         std::fs::remove_file(final_path).map_err(|e| {
             AppError::DependencyInstallError(format!("Failed to remove old binary: {}", e))
@@ -352,7 +402,6 @@ pub async fn get_binary_version(binary_path: &Path, version_flag: &str) -> Optio
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 

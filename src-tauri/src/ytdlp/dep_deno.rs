@@ -34,12 +34,35 @@ fn get_binary_name() -> &'static str {
 
 /// Install deno by downloading from GitHub releases.
 pub async fn install_deno(app: &AppHandle) -> Result<String, AppError> {
+    // Serialize against any concurrent deno install/update/delete so they don't
+    // corrupt the shared archive temp file or race the extracted binary.
+    let _lock = lock_dependency("deno").await;
     let bin_dir = ensure_bin_dir(app)?;
     let url = get_download_url()?;
     let binary_name = get_binary_name();
 
     // Download zip
     let archive_path = download_file(url, &bin_dir, "deno_archive.zip", app, "deno").await?;
+
+    // Verify against deno's published per-asset checksum (<asset>.zip.sha256sum)
+    // before extracting/executing. Fail closed: a zip we cannot verify is removed.
+    emit_stage(
+        app,
+        "deno",
+        DepInstallStage::Verifying,
+        Some("Verifying checksum..."),
+    );
+    let expected = match fetch_sha256sum(&format!("{}.sha256sum", url)).await {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&archive_path).await;
+            return Err(e);
+        }
+    };
+    if let Err(e) = verify_sha256(&archive_path, &expected).await {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return Err(e);
+    }
 
     // Extract (deno binary is at zip root)
     emit_stage(

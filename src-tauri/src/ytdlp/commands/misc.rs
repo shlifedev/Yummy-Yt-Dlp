@@ -3,6 +3,7 @@ use crate::modules::types::AppError;
 use crate::ytdlp::binary;
 use crate::ytdlp::download::DownloadManager;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
@@ -65,6 +66,11 @@ pub async fn reset_all_data(app: AppHandle) -> Result<Vec<String>, AppError> {
     // 1. Cancel all active downloads first
     let manager = app.state::<Arc<DownloadManager>>();
     manager.cancel_all();
+    if manager.wait_until_idle(Duration::from_secs(5)).await {
+        results.push("downloads: stopped".to_string());
+    } else {
+        results.push("downloads: stop wait timed out".to_string());
+    }
 
     // 2. Clear settings store
     match app.store("settings.json") {

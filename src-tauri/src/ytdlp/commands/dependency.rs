@@ -227,6 +227,10 @@ pub async fn delete_app_managed_dep(app: AppHandle, dep_name: String) -> Result<
         }
     };
 
+    // Hold the same per-dependency lock the installers use, so a delete can't run
+    // halfway through an in-flight install/update of this dependency.
+    let _lock = crate::ytdlp::dep_download::lock_dependency(&dep_name).await;
+
     let mut deleted = Vec::new();
     for name in &names_to_delete {
         let path = bin_dir.join(name);

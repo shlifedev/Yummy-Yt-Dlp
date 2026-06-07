@@ -13,6 +13,7 @@ export interface ActiveDownload {
   errorMessage: string | null
   createdAt: number
   completedAt: number | null
+  groupTitle?: string | null
 }
 
 export interface ProgressCacheEntry {

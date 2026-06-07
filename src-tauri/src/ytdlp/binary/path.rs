@@ -11,7 +11,7 @@ pub(super) const PATH_SEP: &str = if cfg!(target_os = "windows") {
 
 /// Build an augmented PATH that includes common package manager locations.
 /// Bundled desktop apps often don't inherit the user's full shell PATH.
-pub(super) fn augmented_path() -> String {
+pub(crate) fn augmented_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
 
     let mut extra: Vec<String> = Vec::new();
@@ -83,21 +83,63 @@ pub fn command_with_path(program: &str) -> tokio::process::Command {
     cmd
 }
 
-/// Get the dep_mode from settings. Defaults to "external".
-pub(super) fn get_dep_mode(app: &AppHandle) -> String {
-    app.store("settings.json")
-        .ok()
-        .and_then(|store| {
-            store
-                .get("depMode")
-                .and_then(|v| v.as_str().map(String::from))
-        })
-        .unwrap_or_else(|| "external".to_string())
+/// Dependency resolution strategy.
+///
+/// - `Hybrid`: prefer system PATH, fall back to bundled binaries in app bin dir.
+/// - `Bundled`: prefer bundled binaries in app bin dir, fall back to system PATH.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum DepMode {
+    Hybrid,
+    Bundled,
 }
 
-/// Check if app-managed binaries should be used (dep_mode == "external").
-pub(super) fn is_external_mode(app: &AppHandle) -> bool {
-    get_dep_mode(app) == "external"
+/// Resolve the dependency mode from settings.
+///
+/// Defaults to `Hybrid`. Legacy `"external"` maps to `Bundled`; the removed
+/// `"system"` value falls through to `Hybrid`.
+pub(crate) fn dep_mode(app: &AppHandle) -> DepMode {
+    let raw = app.store("settings.json").ok().and_then(|store| {
+        store
+            .get("depMode")
+            .and_then(|v| v.as_str().map(String::from))
+    });
+    match raw.as_deref() {
+        Some("bundled") | Some("external") => DepMode::Bundled,
+        _ => DepMode::Hybrid,
+    }
+}
+
+/// The source a user has explicitly pinned for a single dependency.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum DepSourcePref {
+    AppManaged,
+    SystemPath,
+}
+
+/// Read the per-dependency source override for `dep` (e.g. `"yt-dlp"`), if set.
+pub(crate) fn dep_override(app: &AppHandle, dep: &str) -> Option<DepSourcePref> {
+    let store = app.store("settings.json").ok()?;
+    let overrides = store.get("depOverrides")?;
+    match overrides.get(dep).and_then(|v| v.as_str())? {
+        "appManaged" => Some(DepSourcePref::AppManaged),
+        "systemPath" => Some(DepSourcePref::SystemPath),
+        _ => None,
+    }
+}
+
+/// The order in which to try sources for `dep`. An explicit per-item override
+/// wins; otherwise the global `dep_mode` decides (bundled → app first,
+/// hybrid → system first).
+pub(crate) fn source_order(app: &AppHandle, dep: &str) -> [DepSourcePref; 2] {
+    use DepSourcePref::*;
+    match dep_override(app, dep) {
+        Some(AppManaged) => [AppManaged, SystemPath],
+        Some(SystemPath) => [SystemPath, AppManaged],
+        None => match dep_mode(app) {
+            DepMode::Bundled => [AppManaged, SystemPath],
+            DepMode::Hybrid => [SystemPath, AppManaged],
+        },
+    }
 }
 
 /// Get the app-managed bin directory path.
@@ -105,7 +147,8 @@ pub(super) fn app_bin_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("bin"))
 }
 
-/// Build a PATH string that prepends app bin dir to the augmented PATH.
+/// Build a PATH string that prepends the app bin dir to the augmented PATH.
+/// Used by `Bundled` mode so the app-managed binaries win over system ones.
 fn augmented_path_with_app(app: &AppHandle) -> String {
     let base = augmented_path();
     if let Some(bin_dir) = app_bin_dir(app) {
@@ -116,13 +159,30 @@ fn augmented_path_with_app(app: &AppHandle) -> String {
     }
 }
 
-/// Create a Command with app-managed bin dir prepended to PATH (if external mode).
+/// Build a PATH string that appends the app bin dir after the augmented PATH.
+/// Used by `Hybrid` mode so system binaries win and the bundled copies only
+/// serve as a fallback when nothing is found on the system.
+fn augmented_path_app_suffix(app: &AppHandle) -> String {
+    let base = augmented_path();
+    if let Some(bin_dir) = app_bin_dir(app) {
+        let bin_str = bin_dir.to_string_lossy().to_string();
+        format!("{}{}{}", base, PATH_SEP, bin_str)
+    } else {
+        base
+    }
+}
+
+/// Create a Command with a PATH built according to the active dependency mode.
+///
+/// At download time only deno is discovered through PATH — yt-dlp is launched by
+/// its resolved absolute path and ffmpeg is passed via `--ffmpeg-location` — so the
+/// app bin dir is ordered to match whichever deno source is effective.
 pub fn command_with_path_app(program: &str, app: &AppHandle) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(program);
-    let path = if is_external_mode(app) {
+    let path = if source_order(app, "deno")[0] == DepSourcePref::AppManaged {
         augmented_path_with_app(app)
     } else {
-        augmented_path()
+        augmented_path_app_suffix(app)
     };
     cmd.env("PATH", path);
     cmd.env("PYTHONUTF8", "1");
