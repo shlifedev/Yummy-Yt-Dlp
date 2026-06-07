@@ -92,6 +92,8 @@ Current R2 layout:
 To patch users to a new version, merge or push the release commit to `main`.
 The workflow overwrites `latest.json` with the new signed manifest after the
 artifacts are uploaded to R2.
+The mutable manifest is served with no-cache headers so clients can detect
+new patch releases promptly.
 
 ## Roadmap
 
