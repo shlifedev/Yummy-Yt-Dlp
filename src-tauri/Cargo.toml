@@ -62,3 +62,12 @@ urlencoding = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[profile.release]
+opt-level = "s"   # optimize for size; the app is I/O-bound, not CPU-bound
+lto = true        # cross-crate optimization shrinks the final binary
+codegen-units = 1 # better optimization (release builds are infrequent)
+strip = true      # strip symbols — Tauri's recommended bundle-size win
+# NOTE: deliberately NOT setting panic = "abort". The app relies on unwinding
+# for Mutex-poisoning recovery (db/mod.rs, download/manager.rs) and to isolate
+# per-task panics so one failed download/metadata fetch cannot crash the GUI.
+

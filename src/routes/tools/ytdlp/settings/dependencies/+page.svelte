@@ -1,53 +1,89 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
-  import type { FullDependencyStatus, DepInstallEvent } from "$lib/bindings"
+  import type { FullDependencyStatus, DepInstallEvent, AppSettings } from "$lib/bindings"
+  import { defaultAdvancedOptions } from "$lib/advanced"
   import { onMount } from "svelte"
   import { listen } from "@tauri-apps/api/event"
+  import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { t } from "$lib/i18n/index.svelte"
 
-  let settings = $state({
+  let settings = $state<AppSettings>({
     downloadPath: "",
     defaultQuality: "1080p",
-    maxConcurrent: 3,
+    maxConcurrent: 2,
     filenameTemplate: "%(title)s.%(ext)s",
-    cookieBrowser: null as string | null,
+    cookieBrowser: null,
     autoUpdateYtdlp: true,
     useAdvancedTemplate: false,
     templateUploaderFolder: false,
     templateUploadDate: false,
     templateVideoId: false,
-    language: null as string | null,
-    theme: null as string | null,
-    minimizeToTray: null as boolean | null,
-    depMode: "external",
+    language: null,
+    theme: null,
+    minimizeToTray: null,
+    depMode: "hybrid",
+    depOverrides: {},
+    advanced: defaultAdvancedOptions(),
     setupCompleted: true,
   })
 
   let loading = $state(true)
 
+  // Normalize the stored mode for display: the legacy "external" value is shown
+  // as "bundled" so the matching card lights up.
+  let activeDepMode = $derived(
+    settings.depMode === "bundled" || settings.depMode === "external" ? "bundled" : "hybrid"
+  )
+  // Both hybrid and bundled manage app-side binaries, so install/update stays available.
+  let usesAppBin = $derived(true)
+
   // Dependency management state
   let depStatus = $state<FullDependencyStatus | null>(null)
   let depLoading = $state(true)
-  let updatingDep = $state<string | null>(null)
-  let installingDep = $state<string | null>(null)
+  // Per-dependency in-flight flags so concurrent installs/updates each track and
+  // disable only their own button. A single `string | null` would re-enable the
+  // first button (and drop its spinner) the moment a second operation started.
+  let updatingDeps = $state<Record<string, boolean>>({})
+  let installingDeps = $state<Record<string, boolean>>({})
   let installingAll = $state(false)
-  let depActionResult = $state<{ dep: string, success: boolean, message: string } | null>(null)
+  // Per-dependency action result so two operations in flight at once don't clobber
+  // each other's message. The "all" key holds the Install All result.
+  let depActionResults = $state<Record<string, { success: boolean, message: string }>>({})
   let installProgress = $state<Record<string, { stage: string, percent: number, message: string | null }>>({})
+  // Inline note shown when a user taps a source that isn't available for a dep.
+  let sourceHint = $state<{ dep: string, message: string } | null>(null)
+  // In-flight loadDepStatus count: only stop the spinner when the last call resolves.
+  let depLoadCount = $state(0)
+
+  function setResult(dep: string, success: boolean, message: string) {
+    depActionResults = { ...depActionResults, [dep]: { success, message } }
+  }
+
+  function clearResult(dep: string) {
+    const next = { ...depActionResults }
+    delete next[dep]
+    depActionResults = next
+  }
 
   async function loadDepStatus(force = false) {
+    depLoadCount++
     depLoading = true
     try {
       const result = await commands.checkFullDependencies(force)
       if (result.status === "ok") {
         depStatus = result.data
       }
-    } catch (e) { console.error("Failed to load dep status:", e) }
-    depLoading = false
+    } catch (e) {
+      console.error("Failed to load dep status:", e)
+    } finally {
+      depLoadCount--
+      if (depLoadCount === 0) depLoading = false
+    }
   }
 
   async function handleInstallDep(depName: string) {
-    installingDep = depName
-    depActionResult = null
+    installingDeps = { ...installingDeps, [depName]: true }
+    clearResult(depName)
 
     let unlistenFn: (() => void) | null = null
     try {
@@ -73,14 +109,14 @@
     try {
       const result = await commands.installDependency(depName)
       if (result.status === "ok") {
-        depActionResult = { dep: depName, success: true, message: result.data }
+        setResult(depName, true, result.data)
       } else {
-        depActionResult = { dep: depName, success: false, message: Object.values(result.error)[0] as string }
+        setResult(depName, false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: depName, success: false, message: e?.message || String(e) }
+      setResult(depName, false, e?.message || String(e))
     } finally {
-      installingDep = null
+      installingDeps = { ...installingDeps, [depName]: false }
       if (unlistenFn) unlistenFn()
       await loadDepStatus(true)
     }
@@ -88,7 +124,7 @@
 
   async function handleInstallAll() {
     installingAll = true
-    depActionResult = null
+    clearResult("all")
     installProgress = {}
 
     let unlistenFn: (() => void) | null = null
@@ -124,15 +160,15 @@
       if (result.status === "ok") {
         const failures = result.data.filter(r => r.includes("FAILED"))
         if (failures.length > 0) {
-          depActionResult = { dep: "all", success: false, message: failures.join("\n") }
+          setResult("all", false, failures.join("\n"))
         } else {
-          depActionResult = { dep: "all", success: true, message: t("layout.installSuccess") }
+          setResult("all", true, t("layout.installSuccess"))
         }
       } else {
-        depActionResult = { dep: "all", success: false, message: Object.values(result.error)[0] as string }
+        setResult("all", false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: "all", success: false, message: e?.message || String(e) }
+      setResult("all", false, e?.message || String(e))
     } finally {
       installingAll = false
       if (unlistenFn) unlistenFn()
@@ -142,19 +178,19 @@
   }
 
   async function handleUpdateDep(depName: string) {
-    updatingDep = depName
-    depActionResult = null
+    updatingDeps = { ...updatingDeps, [depName]: true }
+    clearResult(depName)
     try {
       const result = await commands.updateDependency(depName)
       if (result.status === "ok") {
-        depActionResult = { dep: depName, success: true, message: result.data }
+        setResult(depName, true, result.data)
       } else {
-        depActionResult = { dep: depName, success: false, message: Object.values(result.error)[0] as string }
+        setResult(depName, false, Object.values(result.error)[0] as string)
       }
     } catch (e: any) {
-      depActionResult = { dep: depName, success: false, message: e?.message || String(e) }
+      setResult(depName, false, e?.message || String(e))
     } finally {
-      updatingDep = null
+      updatingDeps = { ...updatingDeps, [depName]: false }
       await loadDepStatus(true)
     }
   }
@@ -166,8 +202,50 @@
 
   async function handleDepModeChange(mode: string) {
     settings.depMode = mode
+    // The new global mode is authoritative; drop any per-item overrides so a
+    // lingering pick doesn't contradict it (e.g. a "system" pin under bundled).
+    settings.depOverrides = {}
     await autoSave()
     await loadDepStatus(true)
+  }
+
+  // Per-dependency source override (hybrid mode). Pins which copy — the app's
+  // bundled one or the system-PATH one — yt-dlp/ffmpeg/deno actually run from.
+  // Tapping a source that isn't installed can't switch to it, so we explain why.
+  async function handleSourceToggle(
+    depKey: string,
+    source: "appManaged" | "systemPath",
+    available: boolean | undefined,
+  ) {
+    if (!available) {
+      sourceHint = {
+        dep: depKey,
+        message: source === "systemPath"
+          ? t("settings.sourceUnavailableSystem")
+          : t("settings.sourceUnavailableBundled"),
+      }
+      return
+    }
+    sourceHint = null
+    settings.depOverrides = { ...(settings.depOverrides ?? {}), [depKey]: source }
+    await autoSave()
+    await loadDepStatus(true)
+  }
+
+  function activeSource(depKey: string, info: { source: string }): string | undefined {
+    const override = settings.depOverrides?.[depKey]
+    if (override) return override
+    if (info.source === "AppManaged") return "appManaged"
+    if (info.source === "SystemPath") return "systemPath"
+    return undefined
+  }
+
+  async function handleRevealPath(path: string) {
+    try {
+      await revealItemInDir(path)
+    } catch (e) {
+      console.error("Failed to reveal path:", e)
+    }
   }
 
   let missingCount = $derived(
@@ -191,39 +269,39 @@
     <span class="material-symbols-outlined text-yt-primary text-3xl animate-spin">progress_activity</span>
   </div>
 {:else}
-  <div class="max-w-3xl mx-auto px-8 py-8 space-y-10">
+  <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
 
     <!-- Dependency Mode -->
     <section>
       <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider mb-4 px-1">{t("settings.depMode")}</h3>
       <p class="text-xs text-yt-text-secondary mb-4 px-1">{t("settings.depModeLabel")}</p>
       <div class="grid grid-cols-2 gap-3">
-        <!-- External Mode -->
+        <!-- Hybrid Mode (recommended) -->
         <button
-          onclick={() => handleDepModeChange("external")}
-          class="text-left p-4 rounded-lg border-2 transition-all {settings.depMode === 'external'
+          onclick={() => handleDepModeChange("hybrid")}
+          class="text-left p-4 rounded-lg border-2 transition-all {activeDepMode === 'hybrid'
             ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary'
             : 'border-yt-border bg-yt-surface hover:bg-yt-highlight'}"
         >
           <div class="flex items-center gap-2 mb-2">
-            <span class="material-symbols-outlined text-[20px] {settings.depMode === 'external' ? 'text-yt-primary' : 'text-yt-text-secondary'}">cloud_download</span>
-            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeExternal")}</span>
+            <span class="material-symbols-outlined text-[20px] {activeDepMode === 'hybrid' ? 'text-yt-primary' : 'text-yt-text-secondary'}">auto_awesome</span>
+            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeHybrid")}</span>
           </div>
-          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeExternalDesc")}</p>
+          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeHybridDesc")}</p>
         </button>
 
-        <!-- System Mode -->
+        <!-- Bundled Mode -->
         <button
-          onclick={() => handleDepModeChange("system")}
-          class="text-left p-4 rounded-lg border-2 transition-all {settings.depMode === 'system'
+          onclick={() => handleDepModeChange("bundled")}
+          class="text-left p-4 rounded-lg border-2 transition-all {activeDepMode === 'bundled'
             ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary'
             : 'border-yt-border bg-yt-surface hover:bg-yt-highlight'}"
         >
           <div class="flex items-center gap-2 mb-2">
-            <span class="material-symbols-outlined text-[20px] {settings.depMode === 'system' ? 'text-yt-primary' : 'text-yt-text-secondary'}">terminal</span>
-            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeSystem")}</span>
+            <span class="material-symbols-outlined text-[20px] {activeDepMode === 'bundled' ? 'text-yt-primary' : 'text-yt-text-secondary'}">package_2</span>
+            <span class="text-sm font-semibold text-yt-text">{t("settings.depModeBundled")}</span>
           </div>
-          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeSystemDesc")}</p>
+          <p class="text-[11px] text-yt-text-secondary leading-relaxed">{t("settings.depModeBundledDesc")}</p>
         </button>
       </div>
     </section>
@@ -232,7 +310,7 @@
     <section>
       <div class="flex items-center justify-between mb-4 px-1">
         <h3 class="text-xs font-semibold text-yt-text-secondary uppercase tracking-wider">{t("settings.dependencies")}</h3>
-        {#if settings.depMode === "external" && missingCount > 0 && !installingAll}
+        {#if usesAppBin && missingCount > 0 && !installingAll}
           <button
             onclick={handleInstallAll}
             class="px-3 py-1.5 text-xs font-medium bg-yt-primary hover:bg-yt-primary-hover text-white rounded-md transition-colors flex items-center gap-1"
@@ -270,6 +348,17 @@
                       {t("settings.notInstalled")}
                     {/if}
                   </p>
+                  {#if dep.info.installed && dep.info.path}
+                    <button
+                      onclick={() => handleRevealPath(dep.info.path!)}
+                      class="mt-1 flex items-center gap-1 text-[10px] text-yt-text-muted hover:text-yt-primary transition-colors max-w-full"
+                      title={dep.info.path}
+                      aria-label={t("settings.openLocation")}
+                    >
+                      <span class="material-symbols-outlined text-[12px] shrink-0">folder_open</span>
+                      <span class="font-mono truncate">{dep.info.path}</span>
+                    </button>
+                  {/if}
                   <!-- Install progress -->
                   {#if installingAll && installProgress[dep.key]}
                     <div class="mt-2">
@@ -289,17 +378,42 @@
                       </p>
                     </div>
                   {/if}
+                  {#if sourceHint?.dep === dep.key}
+                    <p class="mt-1.5 flex items-start gap-1 text-[10px] text-yt-warning">
+                      <span class="material-symbols-outlined text-[12px] shrink-0">info</span>
+                      <span>{sourceHint.message}</span>
+                    </p>
+                  {/if}
                 </div>
               </div>
-              <div class="flex gap-2 shrink-0">
-                {#if settings.depMode === "external"}
+              <div class="flex items-center gap-2 shrink-0">
+                {#if activeDepMode === "hybrid" && (dep.info.appAvailable || dep.info.systemAvailable)}
+                  {@const active = activeSource(dep.key, dep.info)}
+                  <div class="inline-flex rounded-md border border-yt-border overflow-hidden text-[11px]">
+                    <button
+                      onclick={() => handleSourceToggle(dep.key, "appManaged", dep.info.appAvailable)}
+                      title={t("settings.appManaged")}
+                      class="px-2.5 py-1 transition-colors {active === 'appManaged' ? 'bg-yt-primary text-white' : !dep.info.appAvailable ? 'text-yt-text-muted/40 hover:bg-yt-highlight/40' : 'text-yt-text-secondary hover:bg-yt-highlight'}"
+                    >
+                      {t("settings.appManaged")}
+                    </button>
+                    <button
+                      onclick={() => handleSourceToggle(dep.key, "systemPath", dep.info.systemAvailable)}
+                      title={t("settings.systemPath")}
+                      class="px-2.5 py-1 border-l border-yt-border transition-colors {active === 'systemPath' ? 'bg-yt-primary text-white' : !dep.info.systemAvailable ? 'text-yt-text-muted/40 hover:bg-yt-highlight/40' : 'text-yt-text-secondary hover:bg-yt-highlight'}"
+                    >
+                      {t("settings.systemPath")}
+                    </button>
+                  </div>
+                {/if}
+                {#if usesAppBin}
                   {#if !dep.info.installed}
                     <button
                       onclick={() => handleInstallDep(dep.key)}
-                      disabled={installingDep === dep.key || installingAll}
+                      disabled={installingDeps[dep.key] || installingAll}
                       class="px-3 py-1.5 text-xs font-medium bg-yt-primary hover:bg-yt-primary-hover text-white rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
                     >
-                      {#if installingDep === dep.key}
+                      {#if installingDeps[dep.key]}
                         <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
                       {/if}
                       {t("settings.install")}
@@ -307,10 +421,10 @@
                   {:else if dep.info.source === "AppManaged"}
                     <button
                       onclick={() => handleUpdateDep(dep.key)}
-                      disabled={updatingDep === dep.key || installingAll}
+                      disabled={updatingDeps[dep.key] || installingAll}
                       class="px-3 py-1.5 text-xs font-medium bg-yt-highlight hover:bg-yt-border text-yt-text rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
                     >
-                      {#if updatingDep === dep.key}
+                      {#if updatingDeps[dep.key]}
                         <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
                         {t("settings.updating")}
                       {:else}
@@ -322,13 +436,13 @@
               </div>
             </div>
           {/each}
-          {#if depActionResult}
-            <div class="p-3 {depActionResult.success ? 'bg-green-500/5' : 'bg-red-500/5'}">
-              <p class="text-xs {depActionResult.success ? 'text-yt-success' : 'text-red-400'}">
-                {depActionResult.dep === "all" ? "" : `${depActionResult.dep}: `}{depActionResult.message}
+          {#each Object.entries(depActionResults) as [dep, res] (dep)}
+            <div class="p-3 {res.success ? 'bg-green-500/5' : 'bg-red-500/5'}">
+              <p class="text-xs {res.success ? 'text-yt-success' : 'text-red-400'}">
+                {dep === "all" ? "" : `${dep}: `}{res.message}
               </p>
             </div>
-          {/if}
+          {/each}
         {/if}
       </div>
     </section>

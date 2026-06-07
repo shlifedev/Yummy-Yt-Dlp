@@ -36,6 +36,9 @@ fn get_binary_name() -> &'static str {
 
 /// Install yt-dlp by downloading from GitHub releases.
 pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
+    // Serialize against any concurrent yt-dlp install/update/delete so they don't
+    // corrupt the shared temp file or race the final binary swap.
+    let _lock = lock_dependency("yt-dlp").await;
     let bin_dir = ensure_bin_dir(app)?;
     let url = get_download_url();
     let temp_name = format!("{}.tmp", get_binary_name());
@@ -50,18 +53,15 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
         DepInstallStage::Verifying,
         Some("Verifying checksum..."),
     );
-    match fetch_ytdlp_checksums().await {
-        Ok(checksums) => {
-            let expected_name = get_checksum_filename();
-            if let Some((_name, hash)) = checksums.iter().find(|(name, _)| name == expected_name) {
-                verify_sha256(&temp_path, hash).await?;
-            }
-        }
-        Err(e) => {
-            // Non-fatal: log warning but continue
-            crate::modules::logger::warn(&format!("Failed to verify yt-dlp checksum: {}", e));
-        }
-    }
+    let checksums = fetch_ytdlp_checksums().await?;
+    let expected_name = get_checksum_filename();
+    let Some((_name, hash)) = checksums.iter().find(|(name, _)| name == expected_name) else {
+        return Err(AppError::DependencyInstallError(format!(
+            "Checksum for {} not found",
+            expected_name
+        )));
+    };
+    verify_sha256(&temp_path, hash).await?;
 
     // Set executable + remove quarantine
     emit_stage(

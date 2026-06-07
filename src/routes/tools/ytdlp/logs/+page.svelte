@@ -10,13 +10,16 @@
   let currentPage = $state(0)
   let pageSize = $state(50)
   let loading = $state(true)
+  let clearingLogs = $state(false)
   let stats = $state<LogStats | null>(null)
 
   // Filters
   let levelFilter = $state<string | null>(null)
   let categoryFilter = $state<string | null>(null)
   let search = $state("")
-  let searchTimeout: ReturnType<typeof setTimeout>
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null
+  let logsLoadSeq = 0
+  let statsLoadSeq = 0
 
   // Live mode
   let liveMode = $state(true)
@@ -54,46 +57,64 @@
   })
 
   onDestroy(() => {
+    logsLoadSeq++
+    statsLoadSeq++
     if (liveInterval) clearInterval(liveInterval)
     if (unlisten) unlisten()
-    clearTimeout(searchTimeout)
+    if (searchTimeout) clearTimeout(searchTimeout)
   })
 
   async function loadLogs() {
+    const requestId = ++logsLoadSeq
+    const requestedPage = currentPage
+    const requestedLevel = levelFilter
+    const requestedCategory = categoryFilter
+    const requestedSearch = search
     loading = true
     try {
       const result = await commands.getLogs(
-        currentPage,
+        requestedPage,
         pageSize,
-        levelFilter ?? null,
-        categoryFilter ?? null,
-        search || null,
+        requestedLevel ?? null,
+        requestedCategory ?? null,
+        requestedSearch || null,
         null,
       )
+      if (
+        requestId !== logsLoadSeq ||
+        requestedPage !== currentPage ||
+        requestedLevel !== levelFilter ||
+        requestedCategory !== categoryFilter ||
+        requestedSearch !== search
+      ) return
       if (result.status === "ok") {
         logs = result.data.items
         totalCount = result.data.totalCount
       }
     } catch (e) {
+      if (requestId !== logsLoadSeq) return
       console.error("Failed to load logs:", e)
     } finally {
-      loading = false
+      if (requestId === logsLoadSeq) loading = false
     }
   }
 
   async function loadStats() {
+    const requestId = ++statsLoadSeq
     try {
       const result = await commands.getLogStats()
+      if (requestId !== statsLoadSeq) return
       if (result.status === "ok") {
         stats = result.data
       }
     } catch (e) {
+      if (requestId !== statsLoadSeq) return
       console.error("Failed to load stats:", e)
     }
   }
 
   function handleSearch(value: string) {
-    clearTimeout(searchTimeout)
+    if (searchTimeout) clearTimeout(searchTimeout)
     search = value
     searchTimeout = setTimeout(() => {
       currentPage = 0
@@ -122,7 +143,9 @@
   }
 
   async function handleClear() {
+    if (clearingLogs) return
     if (!confirm(t("logs.clearConfirm"))) return
+    clearingLogs = true
     try {
       const result = await commands.clearLogs(null)
       if (result.status === "ok") {
@@ -132,10 +155,13 @@
       }
     } catch (e) {
       console.error("Failed to clear logs:", e)
+    } finally {
+      clearingLogs = false
     }
   }
 
   function goToPage(page: number) {
+    if (page < 0 || page >= totalPages) return
     currentPage = page
     loadLogs()
   }
@@ -214,9 +240,10 @@
         <!-- Clear -->
         <button
           onclick={handleClear}
-          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-yt-highlight text-yt-text-secondary ring-1 ring-yt-border hover:bg-red-500/10 hover:text-red-400 hover:ring-red-500/30 transition-colors"
+          disabled={clearingLogs}
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-yt-highlight text-yt-text-secondary ring-1 ring-yt-border hover:bg-red-500/10 hover:text-red-400 hover:ring-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span class="material-symbols-outlined text-[14px]">delete</span>
+          <span class="material-symbols-outlined text-[14px] {clearingLogs ? 'animate-spin' : ''}">{clearingLogs ? "progress_activity" : "delete"}</span>
           {t("logs.clearLogs")}
         </button>
       </div>

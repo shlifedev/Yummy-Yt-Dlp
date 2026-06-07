@@ -12,15 +12,17 @@
   "app": {
     "windows": [
       {
-        "title": "Modern YT-DLP GUI",
+        "title": "Yummy YT-DLP",
         "width": 900,
         "height": 600,
         "minWidth": 640,
-        "minHeight": 480
+        "minHeight": 480,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: https://asset.localhost https://*.ytimg.com https://*.ggpht.com https://i.ytimg.com data:; connect-src ipc: http://ipc.localhost https://api.github.com https://github.com"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: https://asset.localhost https: data:; connect-src ipc: http://ipc.localhost https://api.github.com https://github.com"
     }
   },
   "plugins": {
@@ -34,6 +36,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "binaries/*": "binaries/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

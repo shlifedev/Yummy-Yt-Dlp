@@ -1,3 +1,4 @@
+pub mod advanced;
 pub mod commands;
 mod executor;
 mod manager;

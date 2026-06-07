@@ -29,7 +29,7 @@ Built with Tauri 2.0 (Rust) and SvelteKit, providing a clean and intuitive inter
 - 4 color themes (Dark, Violet, Red, Light)
 - Cross-platform support (Windows, macOS, Linux)
 
-> **💡 Tip:** The app automatically downloads yt-dlp, FFmpeg, and Deno on first launch. However, these auto-managed binaries (PyInstaller-packaged) can be slow on initial startup. For **significantly faster** metadata fetching and downloads, pre-install them via your system package manager — [Homebrew](https://brew.sh/) on macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) on Windows (`winget install yt-dlp.yt-dlp ffmpeg`), or `apt`/`pacman` on Linux. The app will automatically detect and prefer the system-installed versions from your PATH.
+> **💡 Tip:** The app automatically sets up yt-dlp, FFmpeg, and Deno on first launch (bundled with the app and downloaded/updated as needed). The auto-managed yt-dlp build self-extracts on each run, so its first startup can be slow. For **significantly faster** metadata fetching and downloads, pre-install them via your system package manager — [Homebrew](https://brew.sh/) on macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) on Windows (`winget install yt-dlp.yt-dlp ffmpeg`), or `apt`/`pacman` on Linux. By default the app detects and prefers the system-installed versions on your PATH.
 
 ## Build from Source
 
@@ -63,6 +63,16 @@ The production build output will be in `src-tauri/target/release/bundle/`.
 
 1. Downloader app for mobile users (you can self-host your own yt-dlp server)
 2. Version updater
+
+## Credits & Third-party Licenses
+
+This app bundles or downloads the following open-source binaries:
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg is licensed under the GNU General Public License v3. The exact GPL build shipped with each release is linked above, with corresponding source available from the FFmpeg project and the build providers.
 
 ## License
 

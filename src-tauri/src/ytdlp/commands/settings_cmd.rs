@@ -27,14 +27,28 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
         security::sanitize_cookie_browser(browser)?;
     }
 
+    // Validate advanced free-text options (empty = unset, allowed). Enum/allowlist fields are
+    // additionally re-checked at download time in download::advanced::build_advanced_args.
+    let adv = &settings.advanced;
+    if !adv.sub_langs.is_empty() {
+        security::sanitize_sub_langs(&adv.sub_langs)?;
+    }
+    if !adv.limit_rate.is_empty() {
+        security::sanitize_limit_rate(&adv.limit_rate)?;
+    }
+    if !adv.download_sections.is_empty() {
+        security::sanitize_download_sections(&adv.download_sections)?;
+    }
+    if !adv.proxy.is_empty() {
+        security::sanitize_proxy(&adv.proxy)?;
+    }
+
     // Clamp max_concurrent to safe range
     let mut settings = settings;
     settings.max_concurrent = security::clamp_max_concurrent(settings.max_concurrent);
 
-    // Check if dep_mode changed to invalidate cache
-    let old_dep_mode = crate::ytdlp::settings::get_settings(&app)
-        .map(|s| s.dep_mode)
-        .unwrap_or_default();
+    // Snapshot the dependency-affecting settings to know whether to drop the cache.
+    let old = crate::ytdlp::settings::get_settings(&app).ok();
 
     crate::ytdlp::settings::update_settings(&app, &settings)?;
 
@@ -42,8 +56,11 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
     let manager = app.state::<Arc<DownloadManager>>();
     manager.set_max_concurrent(settings.max_concurrent);
 
-    // Invalidate dep cache when dep_mode changes
-    if old_dep_mode != settings.dep_mode {
+    // Invalidate dep cache when the mode or any per-item override changes.
+    let dep_changed = old
+        .map(|s| s.dep_mode != settings.dep_mode || s.dep_overrides != settings.dep_overrides)
+        .unwrap_or(true);
+    if dep_changed {
         binary::invalidate_dep_cache();
     }
 
@@ -55,17 +72,33 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
 #[tauri::command]
 #[specta::specta]
 pub async fn select_download_directory(app: AppHandle) -> Result<Option<String>, AppError> {
+    let title = folder_dialog_title(&app);
     // Use spawn_blocking to avoid blocking the async runtime
     let result = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_title("다운로드 폴더 선택")
-            .blocking_pick_folder()
+        app.dialog().file().set_title(title).blocking_pick_folder()
     })
     .await
     .map_err(|e| AppError::Custom(format!("Dialog task failed: {}", e)))?;
 
     Ok(result.map(|p| p.to_string()))
+}
+
+/// Localized folder-picker title based on the saved language. The OS dialog is invoked from
+/// Rust and can't use the frontend i18n, so this mirrors the tray.rs label approach.
+fn folder_dialog_title(app: &AppHandle) -> &'static str {
+    let lang = crate::ytdlp::settings::get_settings(app)
+        .ok()
+        .and_then(|s| s.language)
+        .unwrap_or_default();
+    match lang.as_str() {
+        "ko" => "다운로드 폴더 선택",
+        "ja" => "ダウンロードフォルダを選択",
+        "zh-CN" => "选择下载文件夹",
+        "zh-TW" => "選擇下載資料夾",
+        "fr" => "Choisir le dossier de téléchargement",
+        "de" => "Download-Ordner auswählen",
+        _ => "Select Download Folder",
+    }
 }
 
 #[tauri::command]

@@ -39,7 +39,7 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
         // Immediately start download - ensure release() on DB update failure
-        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None) {
+        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None, None) {
             Ok(()) => {
                 let app_clone = app.clone();
                 let app_panic_guard = app.clone();
@@ -126,12 +126,67 @@ pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
         }
     }
 
-    // Do NOT force active_count here. Each running executor owns its slot and
-    // releases it exactly once when its cancel branch fires (after kill_process_tree
-    // returns). Overwriting the counter with a DB-derived value while those kills are
-    // still in flight would let a concurrent add_to_queue acquire a slot that the
-    // outgoing executors then release, drifting the count below reality and silently
-    // permitting more than max_concurrent processes. The atomic is self-maintaining.
+    Ok(cancelled)
+}
+
+/// Add multiple downloads as one batch. When `group_title` is set and there are
+/// 2+ requests, they are wrapped in a download group; otherwise each is inserted
+/// standalone. All rows go in as `pending` and the scheduler is kicked once.
+#[tauri::command]
+#[specta::specta]
+pub async fn add_to_queue_batch(
+    app: AppHandle,
+    requests: Vec<DownloadRequest>,
+    group_title: Option<String>,
+    group_kind: Option<String>,
+) -> Result<BatchEnqueueResult, AppError> {
+    let settings = settings::get_settings(&app)?;
+
+    // Validate each request and build its output template (same as add_to_queue).
+    let mut items = Vec::with_capacity(requests.len());
+    for req in &requests {
+        security::sanitize_url(&req.video_url)?;
+        let output_dir = req.output_dir.as_deref().unwrap_or(&settings.download_path);
+        security::sanitize_output_path(output_dir)?;
+        let output_template = std::path::Path::new(output_dir)
+            .join(&settings.filename_template)
+            .to_string_lossy()
+            .to_string();
+        items.push((req.clone(), output_template));
+    }
+
+    let db_state = app.state::<crate::DbState>();
+    let kind = group_kind.unwrap_or_else(|| "playlist".to_string());
+    let (group_id, task_ids) =
+        db_state.insert_group_with_downloads(group_title.as_deref(), &kind, &items)?;
+
+    // Everything is pending now. Kick the scheduler once — process_next_pending
+    // claims slots atomically up to max_concurrent. Never try_acquire per item here.
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        process_next_pending(app_clone);
+    });
+
+    Ok(BatchEnqueueResult { group_id, task_ids })
+}
+
+/// Cancel every still-active (pending/downloading) item in a group. Same pattern
+/// as cancel_all_downloads, scoped to the group.
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_group(app: AppHandle, group_id: u64) -> Result<u32, AppError> {
+    let db_state = app.state::<crate::DbState>();
+    let manager = app.state::<Arc<DownloadManager>>();
+
+    let ids = db_state.get_cancellable_ids_in_group(group_id)?;
+    let mut cancelled = 0u32;
+
+    for id in ids {
+        if db_state.cancel_if_active(id).unwrap_or(false) {
+            manager.send_cancel(id);
+            cancelled += 1;
+        }
+    }
 
     Ok(cancelled)
 }
