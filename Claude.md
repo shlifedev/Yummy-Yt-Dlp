@@ -156,13 +156,13 @@ routes/
 
 ### App Data Directory
 
-App identifier: `com.modern-ytdlp-gui.app`
+App identifier: `dev.shlife.yummy-yt-dlp`
 
 | OS | Path |
 |----|------|
-| macOS | `~/Library/Application Support/com.modern-ytdlp-gui.app/` |
-| Windows | `%APPDATA%/com.modern-ytdlp-gui.app/` |
-| Linux | `~/.local/share/com.modern-ytdlp-gui.app/` |
+| macOS | `~/Library/Application Support/dev.shlife.yummy-yt-dlp/` |
+| Windows | `%APPDATA%/dev.shlife.yummy-yt-dlp/` |
+| Linux | `~/.local/share/dev.shlife.yummy-yt-dlp/` |
 
 ### Files in App Data Directory
 
@@ -176,7 +176,7 @@ App identifier: `com.modern-ytdlp-gui.app`
 ### Quick Log Access (macOS)
 
 ```bash
-APP_DIR=~/Library/Application\ Support/com.modern-ytdlp-gui.app
+APP_DIR=~/Library/Application\ Support/dev.shlife.yummy-yt-dlp
 
 # Read recent text logs
 tail -100 "$APP_DIR/log.txt"

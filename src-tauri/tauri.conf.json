@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Modern YT-DLP GUI",
+  "productName": "Yummy YT-DLP",
   "version": "0.1.0",
-  "identifier": "com.modern-ytdlp-gui.app",
+  "identifier": "dev.shlife.yummy-yt-dlp",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:10000",

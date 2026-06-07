@@ -1,7 +1,7 @@
 [package]
-name = "modern-ytdlp-gui"
+name = "yummy-yt-dlp"
 version = "0.1.0"
-description = "Modern YT-DLP GUI - YouTube Video Downloader"
+description = "Yummy YT-DLP - YouTube Video Downloader"
 authors = ["you"]
 edition = "2021"
 
@@ -70,4 +70,3 @@ strip = true      # strip symbols — Tauri's recommended bundle-size win
 # NOTE: deliberately NOT setting panic = "abort". The app relies on unwinding
 # for Mutex-poisoning recovery (db/mod.rs, download/manager.rs) and to isolate
 # per-task panics so one failed download/metadata fetch cannot crash the GUI.
-

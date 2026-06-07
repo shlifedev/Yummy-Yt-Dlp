@@ -192,8 +192,8 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.get-version.outputs.version }}
         run: |
-          cp "src-tauri/target/${{ matrix.target }}/release/modern-ytdlp-gui.exe" \
-             "src-tauri/target/${{ matrix.target }}/release/bundle/Modern-YT-DLP-GUI_${RELEASE_VERSION}_portable.exe"
+          cp "src-tauri/target/${{ matrix.target }}/release/yummy-yt-dlp.exe" \
+             "src-tauri/target/${{ matrix.target }}/release/bundle/yummy-yt-dlp_${RELEASE_VERSION}_portable.exe"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

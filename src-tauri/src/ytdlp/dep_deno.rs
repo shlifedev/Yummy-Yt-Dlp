@@ -116,7 +116,7 @@ pub async fn get_latest_version() -> Result<String, AppError> {
     let client = reqwest::Client::new();
     let resp = client
         .get("https://api.github.com/repos/denoland/deno/releases/latest")
-        .header("User-Agent", "modern-ytdlp-gui")
+        .header("User-Agent", "yummy-yt-dlp")
         .send()
         .await
         .map_err(|e| AppError::NetworkError(format!("Failed to check deno version: {}", e)))?;

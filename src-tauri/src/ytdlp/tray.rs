@@ -42,7 +42,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     TrayIconBuilder::new()
         .icon(icon)
-        .tooltip("Modern YT-DLP GUI")
+        .tooltip("Yummy YT-DLP")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
