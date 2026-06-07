@@ -1,20 +1,25 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use tokio::sync::watch;
+use std::time::{Duration, Instant};
+use tokio::sync::{watch, Notify};
+
+use crate::ytdlp::security;
 
 pub struct DownloadManager {
     active_count: AtomicU32,
     max_concurrent: AtomicU32,
     cancel_senders: Mutex<HashMap<u64, watch::Sender<bool>>>,
+    idle_notify: Notify,
 }
 
 impl DownloadManager {
     pub fn new(max_concurrent: u32) -> Self {
         Self {
             active_count: AtomicU32::new(0),
-            max_concurrent: AtomicU32::new(max_concurrent.clamp(1, 20)),
+            max_concurrent: AtomicU32::new(security::clamp_max_concurrent(max_concurrent)),
             cancel_senders: Mutex::new(HashMap::new()),
+            idle_notify: Notify::new(),
         }
     }
 
@@ -26,10 +31,10 @@ impl DownloadManager {
         self.max_concurrent.load(Ordering::SeqCst)
     }
 
-    // Clamp max_concurrent to [1, 20] to prevent resource exhaustion
+    // Clamp max_concurrent to a safe range (see security::clamp_max_concurrent) to prevent resource exhaustion
     pub fn set_max_concurrent(&self, val: u32) {
         self.max_concurrent
-            .store(val.clamp(1, 20), Ordering::SeqCst);
+            .store(security::clamp_max_concurrent(val), Ordering::SeqCst);
     }
 
     // CAS loop to fix TOCTOU race condition
@@ -50,18 +55,45 @@ impl DownloadManager {
     }
 
     pub fn release(&self) {
-        let _ = self
-            .active_count
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                Some(count.saturating_sub(1))
-            });
+        let previous =
+            self.active_count
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                    Some(count.saturating_sub(1))
+                });
+
+        if matches!(previous, Ok(1)) {
+            self.idle_notify.notify_waiters();
+        }
     }
 
-    /// Synchronize active_count with the actual DB state.
-    /// Used after cancel_all to correct any drift between the atomic counter
-    /// and the real number of downloading tasks.
-    pub fn sync_active_count(&self, count: u32) {
-        self.active_count.store(count, Ordering::SeqCst);
+    pub async fn wait_until_idle(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+
+        // enable() registers this waiter before we read active_count, so a release() that drops the
+        // count to 0 between the check and the .await can't slip its notify_waiters() past us.
+        let notified = self.idle_notify.notified();
+        tokio::pin!(notified);
+
+        loop {
+            notified.as_mut().enable();
+
+            if self.active_count() == 0 {
+                return true;
+            }
+
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+
+            if tokio::time::timeout(remaining, notified.as_mut())
+                .await
+                .is_err()
+            {
+                return self.active_count() == 0;
+            }
+
+            notified.set(self.idle_notify.notified());
+        }
     }
 
     // Cancel support methods

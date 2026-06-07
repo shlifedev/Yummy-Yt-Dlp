@@ -29,6 +29,26 @@ async getDownloadQueue() : Promise<Result<DownloadTaskInfo[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getActiveQueue() : Promise<Result<DownloadTaskInfo[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_active_queue") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Wipe the entire queue and download history in one shot. Cancels anything in flight first so
+ * yt-dlp processes stop before their rows disappear, then clears both tables.
+ */
+async clearAllQueueAndHistory() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_queue_and_history") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearCompleted() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_completed") };
@@ -104,17 +124,25 @@ async getActiveDownloads() : Promise<Result<DownloadTaskInfo[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getDownloadQueuePaginated(page: number, pageSize: number, statusFilter: string | null) : Promise<Result<QueueResult, AppError>> {
+async getQueueSummary() : Promise<Result<QueueSummary, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_download_queue_paginated", { page, pageSize, statusFilter }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_queue_summary") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async getQueueSummary() : Promise<Result<QueueSummary, AppError>> {
+async getGroupHistoryItems(groupId: number) : Promise<Result<HistoryItem[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_queue_summary") };
+    return { status: "ok", data: await TAURI_INVOKE("get_group_history_items", { groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteHistoryGroup(groupId: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_history_group", { groupId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -126,6 +154,20 @@ async getQueueSummary() : Promise<Result<QueueSummary, AppError>> {
 async validateUrl(url: string) : Promise<Result<UrlValidation, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("validate_url", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Determine whether an arbitrary URL is a single video or a playlist/channel.
+ * Non-YouTube URLs can't be classified by regex, so we let yt-dlp decide via the
+ * top-level `_type` field. `--flat-playlist` + `--playlist-items 1` keeps this fast
+ * even for huge channels (no per-item extraction).
+ */
+async detectUrlType(url: string) : Promise<Result<UrlType, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("detect_url_type", { url }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -180,6 +222,19 @@ async addToQueue(request: DownloadRequest) : Promise<Result<number, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Add multiple downloads as one batch. When `group_title` is set and there are
+ * 2+ requests, they are wrapped in a download group; otherwise each is inserted
+ * standalone. All rows go in as `pending` and the scheduler is kicked once.
+ */
+async addToQueueBatch(requests: DownloadRequest[], groupTitle: string | null, groupKind: string | null) : Promise<Result<BatchEnqueueResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_to_queue_batch", { requests, groupTitle, groupKind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async cancelDownload(taskId: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_download", { taskId }) };
@@ -191,6 +246,18 @@ async cancelDownload(taskId: number) : Promise<Result<null, AppError>> {
 async cancelAllDownloads() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_all_downloads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel every still-active (pending/downloading) item in a group. Same pattern
+ * as cancel_all_downloads, scoped to the group.
+ */
+async cancelGroup(groupId: number) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_group", { groupId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -341,17 +408,54 @@ newLogEvent: "new-log-event"
 
 /** user-defined types **/
 
+/**
+ * Global advanced yt-dlp options exposed via the "Advanced" panel on the download page.
+ * All options are global (not per-download) and persisted in settings.json. The container-level
+ * `#[serde(default)]` + a custom `Default` impl keeps old settings.json files (and partial objects
+ * sent from the frontend) loading cleanly even as new fields are added later.
+ */
+export type AdvancedOptions = { writeSubs: boolean; writeAutoSubs: boolean; embedSubs: boolean; subLangs: string; convertSubs: string; sponsorblockMode: string; sponsorblockCategories: string[]; embedThumbnail: boolean; embedMetadata: boolean; embedChapters: boolean; writeThumbnail: boolean; writeInfoJson: boolean; videoCodec: string; limitRate: string; concurrentFragments: number; retries: number | null; sleepInterval: number; mergeOutputFormat: string; remuxVideo: string; downloadSections: string; splitChapters: boolean; proxy: string; noMtime: boolean; restrictFilenames: boolean }
 export type AppError = { FileError: string } | { Custom: string } | { BinaryNotFound: string } | { DownloadError: string } | { MetadataError: string } | { DatabaseError: string } | { NetworkError: string } | { InvalidUrl: string } | { DependencyInstallError: string } | { ChecksumError: string } | { NotImplemented: string }
 export type AppSettings = { downloadPath: string; defaultQuality: string; maxConcurrent: number; filenameTemplate: string; cookieBrowser: string | null; autoUpdateYtdlp: boolean; useAdvancedTemplate: boolean; templateUploaderFolder: boolean; templateUploadDate: boolean; templateVideoId: boolean; language: string | null; theme: string | null; minimizeToTray: boolean | null; 
 /**
- * Dependency resolution mode: "external" (app-managed) or "system" (system PATH only)
+ * Dependency resolution mode: "hybrid" (system first, bundled fallback),
+ * "bundled" (app-managed first), or "system" (system PATH only).
+ * Legacy "external" is treated as "bundled" at resolution time.
  */
 depMode: string; 
+/**
+ * Per-dependency source override. Maps a dependency name ("yt-dlp",
+ * "ffmpeg", "deno") to "appManaged" or "systemPath". A dependency without
+ * an entry follows `dep_mode`.
+ */
+depOverrides?: Partial<{ [key in string]: string }>; 
+/**
+ * Global advanced download options (subtitles, SponsorBlock, embedding, codec, etc.)
+ */
+advanced?: AdvancedOptions; 
 /**
  * Whether the initial setup wizard has been completed
  */
 setupCompleted: boolean }
-export type DepInfo = { installed: boolean; version: string | null; source: DepSource; path: string | null }
+/**
+ * Result of a batch enqueue. `group_id` is Some only when a group was actually
+ * created (i.e. 2+ items survived duplicate filtering).
+ */
+export type BatchEnqueueResult = { groupId: number | null; taskIds: number[] }
+export type DepInfo = { installed: boolean; version: string | null; 
+/**
+ * The source currently active for this dependency (honoring any override).
+ */
+source: DepSource; path: string | null; 
+/**
+ * Whether an app-managed copy exists on disk, independent of which source
+ * is active. Drives the per-item source toggle in the UI.
+ */
+appAvailable?: boolean; 
+/**
+ * Whether a system-PATH copy is discoverable, independent of the active source.
+ */
+systemAvailable?: boolean }
 export type DepInstallEvent = { depName: string; stage: DepInstallStage; percent: number; bytesDownloaded: number; bytesTotal: number | null; message: string | null }
 export type DepInstallStage = "Downloading" | "Verifying" | "Extracting" | "Completing" | "Failed"
 export type DepSource = "AppManaged" | "SystemPath" | "NotFound"
@@ -363,20 +467,44 @@ export type DependencyStatus = { ytdlpInstalled: boolean; ytdlpVersion: string |
 ytdlpDebug: string | null }
 export type DownloadRequest = { videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputDir: string | null; cookieBrowser: string | null; audioFormat: string | null; audioQuality: string | null }
 export type DownloadStatus = "pending" | "downloading" | "paused" | "completed" | "failed" | "cancelled"
-export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; createdAt: number; completedAt: number | null; audioFormat: string | null; audioQuality: string | null }
+export type DownloadTaskInfo = { id: number; videoUrl: string; videoId: string; title: string; formatId: string; qualityLabel: string; outputPath: string; status: DownloadStatus; progress: number; speed: string | null; eta: string | null; errorMessage: string | null; 
+/**
+ * Raw yt-dlp error line (e.g. the actual `ERROR:` stderr), shown verbatim in the
+ * queue's expandable error detail. `error_message` stays the translatable summary key.
+ */
+errorDetail: string | null; createdAt: number; completedAt: number | null; audioFormat: string | null; audioQuality: string | null; 
+/**
+ * Batch group this download belongs to. Only populated by the active-queue /
+ * summary queries (which LEFT JOIN download_groups); other lookups leave it None.
+ */
+groupId: number | null; groupTitle: string | null }
 export type DuplicateCheckResult = { inHistory: boolean; inQueue: boolean; historyItem: HistoryItem | null; fileExists: boolean }
 export type FormatInfo = { formatId: string; ext: string; resolution: string | null; qualityLabel: string | null; filesize: number | null; vcodec: string | null; acodec: string | null; hasVideo: boolean; hasAudio: boolean }
 export type FullDependencyStatus = { ytdlp: DepInfo; ffmpeg: DepInfo; deno: DepInfo }
-export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null }
+export type GlobalDownloadEvent = { taskId: number; eventType: string; percent: number | null; speed: string | null; eta: string | null; filePath: string | null; fileSize: number | null; message: string | null; 
+/**
+ * Raw yt-dlp error line for failed events, surfaced to the UI alongside the
+ * translatable `message` key so the user sees the real cause.
+ */
+detail: string | null }
+/**
+ * A top-level history row: either a batch group header or a standalone item.
+ */
+export type HistoryEntry = { kind: "group"; group: HistoryGroupHeader } | { kind: "single"; item: HistoryItem }
+/**
+ * History group header — aggregate over the *completed* items of a batch group.
+ * `total_count` comes from `download_groups` (fixed at batch time), while
+ * `completed_count` is how many of them actually landed in history.
+ */
+export type HistoryGroupHeader = { groupId: number; title: string; totalCount: number; completedCount: number; latestDownloadedAt: number }
 export type HistoryItem = { id: number; videoUrl: string; videoId: string; title: string; qualityLabel: string; format: string; filePath: string; fileSize: number | null; downloadedAt: number }
-export type HistoryResult = { items: HistoryItem[]; totalCount: number; page: number; pageSize: number }
+export type HistoryResult = { items: HistoryEntry[]; totalCount: number; page: number; pageSize: number }
 export type LogEntry = { id: number; timestamp: number; level: string; category: string; message: string; details: string | null }
 export type LogQueryResult = { items: LogEntry[]; totalCount: number; page: number; pageSize: number }
 export type LogStats = { totalCount: number; errorCount: number; warnCount: number; infoCount: number }
 export type NewLogEvent = { entry: LogEntry }
 export type PlaylistEntry = { url: string; videoId: string; title: string | null; duration: number | null; thumbnail: string | null }
 export type PlaylistResult = { playlistId: string; title: string; url: string; videoCount: number | null; channelName: string | null; entries: PlaylistEntry[] }
-export type QueueResult = { items: DownloadTaskInfo[]; totalCount: number; page: number; pageSize: number; activeCount: number; pendingCount: number; completedCount: number; failedCount: number; cancelledCount: number }
 export type QueueSummary = { activeItems: DownloadTaskInfo[]; recentCompleted: DownloadTaskInfo[]; activeCount: number; pendingCount: number; completedCount: number; totalCount: number }
 export type QuickMetadata = { videoId: string; title: string; channel: string; channelUrl: string; thumbnail: string }
 export type UrlType = "video" | "channel" | "playlist" | "unknown"

@@ -69,9 +69,9 @@
   let updateReady = $state(false)
 
   // Welcome (first-run) state
+  type DepMode = "hybrid" | "bundled"
   let setupCompleted = $state<boolean | null>(null) // null = loading
-  let selectedDepMode = $state<"external" | "system" | null>(null)
-  let currentDepMode = $state<string>("external")
+  let selectedDepMode = $state<DepMode>("hybrid")
 
   // Debug command menu state (F9)
   let showDebugCmd = $state(false)
@@ -143,6 +143,7 @@
       if (result.status === "ok") {
         const data = result.data
         activeDownloads = data.activeItems.map((item: any) => {
+          // item.groupTitle is populated by the (joined) active-queue summary query.
           const cached = progressCache.get(item.id)
           if (cached && item.status === "downloading") {
             return { ...item, ...cached }
@@ -275,7 +276,6 @@
         await initLocale(settingsResult.data.language)
         initTheme(settingsResult.data.theme)
         setupCompleted = settingsResult.data.setupCompleted
-        currentDepMode = settingsResult.data.depMode
       } else {
         await initLocale()
         initTheme()
@@ -535,7 +535,6 @@
   }
 
   async function handleWelcomeComplete() {
-    if (!selectedDepMode) return
     try {
       const settingsResult = await commands.getSettings()
       if (settingsResult.status === "ok") {
@@ -548,20 +547,6 @@
     setupCompleted = true
     // Trigger dep check after mode selection
     await checkDeps(true)
-  }
-
-  async function handleSwitchToAppManaged() {
-    try {
-      const settingsResult = await commands.getSettings()
-      if (settingsResult.status === "ok") {
-        const updated = { ...settingsResult.data, depMode: "external" as const }
-        await commands.updateSettings(updated)
-        currentDepMode = "external"
-      }
-    } catch (e) {
-      console.error("Failed to switch dep mode:", e)
-    }
-    await handleAutoInstall()
   }
 
   async function handleFactoryReset() {
@@ -595,7 +580,7 @@
 
 <div class="flex h-screen overflow-hidden bg-yt-bg text-yt-text font-body selection:bg-yt-primary/20 selection:text-yt-text">
   <!-- Sidebar -->
-  <aside class="w-56 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
+  <aside class="w-48 bg-yt-surface border-r border-yt-border flex flex-col shrink-0 z-20">
     <!-- Window Drag Region (Mac style) -->
     <div data-tauri-drag-region class="h-8 shrink-0"></div>
 
@@ -606,7 +591,7 @@
           <span class="material-symbols-outlined text-[20px]">download</span>
         </div>
         <div>
-          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Modern YT-DLP</h1>
+          <h1 class="font-display font-semibold text-sm text-yt-text tracking-tight">Yummy YT-DLP</h1>
           <p class="text-[10px] text-yt-text-secondary font-mono">v{appVersion}</p>
         </div>
        </div>
@@ -714,49 +699,49 @@
 
           <!-- Mode Selection Cards -->
           <div class="w-full space-y-3">
-            <!-- App Managed -->
+            <!-- Hybrid (recommended) -->
             <button
-              onclick={() => selectedDepMode = "external"}
-              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'external'
+              onclick={() => selectedDepMode = "hybrid"}
+              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'hybrid'
                 ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary/20'
                 : 'border-yt-border bg-yt-surface hover:border-yt-text-secondary/30'}"
             >
               <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'external' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
-                  <span class="material-symbols-outlined text-xl">package_2</span>
+                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
+                  <span class="material-symbols-outlined text-xl">auto_awesome</span>
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
-                    <span class="font-semibold text-sm text-yt-text">{t("welcome.appManaged")}</span>
+                    <span class="font-semibold text-sm text-yt-text">{t("welcome.hybrid")}</span>
                     <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-yt-primary/15 text-yt-primary">{t("welcome.appManagedTag")}</span>
                   </div>
-                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.appManagedDesc")}</p>
+                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.hybridDesc")}</p>
                 </div>
-                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'external' ? 'border-yt-primary' : 'border-yt-border'}">
-                  {#if selectedDepMode === "external"}
+                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'border-yt-primary' : 'border-yt-border'}">
+                  {#if selectedDepMode === "hybrid"}
                     <div class="w-2.5 h-2.5 rounded-full bg-yt-primary"></div>
                   {/if}
                 </div>
               </div>
             </button>
 
-            <!-- System PATH -->
+            <!-- Bundled -->
             <button
-              onclick={() => selectedDepMode = "system"}
-              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'system'
+              onclick={() => selectedDepMode = "bundled"}
+              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'bundled'
                 ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary/20'
                 : 'border-yt-border bg-yt-surface hover:border-yt-text-secondary/30'}"
             >
               <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'system' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
-                  <span class="material-symbols-outlined text-xl">terminal</span>
+                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'bundled' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
+                  <span class="material-symbols-outlined text-xl">package_2</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                  <span class="font-semibold text-sm text-yt-text">{t("welcome.systemPath")}</span>
-                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.systemPathDesc")}</p>
+                  <span class="font-semibold text-sm text-yt-text">{t("welcome.bundled")}</span>
+                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.bundledDesc")}</p>
                 </div>
-                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'system' ? 'border-yt-primary' : 'border-yt-border'}">
-                  {#if selectedDepMode === "system"}
+                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'bundled' ? 'border-yt-primary' : 'border-yt-border'}">
+                  {#if selectedDepMode === "bundled"}
                     <div class="w-2.5 h-2.5 rounded-full bg-yt-primary"></div>
                   {/if}
                 </div>
@@ -767,7 +752,6 @@
           <!-- Start Button -->
           <button
             onclick={handleWelcomeComplete}
-            disabled={!selectedDepMode}
             class="w-full py-3 rounded-xl bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
@@ -791,10 +775,10 @@
 
           <div class="text-center space-y-2">
             <h2 class="font-display text-xl font-semibold text-yt-text">
-              {currentDepMode === "system" ? t("layout.systemPathMissing") : t("layout.setupRequired")}
+              {t("layout.setupRequired")}
             </h2>
             <p class="text-yt-text-secondary text-sm leading-relaxed">
-              {currentDepMode === "system" ? t("layout.systemPathMissingDesc") : t("layout.setupDesc")}
+              {t("layout.setupDesc")}
             </p>
           </div>
 
@@ -848,63 +832,7 @@
           {/if}
 
           <div class="w-full space-y-3">
-            {#if currentDepMode === "system"}
-              <!-- System PATH mode: show manual install commands expanded by default -->
-              <div class="space-y-3">
-                <div>
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-medium text-yt-text">{t("layout.recommendedCommand")}</span>
-                    <span class="text-[10px] text-yt-text-muted bg-yt-surface border border-yt-border px-1.5 py-0.5 rounded uppercase">{currentPlatform}</span>
-                  </div>
-                  <div class="relative group">
-                    <code class="block w-full bg-yt-surface border border-yt-border rounded-lg p-3 text-xs font-mono text-yt-text select-all">
-                      {platformCommands.recommended}
-                    </code>
-                    <button
-                      onclick={() => copyCommand(platformCommands.recommended)}
-                      class="absolute right-2 top-2 p-1 rounded hover:bg-yt-highlight text-yt-text-secondary transition-colors"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">{copiedCmd === platformCommands.recommended ? 'check' : 'content_copy'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Recheck Button -->
-              <button
-                class="w-full py-2.5 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2"
-                onclick={() => checkDeps(true)}
-              >
-                <span class="material-symbols-outlined text-[18px]">refresh</span>
-                {t("layout.recheck")}
-              </button>
-
-              <!-- Divider -->
-              <div class="flex items-center gap-3 py-1">
-                <div class="flex-1 h-px bg-yt-border"></div>
-                <span class="text-[10px] text-yt-text-muted uppercase tracking-wider">{t("layout.altMethod")}</span>
-                <div class="flex-1 h-px bg-yt-border"></div>
-              </div>
-
-              <!-- Switch to App Managed -->
-              <div class="bg-yt-surface border border-yt-border rounded-lg p-3">
-                <p class="text-xs text-yt-text-secondary mb-2">{t("layout.switchToAppManagedDesc")}</p>
-                <button
-                  class="w-full py-2 rounded-lg bg-yt-highlight hover:bg-yt-overlay-strong border border-yt-border text-yt-text text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                  onclick={handleSwitchToAppManaged}
-                  disabled={installing}
-                >
-                  {#if installing}
-                    <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-                    {t("layout.installing")}
-                  {:else}
-                    <span class="material-symbols-outlined text-[18px]">package_2</span>
-                    {t("layout.switchToAppManaged")}
-                  {/if}
-                </button>
-              </div>
-            {:else}
-              <!-- App Managed mode: Auto Install Button -->
+              <!-- Auto Install Button -->
               <button
                 class="w-full py-2.5 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 onclick={handleAutoInstall}
@@ -958,7 +886,6 @@
                   </div>
                 </div>
               {/if}
-            {/if}
           </div>
         </div>
       </div>
@@ -1004,6 +931,12 @@
         {#each activeDownloads as item (item.id)}
           <div class="bg-yt-bg rounded border border-yt-border p-2.5 relative overflow-hidden group">
             <p class="text-xs font-medium text-yt-text truncate relative z-10">{item.title}</p>
+            {#if item.groupTitle}
+              <p class="text-[9px] text-yt-text-muted truncate relative z-10 flex items-center gap-0.5 mt-0.5">
+                <span class="material-symbols-outlined text-[11px]">playlist_play</span>
+                {item.groupTitle}
+              </p>
+            {/if}
             <div class="flex items-center justify-between mt-1.5 relative z-10">
               <span class="text-[10px] text-yt-text-secondary font-mono">{(item.progress || 0).toFixed(0)}%</span>
               <span class="text-[10px] text-yt-text-muted">{item.speed || ""}</span>

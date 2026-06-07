@@ -28,7 +28,7 @@ Một ứng dụng máy tính để bàn hiện đại, đa nền tảng để t
 - 4 chủ đề màu sắc (Dark, Violet, Red, Light)
 - Hỗ trợ đa nền tảng (Windows, macOS, Linux)
 
-> **💡 Mẹo:** Ứng dụng tự động tải xuống yt-dlp, FFmpeg và Deno khi khởi chạy lần đầu. Tuy nhiên, các tệp nhị phân được quản lý tự động (đóng gói bằng PyInstaller) có thể khởi động chậm lần đầu. Để truy xuất siêu dữ liệu và tải xuống **nhanh hơn đáng kể**, hãy cài đặt trước qua trình quản lý gói hệ thống — [Homebrew](https://brew.sh/) trên macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) trên Windows (`winget install yt-dlp.yt-dlp ffmpeg`), hoặc `apt`/`pacman` trên Linux. Ứng dụng sẽ tự động phát hiện và ưu tiên sử dụng phiên bản đã cài trong PATH hệ thống.
+> **💡 Mẹo:** Ứng dụng tự động thiết lập yt-dlp, FFmpeg và Deno khi khởi chạy lần đầu (đi kèm với ứng dụng và được tải xuống/cập nhật khi cần). Bản dựng yt-dlp được quản lý tự động sẽ tự giải nén mỗi lần chạy, nên lần khởi động đầu tiên có thể chậm. Để truy xuất siêu dữ liệu và tải xuống **nhanh hơn đáng kể**, hãy cài đặt trước qua trình quản lý gói hệ thống — [Homebrew](https://brew.sh/) trên macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) trên Windows (`winget install yt-dlp.yt-dlp ffmpeg`), hoặc `apt`/`pacman` trên Linux. Theo mặc định, ứng dụng tự động phát hiện và ưu tiên sử dụng phiên bản đã cài trong PATH hệ thống.
 
 ## Biên dịch từ mã nguồn
 
@@ -62,6 +62,16 @@ Kết quả biên dịch sản xuất nằm trong `src-tauri/target/release/bund
 
 1. Ứng dụng tải xuống cho người dùng di động (bạn có thể tự lưu trữ máy chủ yt-dlp của riêng mình)
 2. Trình cập nhật phiên bản
+
+## Ghi công & Giấy phép Bên thứ ba
+
+Ứng dụng này đóng gói hoặc tải xuống các tệp nhị phân mã nguồn mở sau:
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg được cấp phép theo GNU General Public License v3. Bản build GPL chính xác đi kèm với mỗi phiên bản được liên kết ở trên, mã nguồn tương ứng có thể tìm thấy tại dự án FFmpeg và các nhà cung cấp bản build.
 
 ## Giấy phép
 

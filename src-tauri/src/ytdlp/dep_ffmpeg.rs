@@ -55,6 +55,9 @@ fn get_binary_names() -> &'static [&'static str] {
 
 /// Install ffmpeg by downloading from GitHub.
 pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
+    // Serialize against any concurrent ffmpeg install/update/delete so they don't
+    // corrupt the shared archive temp file or race the extracted binaries.
+    let _lock = lock_dependency("ffmpeg").await;
     let bin_dir = ensure_bin_dir(app)?;
     let (url, format) = get_download_info()?;
     let binary_names = get_binary_names();

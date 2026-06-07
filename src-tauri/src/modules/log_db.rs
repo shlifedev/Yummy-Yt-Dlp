@@ -135,7 +135,8 @@ impl LogDatabase {
         }
 
         // Data query
-        let offset = page * page_size;
+        // Widen before multiplying so a large page can't overflow u32 (matches db/queue.rs).
+        let offset = (page as u64) * (page_size as u64);
         let data_sql = format!(
             "SELECT id, timestamp, level, category, message, details FROM logs {} ORDER BY timestamp DESC, id DESC LIMIT ?{} OFFSET ?{}",
             where_clause, param_idx, param_idx + 1

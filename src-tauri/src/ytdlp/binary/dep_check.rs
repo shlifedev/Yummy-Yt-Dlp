@@ -1,5 +1,8 @@
-use super::path::{app_bin_dir, command_with_path, is_external_mode};
-use super::resolve::{check_deno_version, check_ffmpeg, check_ytdlp, try_get_version};
+use super::path::{command_with_path, source_order, DepSourcePref};
+use super::resolve::{
+    app_managed_binary, check_deno_version, check_ffmpeg, check_ytdlp, deno_home_path,
+    deno_on_system_path, try_get_version, which_first,
+};
 use crate::ytdlp::types::{DepInfo, DepSource, FullDependencyStatus};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -36,7 +39,6 @@ async fn quick_binary_exists(name: &str) -> bool {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
 
@@ -46,146 +48,176 @@ async fn quick_binary_exists(name: &str) -> bool {
     )
 }
 
-async fn check_dep_ytdlp(app: &AppHandle) -> DepInfo {
-    // Check app-managed first (only in external mode)
-    if is_external_mode(app) {
-        if let Some(bin_dir) = app_bin_dir(app) {
-            let bin_name = if cfg!(target_os = "windows") {
-                "yt-dlp.exe"
-            } else {
-                "yt-dlp"
-            };
-            let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() {
-                // Binary file exists in app bin dir — report as installed.
-                // Version check may fail on first run (PyInstaller extraction, Gatekeeper, etc.)
-                let version = try_get_version(&app_binary).await.ok();
-                return DepInfo {
-                    installed: true,
-                    version,
-                    source: DepSource::AppManaged,
-                    path: Some(app_binary.to_string_lossy().to_string()),
-                };
+fn not_found() -> DepInfo {
+    DepInfo {
+        installed: false,
+        version: None,
+        source: DepSource::NotFound,
+        path: None,
+        app_available: false,
+        system_available: false,
+    }
+}
+
+/// Pick the active variant from the app-managed and system candidates following
+/// the effective source order for `dep`, while recording which sources exist so
+/// the UI can offer a per-item toggle.
+fn choose_dep(
+    app: &AppHandle,
+    dep: &str,
+    app_info: Option<DepInfo>,
+    system_info: Option<DepInfo>,
+) -> DepInfo {
+    let app_available = app_info.is_some();
+    let system_available = system_info.is_some();
+
+    let mut active: Option<DepInfo> = None;
+    for src in source_order(app, dep) {
+        match src {
+            DepSourcePref::AppManaged => {
+                if let Some(info) = &app_info {
+                    active = Some(info.clone());
+                    break;
+                }
+            }
+            DepSourcePref::SystemPath => {
+                if let Some(info) = &system_info {
+                    active = Some(info.clone());
+                    break;
+                }
             }
         }
     }
 
+    let mut info = active.unwrap_or_else(not_found);
+    info.app_available = app_available;
+    info.system_available = system_available;
+    info
+}
+
+/// app-managed yt-dlp, if the binary exists in the app bin dir.
+async fn app_managed_ytdlp(app: &AppHandle) -> Option<DepInfo> {
+    let app_binary = app_managed_binary(app, "yt-dlp", "yt-dlp.exe")?;
+    // Version check may fail on first run (PyInstaller extraction, Gatekeeper, etc.),
+    // but the binary's presence on disk is enough to report it installed.
+    let version = try_get_version(&app_binary).await.ok();
+    Some(DepInfo {
+        installed: true,
+        version,
+        source: DepSource::AppManaged,
+        path: Some(app_binary.to_string_lossy().to_string()),
+        app_available: true,
+        system_available: false,
+    })
+}
+
+/// system-PATH yt-dlp, if discoverable.
+async fn system_ytdlp() -> Option<DepInfo> {
     // Quick existence check via which/where before spawning yt-dlp --version
     if !quick_binary_exists("yt-dlp").await {
-        return DepInfo {
-            installed: false,
-            version: None,
-            source: DepSource::NotFound,
-            path: None,
-        };
+        return None;
     }
-
-    // Check system PATH
     let (version, _debug) = check_ytdlp().await;
-    if let Some(ver) = version {
-        DepInfo {
-            installed: true,
-            version: Some(ver),
-            source: DepSource::SystemPath,
-            path: None,
-        }
-    } else {
-        DepInfo {
-            installed: false,
-            version: None,
-            source: DepSource::NotFound,
-            path: None,
+    let version = version?;
+    Some(DepInfo {
+        installed: true,
+        version: Some(version),
+        source: DepSource::SystemPath,
+        path: which_first("yt-dlp").await,
+        app_available: false,
+        system_available: true,
+    })
+}
+
+async fn check_dep_ytdlp(app: &AppHandle) -> DepInfo {
+    let (app_info, system_info) = tokio::join!(app_managed_ytdlp(app), system_ytdlp());
+    choose_dep(app, "yt-dlp", app_info, system_info)
+}
+
+/// app-managed ffmpeg, if the binary exists in the app bin dir.
+async fn app_managed_ffmpeg(app: &AppHandle) -> Option<DepInfo> {
+    let app_binary = app_managed_binary(app, "ffmpeg", "ffmpeg.exe")?;
+
+    let mut version: Option<String> = None;
+    let mut cmd = tokio::process::Command::new(&app_binary);
+    cmd.arg("-version");
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000);
+    }
+    if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
+        if output.status.success() {
+            version = Some(
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string(),
+            );
         }
     }
+    Some(DepInfo {
+        installed: true,
+        version,
+        source: DepSource::AppManaged,
+        path: Some(app_binary.to_string_lossy().to_string()),
+        app_available: true,
+        system_available: false,
+    })
+}
+
+/// system-PATH ffmpeg, if discoverable.
+async fn system_ffmpeg() -> Option<DepInfo> {
+    let version = check_ffmpeg().await?;
+    Some(DepInfo {
+        installed: true,
+        version: Some(version),
+        source: DepSource::SystemPath,
+        path: which_first("ffmpeg").await,
+        app_available: false,
+        system_available: true,
+    })
 }
 
 async fn check_dep_ffmpeg(app: &AppHandle) -> DepInfo {
-    // Check app-managed first (only in external mode)
-    if is_external_mode(app) {
-        if let Some(bin_dir) = app_bin_dir(app) {
-            let bin_name = if cfg!(target_os = "windows") {
-                "ffmpeg.exe"
-            } else {
-                "ffmpeg"
-            };
-            let app_binary = bin_dir.join(bin_name);
-            if app_binary.exists() {
-                let mut version: Option<String> = None;
-                let mut cmd = tokio::process::Command::new(&app_binary);
-                cmd.arg("-version");
-                #[cfg(target_os = "windows")]
-                {
-                    use std::os::windows::process::CommandExt;
-                    cmd.creation_flags(0x08000000);
-                }
-                if let Ok(Ok(output)) =
-                    tokio::time::timeout(Duration::from_secs(5), cmd.output()).await
-                {
-                    if output.status.success() {
-                        version = Some(
-                            String::from_utf8_lossy(&output.stdout)
-                                .lines()
-                                .next()
-                                .unwrap_or("")
-                                .to_string(),
-                        );
-                    }
-                }
-                // Binary file exists in app bin dir — report as installed
-                return DepInfo {
-                    installed: true,
-                    version,
-                    source: DepSource::AppManaged,
-                    path: Some(app_binary.to_string_lossy().to_string()),
-                };
-            }
-        }
-    }
+    let (app_info, system_info) = tokio::join!(app_managed_ffmpeg(app), system_ffmpeg());
+    choose_dep(app, "ffmpeg", app_info, system_info)
+}
 
-    // Check system PATH
-    if let Some(version) = check_ffmpeg().await {
-        DepInfo {
-            installed: true,
-            version: Some(version),
-            source: DepSource::SystemPath,
-            path: None,
-        }
-    } else {
-        DepInfo {
-            installed: false,
-            version: None,
-            source: DepSource::NotFound,
-            path: None,
-        }
-    }
+/// app-managed deno, if the binary exists in the app bin dir.
+async fn app_managed_deno(app: &AppHandle) -> Option<DepInfo> {
+    let app_binary = app_managed_binary(app, "deno", "deno.exe")?;
+    let version = check_deno_version(&app_binary).await;
+    Some(DepInfo {
+        installed: true,
+        version,
+        source: DepSource::AppManaged,
+        path: Some(app_binary.to_string_lossy().to_string()),
+        app_available: true,
+        system_available: false,
+    })
+}
+
+/// system deno (default `~/.deno/bin` first, then PATH), if discoverable.
+async fn system_deno() -> Option<DepInfo> {
+    let path = match deno_home_path() {
+        Some(p) => p,
+        None => deno_on_system_path().await?,
+    };
+    let version = check_deno_version(&path).await;
+    Some(DepInfo {
+        installed: true,
+        version,
+        source: DepSource::SystemPath,
+        path: Some(path.to_string_lossy().to_string()),
+        app_available: false,
+        system_available: true,
+    })
 }
 
 async fn check_dep_deno(app: &AppHandle) -> DepInfo {
-    if let Some(deno_path) = super::resolve::resolve_deno_path(app).await {
-        let is_app_managed = app_bin_dir(app)
-            .map(|bin_dir| deno_path.starts_with(bin_dir))
-            .unwrap_or(false);
-
-        let version = check_deno_version(&deno_path).await;
-
-        DepInfo {
-            installed: true,
-            version,
-            source: if is_app_managed {
-                DepSource::AppManaged
-            } else {
-                DepSource::SystemPath
-            },
-            path: Some(deno_path.to_string_lossy().to_string()),
-        }
-    } else {
-        DepInfo {
-            installed: false,
-            version: None,
-            source: DepSource::NotFound,
-            path: None,
-        }
-    }
+    let (app_info, system_info) = tokio::join!(app_managed_deno(app), system_deno());
+    choose_dep(app, "deno", app_info, system_info)
 }
 
 const DEP_CACHE_STORE: &str = "dep-cache.json";
@@ -259,7 +291,6 @@ pub fn warmup_ytdlp(app: AppHandle) {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 

@@ -28,7 +28,7 @@
 - 4种颜色主题（Dark、Violet、Red、Light）
 - 跨平台支持（Windows、macOS、Linux）
 
-> **💡 提示：** 应用会在首次启动时自动下载 yt-dlp、FFmpeg 和 Deno。但自动管理的二进制文件（PyInstaller 打包）初次启动可能较慢。为了**显著提升**元数据获取和下载速度，建议通过系统包管理器预先安装 — macOS 使用 [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`），Windows 使用 [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`），Linux 使用 `apt`/`pacman`。应用会自动检测并优先使用系统 PATH 中已安装的版本。
+> **💡 提示：** 应用会在首次启动时自动设置 yt-dlp、FFmpeg 和 Deno（随应用打包，或按需下载/更新）。自动管理的 yt-dlp 构建每次运行时都会自解压，因此首次启动可能较慢。为了**显著提升**元数据获取和下载速度，建议通过系统包管理器预先安装 — macOS 使用 [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`），Windows 使用 [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`），Linux 使用 `apt`/`pacman`。默认情况下，应用会自动检测并优先使用系统 PATH 中已安装的版本。
 
 ## 从源码构建
 
@@ -62,6 +62,16 @@ bun run tauri build
 
 1. 面向移动用户的下载器应用（可以自行托管 yt-dlp 服务器）
 2. 版本更新器
+
+## 致谢与第三方许可证
+
+本应用捆绑或下载以下开源二进制文件：
+
+- **yt-dlp** — The Unlicense — https://github.com/yt-dlp/yt-dlp
+- **FFmpeg** — GPLv3 — bundled GPL builds: https://github.com/BtbN/FFmpeg-Builds (Windows/Linux), https://github.com/vanloctech/ffmpeg-macos (macOS); source: https://ffmpeg.org
+- **Deno** — MIT — https://github.com/denoland/deno
+
+FFmpeg 依据 GNU General Public License v3 授权。每个发行版所附带的 GPL 构建版本可通过上方链接查看，相应源代码可从 FFmpeg 项目及构建提供方获取。
 
 ## 许可证
 

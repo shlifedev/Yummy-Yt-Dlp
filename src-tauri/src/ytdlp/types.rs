@@ -164,10 +164,26 @@ pub struct DownloadTaskInfo {
     pub speed: Option<String>,
     pub eta: Option<String>,
     pub error_message: Option<String>,
+    /// Raw yt-dlp error line (e.g. the actual `ERROR:` stderr), shown verbatim in the
+    /// queue's expandable error detail. `error_message` stays the translatable summary key.
+    pub error_detail: Option<String>,
     pub created_at: i64,
     pub completed_at: Option<i64>,
     pub audio_format: Option<String>,
     pub audio_quality: Option<String>,
+    /// Batch group this download belongs to. Only populated by the active-queue /
+    /// summary queries (which LEFT JOIN download_groups); other lookups leave it None.
+    pub group_id: Option<u64>,
+    pub group_title: Option<String>,
+}
+
+/// Result of a batch enqueue. `group_id` is Some only when a group was actually
+/// created (i.e. 2+ items survived duplicate filtering).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchEnqueueResult {
+    pub group_id: Option<u64>,
+    pub task_ids: Vec<u64>,
 }
 
 // Global download event for app-wide event emission
@@ -182,6 +198,9 @@ pub struct GlobalDownloadEvent {
     pub file_path: Option<String>,
     pub file_size: Option<u64>,
     pub message: Option<String>,
+    /// Raw yt-dlp error line for failed events, surfaced to the UI alongside the
+    /// translatable `message` key so the user sees the real cause.
+    pub detail: Option<String>,
 }
 
 // === Install ===
@@ -213,29 +232,34 @@ pub struct HistoryItem {
     pub downloaded_at: i64,
 }
 
+/// History group header — aggregate over the *completed* items of a batch group.
+/// `total_count` comes from `download_groups` (fixed at batch time), while
+/// `completed_count` is how many of them actually landed in history.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryGroupHeader {
+    pub group_id: u64,
+    pub title: String,
+    pub total_count: u64,
+    pub completed_count: u64,
+    pub latest_downloaded_at: i64,
+}
+
+/// A top-level history row: either a batch group header or a standalone item.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HistoryEntry {
+    Group { group: HistoryGroupHeader },
+    Single { item: HistoryItem },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryResult {
-    pub items: Vec<HistoryItem>,
+    pub items: Vec<HistoryEntry>,
     pub total_count: u64,
     pub page: u32,
     pub page_size: u32,
-}
-
-// === Queue Pagination ===
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct QueueResult {
-    pub items: Vec<DownloadTaskInfo>,
-    pub total_count: u64,
-    pub page: u32,
-    pub page_size: u32,
-    pub active_count: u64,
-    pub pending_count: u64,
-    pub completed_count: u64,
-    pub failed_count: u64,
-    pub cancelled_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -262,6 +286,85 @@ pub struct DuplicateCheckResult {
 
 // === Settings ===
 
+/// Global advanced yt-dlp options exposed via the "Advanced" panel on the download page.
+/// All options are global (not per-download) and persisted in settings.json. The container-level
+/// `#[serde(default)]` + a custom `Default` impl keeps old settings.json files (and partial objects
+/// sent from the frontend) loading cleanly even as new fields are added later.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AdvancedOptions {
+    // Subtitles
+    pub write_subs: bool,
+    pub write_auto_subs: bool,
+    pub embed_subs: bool,
+    pub sub_langs: String,
+    pub convert_subs: String,
+
+    // SponsorBlock
+    pub sponsorblock_mode: String, // "off" | "mark" | "remove"
+    pub sponsorblock_categories: Vec<String>,
+
+    // Embedding & metadata
+    pub embed_thumbnail: bool,
+    pub embed_metadata: bool,
+    pub embed_chapters: bool,
+    pub write_thumbnail: bool,
+    pub write_info_json: bool,
+
+    // Format / codec / speed
+    pub video_codec: String, // "auto" | "av01" | "vp9" | "h264"
+    pub limit_rate: String,
+
+    // Network reliability
+    pub concurrent_fragments: u32,
+    pub retries: Option<u32>,
+    pub sleep_interval: u32,
+
+    // Container
+    pub merge_output_format: String, // "" | "mp4" | "mkv" | "webm"
+    pub remux_video: String,         // "" | "mp4" | "mkv" | "webm"
+
+    // Sections / chapters
+    pub download_sections: String,
+    pub split_chapters: bool,
+
+    // Proxy / timestamp / filename
+    pub proxy: String,
+    pub no_mtime: bool,
+    pub restrict_filenames: bool,
+}
+
+impl Default for AdvancedOptions {
+    fn default() -> Self {
+        Self {
+            write_subs: false,
+            write_auto_subs: false,
+            embed_subs: false,
+            sub_langs: "en".to_string(),
+            convert_subs: String::new(),
+            sponsorblock_mode: "off".to_string(),
+            sponsorblock_categories: vec!["sponsor".to_string()],
+            embed_thumbnail: false,
+            embed_metadata: false,
+            embed_chapters: false,
+            write_thumbnail: false,
+            write_info_json: false,
+            video_codec: "auto".to_string(),
+            limit_rate: String::new(),
+            concurrent_fragments: 1,
+            retries: None,
+            sleep_interval: 0,
+            merge_output_format: String::new(),
+            remux_video: String::new(),
+            download_sections: String::new(),
+            split_chapters: false,
+            proxy: String::new(),
+            no_mtime: false,
+            restrict_filenames: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -278,8 +381,18 @@ pub struct AppSettings {
     pub language: Option<String>,
     pub theme: Option<String>,
     pub minimize_to_tray: Option<bool>,
-    /// Dependency resolution mode: "external" (app-managed) or "system" (system PATH only)
+    /// Dependency resolution mode: "hybrid" (system first, bundled fallback),
+    /// "bundled" (app-managed first), or "system" (system PATH only).
+    /// Legacy "external" is treated as "bundled" at resolution time.
     pub dep_mode: String,
+    /// Per-dependency source override. Maps a dependency name ("yt-dlp",
+    /// "ffmpeg", "deno") to "appManaged" or "systemPath". A dependency without
+    /// an entry follows `dep_mode`.
+    #[serde(default)]
+    pub dep_overrides: std::collections::HashMap<String, String>,
+    /// Global advanced download options (subtitles, SponsorBlock, embedding, codec, etc.)
+    #[serde(default)]
+    pub advanced: AdvancedOptions,
     /// Whether the initial setup wizard has been completed
     pub setup_completed: bool,
 }
@@ -289,7 +402,7 @@ impl Default for AppSettings {
         Self {
             download_path: String::new(),
             default_quality: "1080p".to_string(),
-            max_concurrent: 3,
+            max_concurrent: 2,
             filename_template: "%(title)s.%(ext)s".to_string(),
             cookie_browser: None,
             auto_update_ytdlp: true,
@@ -300,7 +413,9 @@ impl Default for AppSettings {
             language: None,
             theme: None,
             minimize_to_tray: None,
-            dep_mode: "external".to_string(),
+            dep_mode: "hybrid".to_string(),
+            dep_overrides: std::collections::HashMap::new(),
+            advanced: AdvancedOptions::default(),
             setup_completed: false,
         }
     }
@@ -350,11 +465,19 @@ pub struct FullDependencyStatus {
 pub struct DepInfo {
     pub installed: bool,
     pub version: Option<String>,
+    /// The source currently active for this dependency (honoring any override).
     pub source: DepSource,
     pub path: Option<String>,
+    /// Whether an app-managed copy exists on disk, independent of which source
+    /// is active. Drives the per-item source toggle in the UI.
+    #[serde(default)]
+    pub app_available: bool,
+    /// Whether a system-PATH copy is discoverable, independent of the active source.
+    #[serde(default)]
+    pub system_available: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum DepSource {
     AppManaged,
     SystemPath,

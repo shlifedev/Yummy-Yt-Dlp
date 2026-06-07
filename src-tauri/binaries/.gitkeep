@@ -1,0 +1,2 @@
+# Build-time sidecar binaries (yt-dlp, ffmpeg, ffprobe) land here via CI.
+# Kept empty in git; bundle.resources globs binaries/* into the app.
