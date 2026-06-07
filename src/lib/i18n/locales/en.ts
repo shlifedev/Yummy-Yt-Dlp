@@ -70,6 +70,7 @@ const en: Record<string, string> = {
   "download.noTitle": "No title",
   "download.loadMore": "Load More",
   "download.loading": "Loading...",
+  "download.loadingMore": "loading more",
   "download.format": "Format",
   "download.quality": "Quality",
   "download.lossless": "Lossless",

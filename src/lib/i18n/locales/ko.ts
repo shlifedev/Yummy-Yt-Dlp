@@ -67,6 +67,7 @@ const ko: Record<string, string> = {
   "download.noTitle": "제목 없음",
   "download.loadMore": "더 보기",
   "download.loading": "불러오는 중...",
+  "download.loadingMore": "추가 로드중",
   "download.format": "형식",
   "download.quality": "화질",
   "download.lossless": "무손실",

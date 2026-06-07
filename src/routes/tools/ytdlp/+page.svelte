@@ -24,6 +24,10 @@
   let playlistResult = $state<PlaylistResult | null>(null)
   let playlistPage = $state(0)
   let loadingMore = $state(false)
+  // Auto-loading the rest of a channel/playlist in the background after the first page.
+  let autoLoading = $state(false)
+
+  const PLAYLIST_PAGE_SIZE = 50
 
   // Download options
   let format = $state<"mp4" | "mkv" | "mp3" | "flac" | "opus" | "wav">("mp4")
@@ -356,6 +360,7 @@
     loadMoreSeq++
     selectedEntries = new Set()
     noMoreEntries = false
+    autoLoading = false
     // Dismiss any stale duplicate-warning dialog so its captured request can't be confirmed
     // against a different, newly-analyzed video.
     duplicateCheck = null
@@ -426,13 +431,20 @@
         quickInfo = null // Replace quick preview with full info
         loadingFormats = false
       } else if (resolvedType === "channel" || resolvedType === "playlist") {
-        const plResult = await commands.fetchPlaylistInfo(normalized, 0, 50)
+        const plResult = await commands.fetchPlaylistInfo(normalized, 0, PLAYLIST_PAGE_SIZE)
         if (currentGeneration !== analyzeGeneration) return
         if (plResult.status === "error") {
           error = extractError(plResult.error)
           return
         }
         playlistResult = plResult.data
+        // First page already fits everything → nothing more to fetch. Otherwise keep
+        // pulling pages in the background until the list is exhausted, no clicks needed.
+        if (plResult.data.entries.length < PLAYLIST_PAGE_SIZE) {
+          noMoreEntries = true
+        } else {
+          void autoLoadRemaining(currentGeneration)
+        }
       }
     } catch (e: any) {
       if (currentGeneration !== analyzeGeneration) return
@@ -456,7 +468,7 @@
     loadingMore = true
     try {
       const nextPage = playlistPage + 1
-      const result = await commands.fetchPlaylistInfo(requestedUrl, nextPage, 50)
+      const result = await commands.fetchPlaylistInfo(requestedUrl, nextPage, PLAYLIST_PAGE_SIZE)
       if (requestId !== loadMoreSeq || !playlistResult || playlistResult.url !== requestedUrl) return
       if (result.status === "ok" && result.data.entries.length > 0) {
         playlistResult = {
@@ -472,6 +484,42 @@
       error = e.message || String(e)
     } finally {
       if (requestId === loadMoreSeq) loadingMore = false
+    }
+  }
+
+  // Keep pulling pages until the channel/playlist is exhausted. `generation` is the analyze
+  // token captured when this run started; if the user changes the URL or re-analyzes it bumps
+  // `analyzeGeneration`, so every guard below bails out and leaves the new analysis alone.
+  async function autoLoadRemaining(generation: number) {
+    autoLoading = true
+    try {
+      while (true) {
+        if (generation !== analyzeGeneration || !playlistResult) return
+        const nextPage = playlistPage + 1
+        const result = await commands.fetchPlaylistInfo(playlistResult.url, nextPage, PLAYLIST_PAGE_SIZE)
+        if (generation !== analyzeGeneration || !playlistResult) return
+        if (result.status === "error") {
+          error = extractError(result.error)
+          return
+        }
+        const batch = result.data.entries
+        if (batch.length > 0) {
+          playlistResult = {
+            ...playlistResult,
+            entries: [...playlistResult.entries, ...batch],
+          }
+          playlistPage = nextPage
+        }
+        // A short page means yt-dlp reached the end of the list.
+        if (batch.length < PLAYLIST_PAGE_SIZE) {
+          noMoreEntries = true
+          return
+        }
+      }
+    } catch (e: any) {
+      if (generation === analyzeGeneration) error = e.message || String(e)
+    } finally {
+      if (generation === analyzeGeneration) autoLoading = false
     }
   }
 
@@ -1034,7 +1082,20 @@
                     </div>
                     <div class="min-w-0">
                        <h3 class="text-sm font-semibold text-yt-text truncate">{playlistResult.title}</h3>
-                       <p class="text-xs text-yt-text-secondary">{playlistResult.videoCount ?? playlistResult.entries.length} videos</p>
+                       <p data-testid="playlist-count" class="text-xs text-yt-text-secondary flex items-center gap-1.5">
+                          <span>{playlistResult.videoCount ?? playlistResult.entries.length} videos</span>
+                          {#if autoLoading}
+                            <span
+                              data-testid="playlist-auto-loading"
+                              role="status"
+                              aria-live="polite"
+                              class="inline-flex items-center gap-1 text-yt-primary font-medium"
+                            >
+                              <span class="material-symbols-outlined text-[13px] animate-spin" aria-hidden="true">progress_activity</span>
+                              <span>({t("download.loadingMore")})</span>
+                            </span>
+                          {/if}
+                       </p>
                     </div>
                  </div>
                  
@@ -1087,9 +1148,14 @@
                  {/each}
               </div>
               
-              {#if !noMoreEntries && (playlistResult.videoCount == null || playlistResult.entries.length < playlistResult.videoCount)}
+              {#if autoLoading}
+                 <div class="p-2 border-t border-yt-border flex items-center justify-center gap-2 text-xs font-medium text-yt-text-secondary">
+                    <span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    <span>{t("download.loading")} ({playlistResult.entries.length})</span>
+                 </div>
+              {:else if !noMoreEntries && (playlistResult.videoCount == null || playlistResult.entries.length < playlistResult.videoCount)}
                  <div class="p-2 border-t border-yt-border">
-                    <button 
+                    <button
                       class="w-full py-2 text-xs font-medium text-yt-text-secondary hover:text-yt-text hover:bg-yt-highlight rounded transition-colors"
                       onclick={handleLoadMore}
                       disabled={loadingMore}

@@ -3,6 +3,7 @@
   import type { LogEntry, LogStats } from "$lib/bindings"
   import { onMount, onDestroy } from "svelte"
   import { listen } from "@tauri-apps/api/event"
+  import { ask } from "@tauri-apps/plugin-dialog"
   import { t } from "$lib/i18n/index.svelte"
 
   let logs = $state<LogEntry[]>([])
@@ -144,7 +145,7 @@
 
   async function handleClear() {
     if (clearingLogs) return
-    if (!confirm(t("logs.clearConfirm"))) return
+    if (!(await ask(t("logs.clearConfirm"), { kind: "warning" }))) return
     clearingLogs = true
     try {
       const result = await commands.clearLogs(null)

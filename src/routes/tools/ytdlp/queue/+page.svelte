@@ -1,6 +1,7 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
   import type { HistoryItem } from "$lib/bindings"
+  import { ask } from "@tauri-apps/plugin-dialog"
   import { onMount, onDestroy } from "svelte"
   import { t, getDateLocale } from "$lib/i18n/index.svelte"
   import { formatSize } from "$lib/utils/format"
@@ -210,7 +211,7 @@
   }
 
   async function handleClearAll() {
-    if (!confirm(t("queue.clearAllConfirm"))) return
+    if (!(await ask(t("queue.clearAllConfirm"), { kind: "warning" }))) return
     await withBusy("clear-all", async () => {
       try {
         const r = await commands.clearAllQueueAndHistory()
@@ -223,7 +224,7 @@
   }
 
   async function handleDeleteHistory(id: number) {
-    if (!confirm(t("history.deleteConfirm"))) return
+    if (!(await ask(t("history.deleteConfirm"), { kind: "warning" }))) return
     await withBusy(`delete-history:${id}`, async () => {
       try {
         const r = await commands.deleteHistoryItem(id)
@@ -233,7 +234,7 @@
   }
 
   async function handleDeleteHistoryGroup(gid: number) {
-    if (!confirm(t("history.deleteGroupConfirm"))) return
+    if (!(await ask(t("history.deleteGroupConfirm"), { kind: "warning" }))) return
     await withBusy(`delete-history-group:${gid}`, async () => {
       try {
         const r = await commands.deleteHistoryGroup(gid)

@@ -69,6 +69,7 @@ const zhCN: Record<string, string> = {
   "download.noTitle": "无标题",
   "download.loadMore": "加载更多",
   "download.loading": "加载中...",
+  "download.loadingMore": "继续加载中",
   "download.format": "格式",
   "download.quality": "画质",
   "download.lossless": "无损",

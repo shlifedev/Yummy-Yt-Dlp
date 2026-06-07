@@ -67,6 +67,7 @@ const de: Record<string, string> = {
   "download.noTitle": "Kein Titel",
   "download.loadMore": "Mehr laden",
   "download.loading": "Wird geladen...",
+  "download.loadingMore": "lädt weiter",
   "download.format": "Format",
   "download.quality": "Qualität",
   "download.lossless": "Verlustfrei",

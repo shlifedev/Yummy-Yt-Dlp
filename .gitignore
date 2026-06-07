@@ -22,6 +22,7 @@ target/
 
 # Local tool config
 .claude/
+.serena/
 .omc/
 .specify/
 

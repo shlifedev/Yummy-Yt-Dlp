@@ -67,6 +67,7 @@ const ja: Record<string, string> = {
   "download.noTitle": "タイトルなし",
   "download.loadMore": "もっと読み込む",
   "download.loading": "読み込み中...",
+  "download.loadingMore": "追加読み込み中",
   "download.format": "形式",
   "download.quality": "画質",
   "download.lossless": "ロスレス",
