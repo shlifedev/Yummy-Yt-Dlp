@@ -83,4 +83,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }}
+          # PR CI does not have release signing secrets; validate compilation
+          # without generating signed bundles or updater artifacts.
+          args: --target ${{ matrix.target }} --no-bundle
