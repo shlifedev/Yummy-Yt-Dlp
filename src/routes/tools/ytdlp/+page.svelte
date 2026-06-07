@@ -13,6 +13,8 @@
   import { t } from "$lib/i18n/index.svelte"
   import { extractError } from "$lib/utils/errors"
   import { formatSize, formatDuration } from "$lib/utils/format"
+  import { buildSingleDownloadRequest } from "$lib/utils/download-request.js"
+  import { getPlaylistReadyForDownload } from "$lib/utils/playlist-download.js"
 
   // URL & analyze state
   let url = $state("")
@@ -26,6 +28,7 @@
   let loadingMore = $state(false)
   // Auto-loading the rest of a channel/playlist in the background after the first page.
   let autoLoading = $state(false)
+  let autoLoadPromise: Promise<void> | null = null
 
   const PLAYLIST_PAGE_SIZE = 50
 
@@ -75,6 +78,7 @@
 
   // Download state (live progress/cancel lives in the queue popup; this page only enqueues)
   let downloading = $state(false)
+  let preparingDownload = $state(false)
 
   // Multi-select state
   let selectedEntries = $state<Set<string>>(new Set())
@@ -101,6 +105,8 @@
 
   // Cancel generation counter
   let analyzeGeneration = $state(0)
+  let analyzePromise: Promise<void> | null = null
+  let analyzePromiseUrl = ""
 
   // "Load more" end-of-list flag
   let noMoreEntries = $state(false)
@@ -158,6 +164,13 @@
   // Auto-analyze (NOT $state to avoid being tracked by $effect)
   let analyzeTimeoutId: ReturnType<typeof setTimeout> | null = null
 
+  function clearAnalyzeDebounce() {
+    if (analyzeTimeoutId) {
+      clearTimeout(analyzeTimeoutId)
+      analyzeTimeoutId = null
+    }
+  }
+
   function looksLikeVideoUrl(value: string): boolean {
     return /^https?:\/\/.+/.test(value.trim())
   }
@@ -171,10 +184,7 @@
 
   $effect(() => {
     const currentUrl = url // Only tracked dependency
-    if (analyzeTimeoutId) {
-      clearTimeout(analyzeTimeoutId)
-      analyzeTimeoutId = null
-    }
+    clearAnalyzeDebounce()
     if (looksLikeVideoUrl(currentUrl)) {
       analyzeTimeoutId = setTimeout(() => {
         // Don't gate on `analyzing`: if a previous fetch is still in flight, handleAnalyze bumps
@@ -186,10 +196,7 @@
       }, 800)
     }
     return () => {
-      if (analyzeTimeoutId) {
-        clearTimeout(analyzeTimeoutId)
-        analyzeTimeoutId = null
-      }
+      clearAnalyzeDebounce()
     }
   })
 
@@ -342,12 +349,36 @@
     analyzing = false
     quickInfo = null
     loadingFormats = false
+    autoLoading = false
+    autoLoadPromise = null
+    analyzePromise = null
+    analyzePromiseUrl = ""
     stopAnalyzeTimer()
   }
 
 
   async function handleAnalyze() {
-    if (!url.trim()) return
+    const requestedUrl = url.trim()
+    if (!requestedUrl) return
+    if (analyzePromise && analyzePromiseUrl === requestedUrl) {
+      await analyzePromise
+      return
+    }
+
+    const promise = runAnalyze(requestedUrl)
+    analyzePromise = promise
+    analyzePromiseUrl = requestedUrl
+    try {
+      await promise
+    } finally {
+      if (analyzePromise === promise) {
+        analyzePromise = null
+        analyzePromiseUrl = ""
+      }
+    }
+  }
+
+  async function runAnalyze(requestedUrl: string) {
     analyzing = true
     error = null
     notice = null
@@ -361,6 +392,7 @@
     selectedEntries = new Set()
     noMoreEntries = false
     autoLoading = false
+    autoLoadPromise = null
     // Dismiss any stale duplicate-warning dialog so its captured request can't be confirmed
     // against a different, newly-analyzed video.
     duplicateCheck = null
@@ -369,7 +401,7 @@
     startAnalyzeTimer()
 
     try {
-      const valResult = await commands.validateUrl(url)
+      const valResult = await commands.validateUrl(requestedUrl)
       if (currentGeneration !== analyzeGeneration) return
       if (valResult.status === "error") {
         error = extractError(valResult.error)
@@ -380,7 +412,7 @@
         return
       }
 
-      const normalized = valResult.data.normalizedUrl || url
+      const normalized = valResult.data.normalizedUrl || requestedUrl
 
       // 정형 패턴에 안 잡힌 URL(비-YouTube)은 단일 영상인지 재생목록/채널인지
       // yt-dlp가 판별한다. YouTube는 validate 단계에서 이미 타입이 정해진다.
@@ -443,7 +475,7 @@
         if (plResult.data.entries.length < PLAYLIST_PAGE_SIZE) {
           noMoreEntries = true
         } else {
-          void autoLoadRemaining(currentGeneration)
+          startAutoLoadRemaining(currentGeneration)
         }
       }
     } catch (e: any) {
@@ -490,6 +522,16 @@
   // Keep pulling pages until the channel/playlist is exhausted. `generation` is the analyze
   // token captured when this run started; if the user changes the URL or re-analyzes it bumps
   // `analyzeGeneration`, so every guard below bails out and leaves the new analysis alone.
+  function startAutoLoadRemaining(generation: number) {
+    const promise = autoLoadRemaining(generation)
+    autoLoadPromise = promise
+    promise.finally(() => {
+      if (generation === analyzeGeneration && autoLoadPromise === promise) {
+        autoLoadPromise = null
+      }
+    })
+  }
+
   async function autoLoadRemaining(generation: number) {
     autoLoading = true
     try {
@@ -558,46 +600,75 @@
     return `bestvideo${h}+bestaudio/best${h}`
   }
 
+  function buildQualityLabel(): string {
+    return isAudioFormat
+      ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`)
+      : (quality === "best" ? "Best" : quality)
+  }
+
+  async function ensureMetadataForDownload() {
+    if (videoInfo || playlistResult) return true
+    const requestedUrl = url.trim()
+    if (!requestedUrl) return false
+
+    clearAnalyzeDebounce()
+    await handleAnalyze()
+
+    return url.trim() === requestedUrl && Boolean(videoInfo || playlistResult)
+  }
+
   async function handleStartDownload() {
-    if (!videoInfo && !url.trim()) return
+    if (!videoInfo && !playlistResult && !url.trim()) return
+    if (preparingDownload) return
+    preparingDownload = true
     error = null
     notice = null
     duplicateCheck = null
     pendingRequest = null
 
-    const request = {
-      videoUrl: videoInfo?.url || url,
-      videoId: videoInfo?.videoId || "",
-      title: videoInfo?.title || url,
-      formatId: buildFormatString(),
-      qualityLabel: isAudioFormat ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`) : (quality === "best" ? "Best" : quality),
-      outputDir: null,
-      cookieBrowser: null,
-      audioFormat: isAudioFormat ? format : null,
-      audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
-    }
+    try {
+      if (!(await ensureMetadataForDownload())) return
 
-    // Check for duplicates if we have a video ID
-    if (request.videoId) {
-      try {
-        const dupResult = await commands.checkDuplicate(request.videoId)
-        if (dupResult.status === "ok" && dupResult.data) {
-          if (dupResult.data.inQueue) {
-            error = t("download.alreadyInQueue")
-            return
-          }
-          if (dupResult.data.inHistory && dupResult.data.fileExists) {
-            duplicateCheck = dupResult.data
-            pendingRequest = request
-            return
-          }
-        }
-      } catch (e) {
-        // Duplicate check failed, proceed with download anyway
+      if (playlistResult && !videoInfo) {
+        await handleDownloadAll()
+        return
       }
-    }
 
-    await executeDownload(request)
+      const request = buildSingleDownloadRequest({
+        videoInfo,
+        url,
+        formatId: buildFormatString(),
+        qualityLabel: buildQualityLabel(),
+        audioFormat: isAudioFormat ? format : null,
+        audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
+      })
+
+      if (!request) return
+
+      // Check for duplicates if we have a video ID
+      if (request.videoId) {
+        try {
+          const dupResult = await commands.checkDuplicate(request.videoId)
+          if (dupResult.status === "ok" && dupResult.data) {
+            if (dupResult.data.inQueue) {
+              error = t("download.alreadyInQueue")
+              return
+            }
+            if (dupResult.data.inHistory && dupResult.data.fileExists) {
+              duplicateCheck = dupResult.data
+              pendingRequest = request
+              return
+            }
+          }
+        } catch (e) {
+          // Duplicate check failed, proceed with download anyway
+        }
+      }
+
+      await executeDownload(request)
+    } finally {
+      preparingDownload = false
+    }
   }
 
   async function executeDownload(request: any) {
@@ -736,22 +807,41 @@
 
   async function handleDownloadAll() {
     if (!playlistResult || downloadingAll) return
+    const downloadGeneration = analyzeGeneration
     downloadingAll = true
     error = null
     notice = null
 
     try {
-      let allEntries = playlistResult.entries
-      if (playlistResult.videoCount == null || allEntries.length < (playlistResult.videoCount ?? Infinity)) {
-        const fullResult = await commands.fetchPlaylistInfo(playlistResult.url, 0, 99999)
-        if (fullResult.status === "error") {
-          error = extractError(fullResult.error)
-          return
-        }
-        allEntries = fullResult.data.entries
+      const readyPlaylist = await getPlaylistReadyForDownload({
+        getPlaylist: () => playlistResult,
+        getNoMoreEntries: () => noMoreEntries,
+        getAutoLoadPromise: () => autoLoadPromise,
+        fetchFullPlaylist: async (playlistUrl: string) => {
+          const fullResult = await commands.fetchPlaylistInfo(playlistUrl, 0, 99999)
+          if (fullResult.status === "error") {
+            throw new Error(extractError(fullResult.error))
+          }
+          return fullResult.data
+        },
+        setPlaylist: (next: PlaylistResult) => {
+          playlistResult = next
+        },
+        markNoMoreEntries: () => {
+          noMoreEntries = true
+        },
+        isCurrent: () => downloadGeneration === analyzeGeneration,
+      })
+
+      if (!readyPlaylist || downloadGeneration !== analyzeGeneration) {
+        return
       }
 
-      await enqueueBatchDownloads(allEntries)
+      await enqueueBatchDownloads(readyPlaylist.entries)
+      if (downloadGeneration !== analyzeGeneration) {
+        return
+      }
+
       url = ""
       videoInfo = null
       playlistResult = null
@@ -764,7 +854,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !downloading) handleAnalyze()
+    if (e.key === "Enter" && !downloading && !preparingDownload) handleAnalyze()
   }
 
 </script>
@@ -853,11 +943,14 @@
           onclick={playlistResult && !videoInfo
             ? (selectedEntries.size > 0 ? handleDownloadSelected : handleDownloadAll)
             : handleStartDownload}
-          disabled={downloading || downloadingAll || analyzing || (!videoInfo && !playlistResult && !url.trim())}
+          disabled={downloading || downloadingAll || preparingDownload || analyzing || (!videoInfo && !playlistResult && !url.trim())}
         >
           {#if downloadingAll}
             <span class="material-symbols-outlined text-[18px] animate-spin">sync</span>
             <span>{batchProgress.current}/{batchProgress.total}</span>
+          {:else if preparingDownload}
+            <span class="material-symbols-outlined text-[18px] animate-spin">sync</span>
+            <span>{t("download.loading")}</span>
           {:else if playlistResult && !videoInfo}
              <span class="material-symbols-outlined text-[18px]">playlist_add</span>
              {#if selectedEntries.size > 0}
