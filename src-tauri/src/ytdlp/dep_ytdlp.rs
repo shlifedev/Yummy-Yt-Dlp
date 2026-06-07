@@ -53,15 +53,34 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
         DepInstallStage::Verifying,
         Some("Verifying checksum..."),
     );
-    let checksums = fetch_ytdlp_checksums().await?;
-    let expected_name = get_checksum_filename();
-    let Some((_name, hash)) = checksums.iter().find(|(name, _)| name == expected_name) else {
-        return Err(AppError::DependencyInstallError(format!(
-            "Checksum for {} not found",
-            expected_name
-        )));
+    // Fail closed: a binary we cannot verify is never installed. yt-dlp's
+    // SHA2-256SUMS always lists yt-dlp_macos / yt-dlp.exe / yt-dlp_linux, so the
+    // happy path is unaffected; only a fetch failure or a missing entry blocks install.
+    let checksums = match fetch_ytdlp_checksums().await {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(AppError::ChecksumError(format!(
+                "cannot verify yt-dlp checksum: {}",
+                e
+            )));
+        }
     };
-    verify_sha256(&temp_path, hash).await?;
+    let expected_name = get_checksum_filename();
+    let hash = match checksums.iter().find(|(name, _)| name == expected_name) {
+        Some((_name, hash)) => hash,
+        None => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(AppError::ChecksumError(format!(
+                "no checksum entry found for {}",
+                expected_name
+            )));
+        }
+    };
+    if let Err(e) = verify_sha256(&temp_path, hash).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(e);
+    }
 
     // Set executable + remove quarantine
     emit_stage(

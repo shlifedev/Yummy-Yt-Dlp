@@ -165,6 +165,25 @@ pub async fn fetch_ytdlp_checksums() -> Result<Vec<(String, String)>, AppError> 
     Ok(results)
 }
 
+/// Fetch a sibling `<asset>.sha256sum` file and return the lowercase hex hash.
+/// The file format is `<sha256>  <filename>`, so the leading token is the hash.
+pub async fn fetch_sha256sum(url: &str) -> Result<String, AppError> {
+    let text = reqwest::get(url)
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to fetch checksum: {}", e)))?
+        .error_for_status()
+        .map_err(|e| AppError::ChecksumError(format!("checksum file unavailable: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to read checksum: {}", e)))?;
+
+    text.split_whitespace()
+        .next()
+        .map(|h| h.trim().to_lowercase())
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| AppError::ChecksumError(format!("malformed checksum file at {}", url)))
+}
+
 /// Extract a zip archive, finding the specified binary inside.
 pub async fn extract_zip(
     archive_path: &Path,
