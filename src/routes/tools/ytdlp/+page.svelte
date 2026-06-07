@@ -608,6 +608,14 @@
     pendingRequest = null
   }
 
+  async function confirmDuplicateDownload() {
+    const request = pendingRequest
+    duplicateCheck = null
+    pendingRequest = null
+    if (!request) return
+    await executeDownload(request)
+  }
+
   async function handleCancelDownload() {
     if (taskId) {
       try {
@@ -787,6 +795,10 @@
             </p>
           </div>
           <div class="flex flex-col gap-2 shrink-0">
+            <button
+              class="px-3 py-1.5 rounded-md bg-yt-primary hover:bg-yt-primary-hover text-white text-xs font-medium transition-colors"
+              onclick={confirmDuplicateDownload}
+            >{t("download.downloadAnyway")}</button>
             <button
               class="px-3 py-1.5 rounded-md bg-yt-surface hover:bg-yt-highlight border border-yt-border text-yt-text-secondary text-xs font-medium transition-colors"
               onclick={cancelDuplicate}

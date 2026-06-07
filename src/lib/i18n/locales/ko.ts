@@ -77,6 +77,7 @@ const ko: Record<string, string> = {
   "download.skippedExists": "{count}개 영상이 이미 다운로드되어 건너뛰었습니다.",
   "download.cancel": "취소",
   "download.close": "닫기",
+  "download.downloadAnyway": "그래도 다운로드",
   "download.alreadyDownloaded": "\"{title}\"은(는) 이미 다운로드한 적이 있습니다.",
   "download.error": "오류",
   "download.duplicateFound": "중복 발견",

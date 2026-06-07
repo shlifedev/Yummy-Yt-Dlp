@@ -79,6 +79,7 @@ const fr: Record<string, string> = {
   "download.skippedExists": "{count} vidéo(s) ignorée(s) (déjà téléchargée(s)).",
   "download.cancel": "Annuler",
   "download.close": "Fermer",
+  "download.downloadAnyway": "Télécharger quand même",
   "download.alreadyDownloaded": "« {title} » a déjà été téléchargée.",
   "download.error": "Erreur",
   "download.duplicateFound": "Doublon trouvé",

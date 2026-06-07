@@ -79,6 +79,7 @@ const zhCN: Record<string, string> = {
   "download.skippedExists": "{count}个视频已跳过（已下载）。",
   "download.cancel": "取消",
   "download.close": "关闭",
+  "download.downloadAnyway": "仍然下载",
   "download.alreadyDownloaded": "「{title}」已经下载过。",
   "download.error": "错误",
   "download.duplicateFound": "发现重复",

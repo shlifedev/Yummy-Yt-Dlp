@@ -77,6 +77,7 @@ const ja: Record<string, string> = {
   "download.skippedExists": "{count}件の動画がスキップされました（すでにダウンロード済み）。",
   "download.cancel": "キャンセル",
   "download.close": "閉じる",
+  "download.downloadAnyway": "それでもダウンロード",
   "download.alreadyDownloaded": "「{title}」はすでにダウンロード済みです。",
   "download.error": "エラー",
   "download.duplicateFound": "重複を検出",
