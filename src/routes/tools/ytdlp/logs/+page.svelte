@@ -16,7 +16,9 @@
   let levelFilter = $state<string | null>(null)
   let categoryFilter = $state<string | null>(null)
   let search = $state("")
-  let searchTimeout: ReturnType<typeof setTimeout>
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null
+  let logsLoadSeq = 0
+  let statsLoadSeq = 0
 
   // Live mode
   let liveMode = $state(true)
@@ -54,46 +56,64 @@
   })
 
   onDestroy(() => {
+    logsLoadSeq++
+    statsLoadSeq++
     if (liveInterval) clearInterval(liveInterval)
     if (unlisten) unlisten()
-    clearTimeout(searchTimeout)
+    if (searchTimeout) clearTimeout(searchTimeout)
   })
 
   async function loadLogs() {
+    const requestId = ++logsLoadSeq
+    const requestedPage = currentPage
+    const requestedLevel = levelFilter
+    const requestedCategory = categoryFilter
+    const requestedSearch = search
     loading = true
     try {
       const result = await commands.getLogs(
-        currentPage,
+        requestedPage,
         pageSize,
-        levelFilter ?? null,
-        categoryFilter ?? null,
-        search || null,
+        requestedLevel ?? null,
+        requestedCategory ?? null,
+        requestedSearch || null,
         null,
       )
+      if (
+        requestId !== logsLoadSeq ||
+        requestedPage !== currentPage ||
+        requestedLevel !== levelFilter ||
+        requestedCategory !== categoryFilter ||
+        requestedSearch !== search
+      ) return
       if (result.status === "ok") {
         logs = result.data.items
         totalCount = result.data.totalCount
       }
     } catch (e) {
+      if (requestId !== logsLoadSeq) return
       console.error("Failed to load logs:", e)
     } finally {
-      loading = false
+      if (requestId === logsLoadSeq) loading = false
     }
   }
 
   async function loadStats() {
+    const requestId = ++statsLoadSeq
     try {
       const result = await commands.getLogStats()
+      if (requestId !== statsLoadSeq) return
       if (result.status === "ok") {
         stats = result.data
       }
     } catch (e) {
+      if (requestId !== statsLoadSeq) return
       console.error("Failed to load stats:", e)
     }
   }
 
   function handleSearch(value: string) {
-    clearTimeout(searchTimeout)
+    if (searchTimeout) clearTimeout(searchTimeout)
     search = value
     searchTimeout = setTimeout(() => {
       currentPage = 0
