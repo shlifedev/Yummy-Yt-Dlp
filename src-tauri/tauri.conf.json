@@ -29,12 +29,13 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFRjQ1N0YwNjE3MUYxRjYKUldUMjhYRmg4RmYwam5jNnpLcXRsbitBUUxsVlM0bzk2UG90VzdkMWM4M3pLU0d3NWRlOHdaK2cK",
       "endpoints": [
-        "https://github.com/shlifedev/Modern-YT-DLP/releases/latest/download/latest.json"
+        "https://patcher-server-yt-dlp.shlife.dev/yummy-yt-dlp/latest.json"
       ]
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": {
       "binaries/*": "binaries/"

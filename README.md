@@ -62,6 +62,37 @@ bun run tauri build
 
 The production build output will be in `src-tauri/target/release/bundle/`.
 
+## Release Deployment
+
+Pushing to `main` runs the release workflow. It bumps the next patch version,
+builds the signed Tauri artifacts, uploads the release files to GitHub Releases,
+and publishes the updater payload to Cloudflare R2.
+
+The updater is served from:
+
+```text
+https://patcher-server-yt-dlp.shlife.dev/yummy-yt-dlp/latest.json
+```
+
+GitHub Actions must have these repository settings:
+
+- Secret: `CLOUDFLARE_API_TOKEN`
+- Variable: `CLOUDFLARE_ACCOUNT_ID`
+- Variable: `R2_BUCKET`
+- Variable: `R2_PUBLIC_BASE_URL`
+- Variable: `R2_RELEASE_PREFIX`
+
+Current R2 layout:
+
+- Bucket: `tauri-patch-server`
+- Prefix: `yummy-yt-dlp`
+- Versioned artifacts: `yummy-yt-dlp/releases/vX.Y.Z/<artifact>`
+- Patch manifest: `yummy-yt-dlp/latest.json`
+
+To patch users to a new version, merge or push the release commit to `main`.
+The workflow overwrites `latest.json` with the new signed manifest after the
+artifacts are uploaded to R2.
+
 ## Roadmap
 
 1. Downloader app for mobile users (you can self-host your own yt-dlp server)
