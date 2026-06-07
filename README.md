@@ -15,6 +15,12 @@ Built with Tauri 2.0 (Rust) and SvelteKit, providing a clean and intuitive inter
   <img src="docs/Downloading.png" alt="yt-dlp Modern GUI" width="450">
 </p>
 
+### Video
+
+<p align="center">
+  <img src="docs/Video.gif" alt="yt-dlp Modern GUI demo" width="700">
+</p>
+
 
 ## Features
 
