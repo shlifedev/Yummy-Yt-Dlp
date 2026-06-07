@@ -6,27 +6,25 @@ Gebaut mit Tauri 2.0 (Rust) und SvelteKit, bietet eine saubere und intuitive Ben
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | **Deutsch** | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
-## Screenshots
-
-<p align="center">
-  <img src="App.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-<p align="center">
-  <img src="Downloading.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-
 ## Funktionen
 
 - Video- und Playlist-Download mit Format- und Qualitätsauswahl
-- Gleichzeitige Download-Warteschlange mit Abbruch- und Wiederholungsfunktion
-- Download-Verlauf mit Suche und Verwaltung
-- Automatische Erkennung von yt-dlp und FFmpeg Abhängigkeiten mit Installationsanleitung
+- Plattformübergreifende Unterstützung (Windows, macOS, Linux)
+- Gleichzeitige Download-Warteschlange mit Abbruch und Wiederholung
+- Durchsuchbarer Download-Verlauf
+- Aufgeräumte Desktop-Oberfläche für yt-dlp
+
+<details>
+<summary>Erweiterte Funktionen</summary>
+
+- Automatische Erkennung von yt-dlp- und FFmpeg-Abhängigkeiten mit Installationsanleitung
 - Anpassung der Dateinamenvorlage (einfacher & erweiterter Modus)
 - Cookie-Unterstützung für authentifizierte Inhalte
 - Duplikat-Download-Erkennung
-- Mehrsprachige Unterstützung (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- Mehrsprachige Unterstützung
 - 4 Farbthemen (Dark, Violet, Red, Light)
-- Plattformübergreifende Unterstützung (Windows, macOS, Linux)
+
+</details>
 
 > **💡 Tipp:** Die App richtet yt-dlp, FFmpeg und Deno beim ersten Start automatisch ein (mit der App gebündelt und bei Bedarf heruntergeladen/aktualisiert). Der automatisch verwaltete yt-dlp-Build entpackt sich bei jedem Start selbst, daher kann der erste Start langsam sein. Für **deutlich schnellere** Metadaten-Abfragen und Downloads installieren Sie diese vorab über Ihren Paketmanager — [Homebrew](https://brew.sh/) auf macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) auf Windows (`winget install yt-dlp.yt-dlp ffmpeg`), oder `apt`/`pacman` auf Linux. Standardmäßig erkennt und bevorzugt die App die im System-PATH installierten Versionen.
 

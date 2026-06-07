@@ -6,27 +6,25 @@ Tauri 2.0（Rust）と SvelteKit で構築された、ビデオダウンロー�
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | **日本語** | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
-## スクリーンショット
-
-<p align="center">
-  <img src="App.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-<p align="center">
-  <img src="Downloading.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-
 ## 機能
 
 - フォーマットと品質を選択してビデオとプレイリストをダウンロード
-- キャンセル、再試行機能付きの並行ダウンロードキュー
-- 検索と管理機能付きのダウンロード履歴
+- クロスプラットフォーム対応（Windows、macOS、Linux）
+- キャンセルと再試行に対応した並行ダウンロードキュー
+- 検索できるダウンロード履歴
+- yt-dlp 向けのすっきりしたデスクトップ UI
+
+<details>
+<summary>高度な機能</summary>
+
 - yt-dlp と FFmpeg の自動依存関係検出とインストールガイド
 - ファイル名テンプレートのカスタマイズ（シンプルモードと詳細モード）
 - 認証コンテンツ用のクッキーサポート
 - 重複ダウンロード検出
-- 多言語対応（English、한국어、日本語、简体中文、繁體中文、Français、Deutsch）
+- 多言語対応
 - 4つのカラーテーマ（Dark、Violet、Red、Light）
-- クロスプラットフォーム対応（Windows、macOS、Linux）
+
+</details>
 
 > **💡 ヒント:** アプリは初回起動時に yt-dlp、FFmpeg、Deno を自動的にセットアップします（アプリに同梱、または必要に応じてダウンロード・更新）。自動管理される yt-dlp ビルドは実行のたびに自己展開するため、初回起動が遅くなる場合があります。**大幅に高速な**メタデータ取得とダウンロードのため、システムのパッケージマネージャーで事前にインストールすることをお勧めします — macOS は [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`）、Windows は [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`）、Linux は `apt`/`pacman`。デフォルトでは、アプリはシステム PATH にインストールされたバージョンを検出して優先使用します。
 

@@ -6,27 +6,25 @@ Construida con Tauri 2.0 (Rust) y SvelteKit, proporcionando una interfaz limpia 
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | [**中文(简体)**](README.zh-CN.md) | [**中文(繁體)**](README.zh-TW.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md) | **Español**
 
-## Capturas de pantalla
-
-<p align="center">
-  <img src="App.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-<p align="center">
-  <img src="Downloading.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-
 ## Características
 
 - Descarga de videos y listas de reproducción con selección de formato y calidad
+- Soporte multiplataforma (Windows, macOS, Linux)
 - Cola de descargas concurrentes con cancelación y reintentos
-- Historial de descargas con búsqueda y administración
+- Historial de descargas con búsqueda
+- Interfaz de escritorio limpia para yt-dlp
+
+<details>
+<summary>Funciones avanzadas</summary>
+
 - Detección automática de dependencias yt-dlp y FFmpeg con guía de instalación
 - Personalización de plantillas de nombres de archivo (modo simple y avanzado)
 - Soporte para cookies para contenido autenticado
 - Detección de descargas duplicadas
-- Soporte multiidioma (English, 한국어, 日本語, 简体中文, 繁體中文, Français, Deutsch)
+- Soporte multiidioma
 - 4 temas de colores (Dark, Violet, Red, Light)
-- Soporte multiplataforma (Windows, macOS, Linux)
+
+</details>
 
 > **💡 Consejo:** La aplicación configura automáticamente yt-dlp, FFmpeg y Deno en el primer inicio (incluidos con la aplicación y descargados/actualizados según sea necesario). La compilación de yt-dlp gestionada automáticamente se autoextrae en cada ejecución, por lo que su primer arranque puede ser lento. Para una obtención de metadatos y descargas **significativamente más rápidas**, instálelos previamente con su gestor de paquetes — [Homebrew](https://brew.sh/) en macOS (`brew install yt-dlp ffmpeg`), [winget](https://learn.microsoft.com/windows/package-manager/winget/) en Windows (`winget install yt-dlp.yt-dlp ffmpeg`), o `apt`/`pacman` en Linux. De forma predeterminada, la aplicación detecta y prioriza las versiones instaladas en el sistema desde su PATH.
 

@@ -6,27 +6,25 @@
 
 [**English**](../README.md) | [**한국어**](README.ko.md) | [**日本語**](README.ja.md) | **中文(简体)** | [**中文(繁體)**](README.zh-TW.md) | [**Español**](README.es.md) | [**Français**](README.fr.md) | [**Deutsch**](README.de.md) | [**Português**](README.pt-BR.md) | [**Русский**](README.ru.md) | [**Tiếng Việt**](README.vi.md)
 
-## 截图
-
-<p align="center">
-  <img src="App.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-<p align="center">
-  <img src="Downloading.png" alt="yt-dlp Modern GUI" width="450">
-</p>
-
 ## 功能特性
 
 - 支持格式和画质选择的视频和播放列表下载
+- 跨平台支持（Windows、macOS、Linux）
 - 支持取消和重试的并发下载队列
-- 带有搜索和管理功能的下载历史记录
+- 可搜索的下载历史记录
+- 为 yt-dlp 设计的简洁桌面界面
+
+<details>
+<summary>高级功能</summary>
+
 - 自动 yt-dlp 和 FFmpeg 依赖检测及安装指南
 - 文件名模板自定义（简洁和高级模式）
 - 认证内容的 Cookie 支持
 - 重复下载检测
-- 多语言支持（English、한국어、日本語、简体中文、繁體中文、Français、Deutsch）
+- 多语言支持
 - 4种颜色主题（Dark、Violet、Red、Light）
-- 跨平台支持（Windows、macOS、Linux）
+
+</details>
 
 > **💡 提示：** 应用会在首次启动时自动设置 yt-dlp、FFmpeg 和 Deno（随应用打包，或按需下载/更新）。自动管理的 yt-dlp 构建每次运行时都会自解压，因此首次启动可能较慢。为了**显著提升**元数据获取和下载速度，建议通过系统包管理器预先安装 — macOS 使用 [Homebrew](https://brew.sh/)（`brew install yt-dlp ffmpeg`），Windows 使用 [winget](https://learn.microsoft.com/windows/package-manager/winget/)（`winget install yt-dlp.yt-dlp ffmpeg`），Linux 使用 `apt`/`pacman`。默认情况下，应用会自动检测并优先使用系统 PATH 中已安装的版本。
 
