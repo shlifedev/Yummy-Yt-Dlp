@@ -309,7 +309,9 @@ pub fn sanitize_limit_rate(rate: &str) -> Result<String, AppError> {
 /// optionally prefixed with "*"). Only a single time range is accepted.
 pub fn sanitize_download_sections(sections: &str) -> Result<String, AppError> {
     let sections = sections.trim();
-    let re = regex::Regex::new(r"^\*?\d{1,2}:\d{2}(:\d{2})?-\d{1,2}:\d{2}(:\d{2})?$").unwrap();
+    let re =
+        regex::Regex::new(r"^\*?(?:\d{1,2}:)?[0-5]?\d:[0-5]\d-(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$")
+            .unwrap();
     if !re.is_match(sections) {
         return Err(AppError::Custom(
             "Section must be a time range like 1:30-2:45 or 00:01:30-00:02:45".to_string(),
@@ -496,6 +498,8 @@ mod tests {
         assert!(sanitize_download_sections("*0:10-0:20").is_ok());
         assert!(sanitize_download_sections("30-90").is_err());
         assert!(sanitize_download_sections("1:30,2:45").is_err());
+        assert!(sanitize_download_sections("1:99-2:00").is_err());
+        assert!(sanitize_download_sections("1:30-2:99").is_err());
     }
 
     #[test]
