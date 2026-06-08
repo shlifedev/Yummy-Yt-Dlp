@@ -39,6 +39,52 @@ pub(super) fn map_download_row_with_group(
 }
 
 pub(super) const DOWNLOAD_COLUMNS: &str = "id, video_url, video_id, title, format_id, quality_label, output_path, status, progress, speed, eta, error_message, created_at, completed_at, audio_format, audio_quality, error_detail";
+
+const MAX_PROGRESS_METADATA_LEN: usize = 128;
+const MAX_RECENT_COMPLETED_LIMIT: u32 = 50;
+
+fn normalize_progress(progress: f32) -> f32 {
+    if progress.is_finite() {
+        progress.clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+}
+
+fn normalize_progress_metadata(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let mut normalized = String::new();
+    let mut previous_space = false;
+    let mut written = 0usize;
+
+    for ch in value.trim().chars() {
+        let ch = if ch.is_control() { ' ' } else { ch };
+        let ch = if ch.is_whitespace() {
+            if previous_space {
+                continue;
+            }
+            previous_space = true;
+            ' '
+        } else {
+            previous_space = false;
+            ch
+        };
+
+        if written >= MAX_PROGRESS_METADATA_LEN {
+            break;
+        }
+
+        normalized.push(ch);
+        written += 1;
+    }
+
+    let normalized = normalized.trim().to_string();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
 /// Same columns as DOWNLOAD_COLUMNS but qualified with the `d` alias and with
 /// `d.group_id`, `g.title` appended — for queries joined to download_groups.
 pub(super) const DOWNLOAD_COLUMNS_G: &str = "d.id, d.video_url, d.video_id, d.title, d.format_id, d.quality_label, d.output_path, d.status, d.progress, d.speed, d.eta, d.error_message, d.created_at, d.completed_at, d.audio_format, d.audio_quality, d.error_detail, d.group_id, g.title";
@@ -110,6 +156,10 @@ impl Database {
         speed: Option<&str>,
         eta: Option<&str>,
     ) -> Result<(), AppError> {
+        let progress = normalize_progress(progress);
+        let speed = normalize_progress_metadata(speed);
+        let eta = normalize_progress_metadata(eta);
+
         let conn = self.conn();
 
         conn.execute(
@@ -330,6 +380,7 @@ impl Database {
     }
 
     pub fn get_queue_summary(&self, recent_completed_limit: u32) -> Result<QueueSummary, AppError> {
+        let recent_completed_limit = recent_completed_limit.min(MAX_RECENT_COMPLETED_LIMIT);
         let conn = self.conn();
 
         // Get status counts
@@ -436,5 +487,104 @@ impl Database {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(tasks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ytdlp::db::Database;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "yummy_queue_db_{name}_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn request(video_id: &str) -> DownloadRequest {
+        DownloadRequest {
+            video_url: format!("https://example.com/watch?v={video_id}"),
+            video_id: video_id.to_string(),
+            title: format!("Video {video_id}"),
+            format_id: "best".to_string(),
+            quality_label: "best".to_string(),
+            output_dir: None,
+            cookie_browser: None,
+            audio_format: None,
+            audio_quality: None,
+        }
+    }
+
+    #[test]
+    fn update_download_progress_clamps_non_finite_and_bounds() {
+        let dir = temp_dir("progress_bounds");
+        let db = Database::new(&dir).unwrap();
+        let id = db
+            .insert_download(&request("progress-bounds"), "/tmp/out.mp4")
+            .unwrap();
+
+        db.update_download_progress(id, f32::NAN, None, None)
+            .unwrap();
+        assert_eq!(db.get_download(id).unwrap().unwrap().progress, 0.0);
+
+        db.update_download_progress(id, -10.0, None, None).unwrap();
+        assert_eq!(db.get_download(id).unwrap().unwrap().progress, 0.0);
+
+        db.update_download_progress(id, 250.0, None, None).unwrap();
+        assert_eq!(db.get_download(id).unwrap().unwrap().progress, 100.0);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn update_download_progress_sanitizes_speed_and_eta() {
+        let dir = temp_dir("progress_text");
+        let db = Database::new(&dir).unwrap();
+        let id = db
+            .insert_download(&request("progress-text"), "/tmp/out.mp4")
+            .unwrap();
+
+        db.update_download_progress(
+            id,
+            42.0,
+            Some("  12MiB/s\n--exec bad  "),
+            Some(&"9".repeat(300)),
+        )
+        .unwrap();
+
+        let task = db.get_download(id).unwrap().unwrap();
+        assert_eq!(task.speed.as_deref(), Some("12MiB/s --exec bad"));
+        assert_eq!(task.eta.as_ref().unwrap().len(), 128);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn get_queue_summary_clamps_recent_completed_limit() {
+        let dir = temp_dir("summary_limit");
+        let db = Database::new(&dir).unwrap();
+
+        for idx in 0..60 {
+            let id = db
+                .insert_download(&request(&format!("completed-{idx}")), "/tmp/out.mp4")
+                .unwrap();
+            db.mark_completed(id, idx).unwrap();
+        }
+
+        let summary = db.get_queue_summary(1_000).unwrap();
+        assert_eq!(summary.recent_completed.len(), 50);
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

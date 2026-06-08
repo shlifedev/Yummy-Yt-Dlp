@@ -83,4 +83,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }}
+          # Pull requests do not have access to signing secrets; building without bundling keeps CI deterministic.
+          args: --target ${{ matrix.target }} --no-bundle
