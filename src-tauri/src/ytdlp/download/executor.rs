@@ -296,7 +296,20 @@ async fn run_download_attempt(
             match reader.read_until(b'\n', &mut buf).await {
                 Ok(0) => break, // EOF
                 Ok(_) => {}
-                Err(_) => continue, // non-fatal read error, keep going
+                // EINTR is the one realistic transient error (tokio's read_until propagates
+                // it, unlike std's). Anything else is a dead pipe — retrying busy-spins and,
+                // since this handle is awaited unbounded after child.wait(), hangs the slot.
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    logger::warn_cat(
+                        "download",
+                        &format!(
+                            "[download:{}] stdout read error, stopping reader: {}",
+                            task_id, e
+                        ),
+                    );
+                    break;
+                }
             }
             let line = String::from_utf8_lossy(&buf).trim_end().to_string();
             // Capture the resolved output file path from yt-dlp's stdout (Destination/Merger
@@ -379,7 +392,8 @@ async fn run_download_attempt(
                     let line = String::from_utf8_lossy(&buf).trim_end().to_string();
                     append_limited(&mut output, &line, STDERR_BUFFER_LIMIT_BYTES);
                 }
-                Err(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break, // persistent read error — no more useful data
             }
         }
         output
@@ -391,6 +405,10 @@ async fn run_download_attempt(
             match result {
                 Ok(s) => s,
                 Err(e) => {
+                    // Kill before awaiting the readers: a live child holds the pipes open,
+                    // so the unbounded awaits below would never complete — hanging this
+                    // task forever while leaking the slot and the yt-dlp process.
+                    kill_process_tree(&mut child).await;
                     let _ = stdout_handle.await;
                     let _ = stderr_handle.await;
                     return AttemptOutcome::Fatal {

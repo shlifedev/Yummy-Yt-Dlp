@@ -78,7 +78,12 @@ pub(super) async fn run_with_impersonate_fallback<F>(
 where
     F: Fn(bool) -> tokio::process::Command,
 {
-    let first = tokio::time::timeout(timeout, build_cmd(false).output())
+    // kill_on_drop: when the timeout drops the output() future, the yt-dlp child must die
+    // with it — tokio's default leaves it running (orphaned) until it next writes to the
+    // closed stdout pipe, which for --dump-json is only at the very end of extraction.
+    let mut first_cmd = build_cmd(false);
+    first_cmd.kill_on_drop(true);
+    let first = tokio::time::timeout(timeout, first_cmd.output())
         .await
         .map_err(|_| AppError::MetadataError(timeout_msg.to_string()))?
         .map_err(|e| {
@@ -95,7 +100,9 @@ where
         "metadata",
         "anti-bot block detected (410/403), retrying with --impersonate",
     );
-    let retry = tokio::time::timeout(timeout, build_cmd(true).output())
+    let mut retry_cmd = build_cmd(true);
+    retry_cmd.kill_on_drop(true);
+    let retry = tokio::time::timeout(timeout, retry_cmd.output())
         .await
         .map_err(|_| AppError::MetadataError(timeout_msg.to_string()))?
         .map_err(|e| {

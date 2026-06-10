@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Notify};
@@ -11,6 +11,7 @@ pub struct DownloadManager {
     max_concurrent: AtomicU32,
     cancel_senders: Mutex<HashMap<u64, watch::Sender<bool>>>,
     idle_notify: Notify,
+    shutting_down: AtomicBool,
 }
 
 impl DownloadManager {
@@ -20,7 +21,17 @@ impl DownloadManager {
             max_concurrent: AtomicU32::new(security::clamp_max_concurrent(max_concurrent)),
             cancel_senders: Mutex::new(HashMap::new()),
             idle_notify: Notify::new(),
+            shutting_down: AtomicBool::new(false),
         }
+    }
+
+    /// Mark the manager as draining for app shutdown: `try_acquire` stops handing out
+    /// slots, so a cancelled executor's `process_next_pending` cannot claim the next
+    /// pending row and spawn a fresh yt-dlp while exit paths wait for the active ones
+    /// to be killed. One-way by design — `cancel_all` alone stays reusable for the
+    /// reset/clear flows that keep the app (and queue) running afterwards.
+    pub fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
     }
 
     pub fn active_count(&self) -> u32 {
@@ -45,6 +56,9 @@ impl DownloadManager {
 
     // CAS loop to fix TOCTOU race condition
     pub fn try_acquire(&self) -> bool {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return false;
+        }
         loop {
             let current = self.active_count.load(Ordering::SeqCst);
             if current >= self.max_concurrent.load(Ordering::SeqCst) {

@@ -1,5 +1,6 @@
 use crate::modules::types::AppError;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
@@ -53,9 +54,26 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "quit" => {
-                let manager = app.state::<Arc<crate::ytdlp::download::DownloadManager>>();
+                // Stop new work, signal everything, then give the executor tasks a
+                // bounded window to run kill_process_tree before exiting — otherwise
+                // yt-dlp/ffmpeg survive the process as orphans. RunEvent::Exit waits
+                // again, but by then both managers are already idle (harmless no-op).
+                let manager = app
+                    .state::<Arc<crate::ytdlp::download::DownloadManager>>()
+                    .inner()
+                    .clone();
+                let scan_manager = app.state::<crate::ScanManagerState>().inner().clone();
+                manager.shutdown();
                 manager.cancel_all();
-                app.exit(0);
+                scan_manager.cancel_current();
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = tokio::join!(
+                        manager.wait_until_idle(Duration::from_secs(3)),
+                        scan_manager.wait_until_idle(Duration::from_secs(3)),
+                    );
+                    app.exit(0);
+                });
             }
             _ => {}
         })

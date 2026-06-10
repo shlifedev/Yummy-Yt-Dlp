@@ -62,6 +62,10 @@ urlencoding = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Desktop-only: prevent a second app instance from clobbering the first one's queue DB
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [profile.release]
 opt-level = "s"   # optimize for size; the app is I/O-bound, not CPU-bound
 lto = true        # cross-crate optimization shrinks the final binary

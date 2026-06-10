@@ -13,11 +13,12 @@ use crate::ytdlp::download::{append_limited, kill_process_tree};
 use crate::ytdlp::types::*;
 use crate::ytdlp::{binary, security};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Notify};
 
 /// Flush a batch to the frontend once it reaches this many entries…
 const SCAN_BATCH_SIZE: usize = 30;
@@ -35,11 +36,16 @@ const SCAN_STDERR_LIMIT_BYTES: usize = 64 * 1024;
 #[derive(Default)]
 pub struct ScanManager {
     current: Mutex<Option<(u32, watch::Sender<bool>)>>,
+    /// Scan tasks still running, kill/cleanup path included. `current` can't stand in for
+    /// this: the cancel paths empty the slot while the task is still killing yt-dlp.
+    active: AtomicU32,
+    idle_notify: Notify,
 }
 
 impl ScanManager {
     /// Register `scan_id` as the active scan, cancelling any previous one.
     pub fn begin(&self, scan_id: u32) -> watch::Receiver<bool> {
+        self.active.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = watch::channel(false);
         let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((_, old_tx)) = current.replace((scan_id, tx)) {
@@ -73,6 +79,53 @@ impl ScanManager {
             *current = None;
         }
     }
+
+    /// Mark one scan task as fully over (kill paths included) and wake exit waiters.
+    /// Paired with `begin()` by the dispatch guard in `start_playlist_scan`, so it runs
+    /// exactly once per scan whether the task completed, was cancelled, or panicked.
+    fn release(&self) {
+        let previous = self
+            .active
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                Some(count.saturating_sub(1))
+            });
+        if matches!(previous, Ok(1)) {
+            self.idle_notify.notify_waiters();
+        }
+    }
+
+    /// Wait until no scan task is running (mirrors `DownloadManager::wait_until_idle`).
+    /// App exit paths use this so the scan's `kill_process_tree` actually gets to run
+    /// before the process dies — `cancel_current` alone only sends the signal.
+    pub async fn wait_until_idle(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+
+        // enable() registers this waiter before we read `active`, so a release() that drops
+        // the count to 0 between the check and the .await can't slip its notify past us.
+        let notified = self.idle_notify.notified();
+        tokio::pin!(notified);
+
+        loop {
+            notified.as_mut().enable();
+
+            if self.active.load(Ordering::SeqCst) == 0 {
+                return true;
+            }
+
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+
+            if tokio::time::timeout(remaining, notified.as_mut())
+                .await
+                .is_err()
+            {
+                return self.active.load(Ordering::SeqCst) == 0;
+            }
+
+            notified.set(self.idle_notify.notified());
+        }
+    }
 }
 
 /// Start a streaming playlist/channel scan. Returns immediately; entries and the terminal
@@ -98,14 +151,42 @@ pub async fn start_playlist_scan(
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
     let manager = app.state::<crate::ScanManagerState>().inner().clone();
     let cancel_rx = manager.begin(scan_id);
-    tauri::async_runtime::spawn(run_scan(
-        app.clone(),
-        manager,
-        scan_id,
-        url,
-        ytdlp_path,
-        cancel_rx,
-    ));
+    let scan_app = app.clone();
+    let scan_manager = manager.clone();
+    tauri::async_runtime::spawn(async move {
+        // Nested spawn + JoinError guard (same pattern as the download dispatch sites):
+        // a panic in run_scan must still emit a terminal event, or the scanning UI
+        // spins forever with the ScanManager slot left occupied.
+        let result = tokio::spawn(run_scan(
+            scan_app,
+            scan_manager,
+            scan_id,
+            url,
+            ytdlp_path,
+            cancel_rx,
+        ))
+        .await;
+        if let Err(e) = result {
+            logger::error_cat(
+                "metadata",
+                &format!("scan {}: task panicked: {:?}", scan_id, e),
+            );
+            manager.finish(scan_id);
+            emit_scan(
+                &app,
+                PlaylistScanEvent {
+                    scan_id,
+                    event_type: "error".to_string(),
+                    meta: None,
+                    entries: vec![],
+                    total: 0,
+                    message: Some("error.ytdlpGeneric".to_string()),
+                },
+            );
+        }
+        // The inner task is fully over (done, cancelled, or panicked) — kill paths included.
+        manager.release();
+    });
     Ok(())
 }
 
@@ -266,7 +347,16 @@ async fn run_scan_attempt(
                         ),
                     }
                 }
-                Err(_) => continue, // non-fatal read error, keep going
+                // EINTR is the one realistic transient error (tokio's read_until propagates
+                // it, unlike std's). Anything else is a dead pipe — retrying busy-spins.
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    logger::warn_cat(
+                        "metadata",
+                        &format!("scan stdout read error, stopping reader: {}", e),
+                    );
+                    break;
+                }
             }
         }
     });
@@ -283,7 +373,8 @@ async fn run_scan_attempt(
                     let line = String::from_utf8_lossy(&buf).trim_end().to_string();
                     append_limited(&mut output, &line, SCAN_STDERR_LIMIT_BYTES);
                 }
-                Err(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break, // persistent read error — no more useful data
             }
         }
         output
@@ -364,9 +455,28 @@ async fn run_scan_attempt(
     // stdout closed: collect exit status and stderr, then deliver any tail batch.
     let _ = reader_task.await;
     let status = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+    if !matches!(&status, Ok(Ok(_))) {
+        // yt-dlp closed stdout but won't exit (hung teardown). Kill the tree BEFORE the
+        // stderr join below: SIGKILL closes the child's stderr write end, so the join hits
+        // EOF and still hands the captured buffer to map_stderr_error instead of "".
+        logger::error_cat(
+            "metadata",
+            &format!(
+                "scan {}: yt-dlp did not exit within 10s after stdout EOF, killing",
+                scan_id
+            ),
+        );
+        kill_process_tree(&mut child).await;
+    }
+    let stderr_abort = stderr_task.abort_handle();
     let stderr_output = match tokio::time::timeout(Duration::from_secs(5), stderr_task).await {
         Ok(Ok(s)) => s,
-        _ => String::new(),
+        _ => {
+            // timeout() consumed the JoinHandle; abort via the saved handle so a stuck
+            // stderr task can't keep spinning for the rest of the app's lifetime.
+            stderr_abort.abort();
+            String::new()
+        }
     };
     flush_entries(app, scan_id, &mut batch, &mut meta, &mut total);
 
