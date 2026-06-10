@@ -2,6 +2,7 @@ use chrono::Local;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, OnceLock};
 
@@ -74,25 +75,40 @@ fn write_record(rec: &LogRecord) {
 
     // 2. DB logging + 3. event emission for live updates
     if let Some(db) = LOG_DB.get() {
-        if let Ok(id) = db.insert_log(
+        let id = match db.insert_log(
             rec.timestamp_millis,
             &rec.level,
             &rec.category,
             &rec.message,
             rec.details.as_deref(),
         ) {
-            if let Some(app) = APP_HANDLE.get() {
-                use tauri::Emitter;
-                let entry = crate::ytdlp::types::LogEntry {
-                    id,
-                    timestamp: rec.timestamp_millis,
-                    level: rec.level.clone(),
-                    category: rec.category.clone(),
-                    message: rec.message.clone(),
-                    details: rec.details.clone(),
-                };
-                let _ = app.emit("new-log-event", crate::ytdlp::types::NewLogEvent { entry });
+            Ok(id) => id,
+            Err(e) => {
+                // Don't lose the record silently: leave a stderr trace including details
+                // (the text log line omits them) and still emit to the live viewer below.
+                // The synthetic id is negative so it can never collide with a real rowid
+                // (>= 1) — the Logs page keys its {#each} on entry.id and Svelte throws
+                // on duplicate keys.
+                eprintln!(
+                    "[Logger] Failed to insert log into logs.db: {} (dropped: [{}] [{}] {} details={:?})",
+                    e, rec.level, rec.category, rec.message, rec.details
+                );
+                static FALLBACK_LOG_ID: AtomicI64 = AtomicI64::new(-1);
+                FALLBACK_LOG_ID.fetch_sub(1, Ordering::Relaxed)
             }
+        };
+
+        if let Some(app) = APP_HANDLE.get() {
+            use tauri::Emitter;
+            let entry = crate::ytdlp::types::LogEntry {
+                id,
+                timestamp: rec.timestamp_millis,
+                level: rec.level.clone(),
+                category: rec.category.clone(),
+                message: rec.message.clone(),
+                details: rec.details.clone(),
+            };
+            let _ = app.emit("new-log-event", crate::ytdlp::types::NewLogEvent { entry });
         }
     }
 }

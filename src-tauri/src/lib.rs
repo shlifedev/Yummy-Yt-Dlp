@@ -105,9 +105,14 @@ pub fn run() {
 
             modules::logger::init(app_data_dir.clone());
 
-            // Initialize log database (separate logs.db file)
-            let log_db = modules::log_db::LogDatabase::new(&app_data_dir)
-                .expect("Failed to initialize log database");
+            // Initialize log database (separate logs.db file). A corrupt/unopenable
+            // logs.db must not brick startup: quarantine + retry, then in-memory fallback.
+            let log_db = open_db_resilient(
+                &app_data_dir,
+                "logs.db",
+                || modules::log_db::LogDatabase::new(&app_data_dir),
+                modules::log_db::LogDatabase::new_in_memory,
+            )?;
             let log_db = Arc::new(log_db);
             modules::logger::init_db(Arc::clone(&log_db));
             modules::logger::init_app_handle(app.handle().clone());
@@ -120,8 +125,14 @@ pub fn run() {
 
             modules::logger::info_cat("app", "Application started");
 
-            let db =
-                ytdlp::db::Database::new(&app_data_dir).expect("Failed to initialize database");
+            // A corrupt/unopenable ytdlp.db must not brick startup either: quarantine the
+            // bad file (never delete it) + retry, then in-memory fallback as last resort.
+            let db = open_db_resilient(
+                &app_data_dir,
+                "ytdlp.db",
+                || ytdlp::db::Database::new(&app_data_dir),
+                ytdlp::db::Database::new_in_memory,
+            )?;
             // Reset stale downloads left in 'downloading' state from previous session
             if let Ok(count) = db.reset_stale_downloads() {
                 if count > 0 {
@@ -130,6 +141,24 @@ pub fn run() {
                         &format!("Reset {} stale downloads from previous session", count),
                     );
                 }
+            }
+            // Prune terminal queue rows (completed/failed/cancelled) older than 30 days so
+            // the downloads table — polled in full by the queue page — stays bounded.
+            // Completed items are already mirrored into history, so nothing is lost.
+            match db.prune_old_terminal_downloads(30) {
+                Ok(count) if count > 0 => {
+                    modules::logger::info_cat(
+                        "app",
+                        &format!("Pruned {} finished queue entries older than 30 days", count),
+                    );
+                }
+                Err(e) => {
+                    modules::logger::warn_cat(
+                        "app",
+                        &format!("Failed to prune old queue entries: {}", e),
+                    );
+                }
+                _ => {}
             }
             app.manage(Arc::new(db));
 
@@ -218,4 +247,97 @@ pub fn run() {
                 app_handle.state::<ScanManagerState>().cancel_current();
             }
         });
+}
+
+/// True for SQLite corruption-class open failures (SQLITE_NOTADB / SQLITE_CORRUPT), where
+/// the on-disk file is unusable and quarantining it is the only way forward. Transient
+/// failures (disk full, locked, permissions) must NOT match — the data is intact there.
+fn is_db_corruption_error(message: &str) -> bool {
+    message.contains("file is not a database")
+        || message.contains("database disk image is malformed")
+}
+
+/// Move `file_name` and its `-wal`/`-shm` siblings aside as `*.corrupt-<timestamp>`.
+/// Returns true only if every existing file was moved — a stale -wal left next to a fresh
+/// db file would itself make the retry fail. Never deletes user data.
+fn quarantine_db_files(app_data_dir: &std::path::Path, file_name: &str) -> bool {
+    let ts = chrono::Utc::now().timestamp();
+    let mut all_moved = true;
+    for suffix in ["", "-wal", "-shm"] {
+        let src = app_data_dir.join(format!("{}{}", file_name, suffix));
+        if src.exists() {
+            let dst = app_data_dir.join(format!("{}{}.corrupt-{}", file_name, suffix, ts));
+            if let Err(e) = std::fs::rename(&src, &dst) {
+                eprintln!(
+                    "[Startup] Failed to quarantine {}: {}",
+                    src.to_string_lossy(),
+                    e
+                );
+                all_moved = false;
+            }
+        }
+    }
+    all_moved
+}
+
+/// Open a database with corruption recovery so one bad file can't permanently brick
+/// startup: on a corruption-class error, quarantine the file (plus WAL/SHM siblings) and
+/// retry once; on transient errors or a failed retry, fall back to an in-memory database
+/// for this session. The in-memory fallback is required — lib.rs manages the handles as
+/// Tauri state, and skipping app.manage() would panic every command at invoke time.
+/// Logged via modules::logger: logger::init runs before either DB init, so the ytdlp.db
+/// quarantine reaches logs.db + the live log view, while a logs.db quarantine can only
+/// reach log.txt.
+fn open_db_resilient<T>(
+    app_data_dir: &std::path::Path,
+    file_name: &str,
+    open: impl Fn() -> Result<T, modules::types::AppError>,
+    open_in_memory: impl FnOnce() -> Result<T, modules::types::AppError>,
+) -> Result<T, modules::types::AppError> {
+    let err = match open() {
+        Ok(db) => return Ok(db),
+        Err(e) => e,
+    };
+
+    let msg = err.to_string();
+    if is_db_corruption_error(&msg) {
+        modules::logger::error_cat(
+            "app",
+            &format!(
+                "{} is corrupted ({}); moving it aside and recreating",
+                file_name, msg
+            ),
+        );
+        if quarantine_db_files(app_data_dir, file_name) {
+            match open() {
+                Ok(db) => {
+                    modules::logger::warn_cat(
+                        "app",
+                        &format!(
+                            "{} recreated after corruption; previous data kept as {}.corrupt-*",
+                            file_name, file_name
+                        ),
+                    );
+                    return Ok(db);
+                }
+                Err(e) => {
+                    modules::logger::error_cat(
+                        "app",
+                        &format!("Failed to recreate {} after quarantine: {}", file_name, e),
+                    );
+                }
+            }
+        }
+    } else {
+        modules::logger::error_cat("app", &format!("Failed to open {}: {}", file_name, msg));
+    }
+
+    modules::logger::error_cat(
+        "app",
+        &format!(
+            "Falling back to an in-memory {} for this session; data will not persist",
+            file_name
+        ),
+    );
+    open_in_memory()
 }

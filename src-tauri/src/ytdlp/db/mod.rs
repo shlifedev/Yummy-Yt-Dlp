@@ -42,6 +42,20 @@ impl Database {
         })
     }
 
+    /// In-memory fallback used when ytdlp.db cannot be opened or recreated, so the app
+    /// still launches (queue/history simply don't persist for this session).
+    pub fn new_in_memory() -> Result<Self, AppError> {
+        let conn =
+            Connection::open_in_memory().map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Self::create_tables(&conn)?;
+        Self::run_migrations(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
     fn get_schema_version(conn: &Connection) -> Result<u32, AppError> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER NOT NULL)",
@@ -82,9 +96,16 @@ impl Database {
     fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         let current = Self::get_schema_version(conn)?;
 
+        // Every step is idempotent (ensure_column / IF NOT EXISTS) and persists its version
+        // immediately after it succeeds, so an upgrade interrupted mid-way (crash, power loss,
+        // disk full) resumes from the last completed step on the next launch instead of
+        // re-running a bare ALTER, hitting "duplicate column name" and bricking startup.
+        // set_schema_version issues its own BEGIN IMMEDIATE, so steps cannot be wrapped in an
+        // outer transaction — idempotency is what makes the per-step commits safe.
         if current < 1 {
             // v1: Initial schema (tables already created by create_tables)
             // No additional migration needed for fresh installs
+            Self::set_schema_version(conn, 1)?;
         }
 
         if current < 2 {
@@ -96,6 +117,7 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS idx_history_downloaded_at ON history(downloaded_at);",
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::set_schema_version(conn, 2)?;
         }
 
         if current < 3 {
@@ -105,25 +127,26 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS idx_downloads_created_at ON downloads(created_at);",
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::set_schema_version(conn, 3)?;
         }
 
         if current < 4 {
             // v4: Add audio_format column for audio extraction (e.g. mp3)
-            conn.execute_batch("ALTER TABLE downloads ADD COLUMN audio_format TEXT;")
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::ensure_column(conn, "downloads", "audio_format", "TEXT")?;
+            Self::set_schema_version(conn, 4)?;
         }
 
         if current < 5 {
             // v5: Add audio_quality column for audio bitrate/quality selection
-            conn.execute_batch("ALTER TABLE downloads ADD COLUMN audio_quality TEXT;")
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::ensure_column(conn, "downloads", "audio_quality", "TEXT")?;
+            Self::set_schema_version(conn, 5)?;
         }
 
         if current < 6 {
             // v6: Store the raw yt-dlp error line for failed downloads so the UI can show
             // the real cause instead of only the generic classified message.
-            conn.execute_batch("ALTER TABLE downloads ADD COLUMN error_detail TEXT;")
-                .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::ensure_column(conn, "downloads", "error_detail", "TEXT")?;
+            Self::set_schema_version(conn, 6)?;
         }
 
         if current < 7 {
@@ -137,21 +160,9 @@ impl Database {
                     kind TEXT NOT NULL DEFAULT 'playlist',
                     total_count INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL
-                );
-                ALTER TABLE downloads ADD COLUMN group_id INTEGER;
-                ALTER TABLE history ADD COLUMN group_id INTEGER;
-                CREATE INDEX IF NOT EXISTS idx_downloads_group_id ON downloads(group_id);
-                CREATE INDEX IF NOT EXISTS idx_history_group_id ON history(group_id);",
+                );",
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        }
-
-        if current < 8 {
-            // v8: Repair installs stuck on v7. v7 bundled `ALTER TABLE history ADD COLUMN group_id`
-            // into one execute_batch; where `downloads.group_id` already existed that batch aborted
-            // early and left `history.group_id` missing, so every completed download failed to
-            // record into history and duplicate detection never recognized anything. ensure_column
-            // re-adds whatever is absent, idempotently.
             Self::ensure_column(conn, "downloads", "group_id", "INTEGER")?;
             Self::ensure_column(conn, "history", "group_id", "INTEGER")?;
             conn.execute_batch(
@@ -159,9 +170,29 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS idx_history_group_id ON history(group_id);",
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::set_schema_version(conn, 7)?;
         }
 
-        if current < SCHEMA_VERSION {
+        if current < 8 {
+            // v8: Repair installs stuck on v7. v7 bundled `ALTER TABLE history ADD COLUMN group_id`
+            // into one execute_batch; where `downloads.group_id` already existed that batch aborted
+            // early and left `history.group_id` missing, so every completed download failed to
+            // record into history and duplicate detection never recognized anything. ensure_column
+            // re-adds whatever is absent, idempotently. (v7 above now uses ensure_column itself,
+            // making this redundant for new upgrades but still required for old broken installs.)
+            Self::ensure_column(conn, "downloads", "group_id", "INTEGER")?;
+            Self::ensure_column(conn, "history", "group_id", "INTEGER")?;
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_downloads_group_id ON downloads(group_id);
+                 CREATE INDEX IF NOT EXISTS idx_history_group_id ON history(group_id);",
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            Self::set_schema_version(conn, 8)?;
+        }
+
+        // Safety net: keep the recorded version current even if a future step forgets its
+        // per-step write (re-read because the steps above advance the stored version).
+        if Self::get_schema_version(conn)? < SCHEMA_VERSION {
             Self::set_schema_version(conn, SCHEMA_VERSION)?;
         }
 
@@ -298,6 +329,31 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn migration_resumes_after_interrupted_step_without_duplicate_column_error() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Reproduce an upgrade killed after the v4 ALTER succeeded but before the version
+        // was persisted: audio_format already exists while the recorded version is still 3.
+        // Re-running migrations must not fail with "duplicate column name".
+        conn.execute_batch(
+            "CREATE TABLE downloads (id INTEGER PRIMARY KEY, video_id TEXT NOT NULL, status TEXT, created_at INTEGER, completed_at INTEGER, audio_format TEXT);
+             CREATE TABLE history (id INTEGER PRIMARY KEY, video_id TEXT NOT NULL, downloaded_at INTEGER);
+             CREATE TABLE _schema_version (version INTEGER NOT NULL);
+             INSERT INTO _schema_version (version) VALUES (3);",
+        )
+        .unwrap();
+
+        Database::run_migrations(&conn).unwrap();
+
+        for column in ["audio_format", "audio_quality", "error_detail", "group_id"] {
+            assert!(column_names(&conn, "downloads").iter().any(|c| c == column));
+        }
+        assert!(column_names(&conn, "history")
+            .iter()
+            .any(|c| c == "group_id"));
+        assert_eq!(Database::get_schema_version(&conn).unwrap(), SCHEMA_VERSION);
     }
 
     #[test]
