@@ -583,15 +583,25 @@
   }
 
   async function handleWelcomeComplete() {
+    // Persisting can fail (tauri-specta Results don't throw, so check the status). Let the
+    // user out of the wizard regardless, but warn them — otherwise the welcome screen
+    // reappears on the next launch with no explanation.
+    let persisted = false
     try {
       const settingsResult = await commands.getSettings()
       if (settingsResult.status === "ok") {
         const updated = { ...settingsResult.data, depMode: selectedDepMode, setupCompleted: true }
-        await commands.updateSettings(updated)
+        const saveResult = await commands.updateSettings(updated)
+        if (saveResult.status === "ok") {
+          persisted = true
+        } else {
+          console.error("Failed to save welcome settings:", saveResult.error)
+        }
       }
     } catch (e) {
       console.error("Failed to save welcome settings:", e)
     }
+    if (!persisted) showErrorToast(t("settings.welcomeSaveFailed"))
     setupCompleted = true
     // Trigger dep check after mode selection
     await checkDeps(true)

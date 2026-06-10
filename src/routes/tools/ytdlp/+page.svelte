@@ -4,6 +4,7 @@
     defaultAdvancedOptions,
     validateAdvancedField,
     type AdvancedTextField,
+    MAX_SLEEP_INTERVAL,
     SPONSORBLOCK_CATEGORIES,
     CONTAINER_FORMATS,
     SUB_CONVERT_FORMATS,
@@ -102,7 +103,6 @@
   let templateUploadDate = $state(false)
   let templateVideoId = $state(false)
   let fullSettings = $state<any>(null)
-  let savingTemplate = $state(false)
 
   // Download state (live progress/cancel lives in the queue popup; this page only enqueues)
   let downloading = $state(false)
@@ -277,18 +277,50 @@
     } catch (e) { console.error("Failed to load settings:", e) }
   }
 
-  async function autoSaveSettings(patch: Record<string, any>) {
-    if (!fullSettings) return
+  // Saves run through a single promise chain so an in-flight save can never be overtaken by a
+  // later one (per-key store writes would otherwise interleave snapshots).
+  let settingsSaveQueue: Promise<void> = Promise.resolve()
+
+  function autoSaveSettings(patch: Record<string, any>): Promise<boolean> {
+    if (!fullSettings) return Promise.resolve(false)
+    // Merge synchronously so rapid consecutive changes build on each other instead of a stale
+    // snapshot whose full-settings save would silently revert the earlier change.
     const updated = { ...fullSettings, ...patch }
-    try {
-      await commands.updateSettings(updated)
-      fullSettings = updated
-    } catch (e) { console.error("Failed to auto-save settings:", e) }
+    fullSettings = updated
+    const save = settingsSaveQueue.then(async () => {
+      // tauri-specta Results don't throw: a rejected save comes back as status "error" and
+      // must be checked, or the UI silently diverges from what's actually persisted.
+      try {
+        const result = await commands.updateSettings(updated)
+        if (result.status === "error") {
+          await reportSettingsSaveError(result.error)
+          return false
+        }
+        return true
+      } catch (e) {
+        console.error("Failed to auto-save settings:", e)
+        await reportSettingsSaveError(e)
+        return false
+      }
+    })
+    settingsSaveQueue = save.then(() => {})
+    return save
   }
 
-  // Persist the advanced options. $state.snapshot unwraps the reactive proxy so Tauri can
-  // serialize a plain object.
+  // A failed save means the UI holds values the backend never accepted: surface the failure in
+  // the error banner and resync every bound control from the persisted settings.
+  async function reportSettingsSaveError(err: unknown) {
+    errorKey = getErrorKey(err)
+    error = t("settings.saveFailed", { error: extractError(err) })
+    await loadSettings()
+  }
+
+  // Persist the advanced options, but only while every free-text field is valid: the backend
+  // rejects the whole snapshot otherwise, which would fail every later save this session.
+  // $state.snapshot unwraps the reactive proxy so Tauri can serialize a plain object.
   function saveAdvanced() {
+    const textFields: AdvancedTextField[] = ["subLangs", "limitRate", "downloadSections", "proxy"]
+    if (!textFields.every((f) => validateAdvancedField(f, advanced[f]))) return
     autoSaveSettings({ advanced: $state.snapshot(advanced) })
   }
 
@@ -316,7 +348,7 @@
   }
 
   function setSleepInterval(v: string) {
-    advanced.sleepInterval = Math.max(0, parseInt(v) || 0)
+    advanced.sleepInterval = Math.max(0, Math.min(MAX_SLEEP_INTERVAL, parseInt(v) || 0))
     saveAdvanced()
   }
 
@@ -329,10 +361,13 @@
     try {
       const result = await commands.selectDownloadDirectory()
       if (result.status === "ok" && result.data) {
-        downloadPath = result.data
-        if (fullSettings) {
-          fullSettings.downloadPath = result.data
-          await commands.updateSettings(fullSettings)
+        const selected = result.data
+        if (!fullSettings) {
+          downloadPath = selected
+        } else if (await autoSaveSettings({ downloadPath: selected })) {
+          // Only show the new folder once the backend accepted it; otherwise downloads
+          // would keep landing in the old folder while the UI claims the new one.
+          downloadPath = selected
         }
       }
     } catch (e) { console.error("Failed to select dir:", e) }
@@ -357,22 +392,16 @@
     return path
   }
 
-  async function saveTemplateSettings() {
-    if (!fullSettings || savingTemplate) return
-    savingTemplate = true
-    try {
-      const updated = {
-        ...fullSettings,
-        useAdvancedTemplate,
-        filenameTemplate: useAdvancedTemplate ? filenameTemplate : buildTemplate(),
-        templateUploaderFolder,
-        templateUploadDate,
-        templateVideoId,
-      }
-      await commands.updateSettings(updated)
-      fullSettings = updated
-    } catch (e) { console.error("Failed to save template settings:", e) }
-    finally { savingTemplate = false }
+  // Rapid consecutive checkbox changes are safe: autoSaveSettings merges synchronously and
+  // serializes the saves, so no change is dropped or based on a stale snapshot.
+  function saveTemplateSettings() {
+    autoSaveSettings({
+      useAdvancedTemplate,
+      filenameTemplate: useAdvancedTemplate ? filenameTemplate : buildTemplate(),
+      templateUploaderFolder,
+      templateUploadDate,
+      templateVideoId,
+    })
   }
 
   function startAnalyzeTimer() {
@@ -1527,7 +1556,7 @@
           </div>
           <div class="flex items-center justify-between gap-3 min-h-[28px]">
             {@render advLabel(t("download.advSleepInterval"), t("download.advSleepIntervalHelp"))}
-            <input type="number" min="0" value={advanced.sleepInterval} oninput={(e) => setSleepInterval(e.currentTarget.value)} class={numCls} />
+            <input type="number" min="0" max={MAX_SLEEP_INTERVAL} value={advanced.sleepInterval} oninput={(e) => setSleepInterval(e.currentTarget.value)} class={numCls} />
           </div>
         </div>
       </section>

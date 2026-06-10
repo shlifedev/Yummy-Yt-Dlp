@@ -266,6 +266,8 @@ const en: Record<string, string> = {
   "settings.licensesDesc": "This app bundles or downloads these open-source tools:",
   "settings.ffmpegGplNotice": "FFmpeg is distributed under the GPLv3; the bundled GPL build and its source are available from the project links above.",
   "settings.openLocation": "Open file location",
+  "settings.saveFailed": "Failed to save settings: {error}",
+  "settings.welcomeSaveFailed": "Your setup choices could not be saved — the welcome screen may appear again on the next launch",
 
   // Errors (backend i18n keys; see src-tauri metadata/mod.rs, download/executor.rs)
   "error.privateVideo": "This is a private video and can't be accessed.",

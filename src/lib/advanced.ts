@@ -31,6 +31,10 @@ export function defaultAdvancedOptions(): AdvancedOptions {
   }
 }
 
+// Upper bound for sleepInterval (seconds). MUST stay in sync with
+// MAX_SLEEP_INTERVAL_SECS in src-tauri/src/ytdlp/security.rs.
+export const MAX_SLEEP_INTERVAL = 600
+
 // Select option metadata shared between the UI and validation.
 export const VIDEO_CODECS = ["auto", "av01", "vp9", "h264"] as const
 export const SPONSORBLOCK_MODES = ["off", "mark", "remove"] as const
@@ -66,6 +70,14 @@ export function validateAdvancedField(field: AdvancedTextField, value: string): 
   if (field === "limitRate") {
     const numeric = v.replace(/[KMGkmg]$/, "")
     if (Number(numeric) <= 0) return false
+  }
+  if (field === "proxy") {
+    // Mirror sanitize_proxy's port range check (security.rs): reject port 0 and > 65535.
+    const port = v.replace(/\/$/, "").match(/:(\d{1,5})$/)?.[1]
+    if (port !== undefined) {
+      const n = Number(port)
+      if (n < 1 || n > 65535) return false
+    }
   }
   return RE[field].test(v)
 }

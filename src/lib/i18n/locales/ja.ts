@@ -258,6 +258,8 @@ const ja: Record<string, string> = {
   "settings.licensesDesc": "このアプリは以下のオープンソースツールを同梱またはダウンロードします：",
   "settings.ffmpegGplNotice": "FFmpeg は GPLv3 ライセンスで配布されています。同梱の GPL ビルドとそのソースコードは上記プロジェクトリンクから入手できます。",
   "settings.openLocation": "ファイルの場所を開く",
+  "settings.saveFailed": "設定の保存に失敗しました: {error}",
+  "settings.welcomeSaveFailed": "セットアップ内容を保存できませんでした。次回起動時にようこそ画面が再表示される場合があります",
 
   // Errors (backend i18n keys)
   "error.privateVideo": "非公開の動画です。アクセスできません。",

@@ -1,10 +1,13 @@
 use super::types::{AdvancedOptions, AppSettings};
+use crate::modules::logger;
 use crate::modules::types::AppError;
 use crate::ytdlp::security;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 
 const STORE_FILE: &str = "settings.json";
+/// Last known-good copy of settings.json, refreshed after each successful save.
+const BACKUP_FILE: &str = "settings.json.bak";
 
 /// Common parsing logic: extract AppSettings from a key-value getter function.
 /// `getter` takes a key name and returns an optional serde_json::Value.
@@ -212,7 +215,92 @@ pub fn update_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), Ap
 
     store.save().map_err(|e| AppError::Custom(e.to_string()))?;
 
+    // Refresh the last known-good backup now that a full snapshot was saved successfully.
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        backup_settings_file(&app_data_dir);
+    }
+
     Ok(())
+}
+
+/// True when the file exists, is readable, and parses as JSON.
+fn parses_as_json(path: &std::path::Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|content| serde_json::from_str::<serde_json::Value>(&content).is_ok())
+        .unwrap_or(false)
+}
+
+/// Recover from a settings.json corrupted by a crash or power loss mid-save.
+///
+/// Must run BEFORE the first `app.store()` call: tauri-plugin-store ignores load errors, so a
+/// corrupt file silently yields an empty store and the next save would permanently overwrite
+/// every setting with defaults. The corrupt file is quarantined (kept for diagnosis) and the
+/// last known-good backup is restored, but only when the backup itself parses.
+pub fn recover_corrupt_settings(app_data_dir: &std::path::Path) {
+    let settings_path = app_data_dir.join(STORE_FILE);
+    if !settings_path.exists() || parses_as_json(&settings_path) {
+        return;
+    }
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let quarantine = app_data_dir.join(format!("{}.corrupt-{}", STORE_FILE, ts));
+    if let Err(e) = std::fs::rename(&settings_path, &quarantine) {
+        logger::warn_cat(
+            "settings",
+            &format!(
+                "settings.json is corrupt but could not be quarantined: {}",
+                e
+            ),
+        );
+        return;
+    }
+    logger::warn_cat(
+        "settings",
+        &format!(
+            "settings.json was corrupt; quarantined as {}",
+            quarantine.display()
+        ),
+    );
+
+    let backup = app_data_dir.join(BACKUP_FILE);
+    if parses_as_json(&backup) {
+        match std::fs::copy(&backup, &settings_path) {
+            Ok(_) => logger::warn_cat("settings", "Restored settings.json from settings.json.bak"),
+            Err(e) => logger::warn_cat(
+                "settings",
+                &format!("Failed to restore settings.json from backup: {}", e),
+            ),
+        }
+    } else {
+        logger::warn_cat(
+            "settings",
+            "No valid settings.json.bak to restore; starting from defaults",
+        );
+    }
+}
+
+/// Refresh the last known-good backup after a successful save: read the just-written file back
+/// and copy it only when it parses, so settings.json.bak is always restorable. Store writes done
+/// outside update_settings (e.g. the dep auto-update throttle timestamp) are not backed up;
+/// losing those on a restore is harmless.
+fn backup_settings_file(app_data_dir: &std::path::Path) {
+    let settings_path = app_data_dir.join(STORE_FILE);
+    if !parses_as_json(&settings_path) {
+        logger::warn_cat(
+            "settings",
+            "Skipping settings backup: settings.json did not read back as valid JSON",
+        );
+        return;
+    }
+    if let Err(e) = std::fs::copy(&settings_path, app_data_dir.join(BACKUP_FILE)) {
+        logger::warn_cat(
+            "settings",
+            &format!("Failed to write settings.json.bak: {}", e),
+        );
+    }
 }
 
 pub fn default_download_path() -> String {
@@ -241,4 +329,72 @@ pub fn get_settings_from_path(app_data_dir: &std::path::Path) -> Result<AppSetti
         .map_err(|e| AppError::Custom(format!("Failed to parse settings: {}", e)))?;
 
     Ok(parse_settings(|key| value.get(key).cloned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "yummy-settings-test-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn recover_quarantines_corrupt_file_and_restores_backup() {
+        let dir = temp_dir("restore");
+        std::fs::write(dir.join(STORE_FILE), "{ truncated").unwrap();
+        std::fs::write(dir.join(BACKUP_FILE), r#"{"downloadPath":"/tmp"}"#).unwrap();
+
+        recover_corrupt_settings(&dir);
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join(STORE_FILE)).unwrap(),
+            r#"{"downloadPath":"/tmp"}"#
+        );
+        let quarantined = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("settings.json.corrupt-")
+            });
+        assert!(quarantined);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recover_leaves_valid_settings_alone() {
+        let dir = temp_dir("valid");
+        std::fs::write(dir.join(STORE_FILE), r#"{"downloadPath":"/tmp"}"#).unwrap();
+
+        recover_corrupt_settings(&dir);
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join(STORE_FILE)).unwrap(),
+            r#"{"downloadPath":"/tmp"}"#
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recover_does_not_restore_corrupt_backup() {
+        let dir = temp_dir("badbak");
+        std::fs::write(dir.join(STORE_FILE), "{ truncated").unwrap();
+        std::fs::write(dir.join(BACKUP_FILE), "also broken").unwrap();
+
+        recover_corrupt_settings(&dir);
+
+        // The corrupt main file is quarantined and NOT replaced by the broken backup,
+        // so the store starts from defaults instead of another corrupt file.
+        assert!(!dir.join(STORE_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
