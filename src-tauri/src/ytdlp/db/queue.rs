@@ -322,7 +322,7 @@ impl Database {
         let conn = self.conn();
         let rows = conn
             .execute(
-                "UPDATE downloads SET status = 'failed', error_message = 'App closed during download' WHERE status = 'downloading'",
+                "UPDATE downloads SET status = 'failed', error_message = 'error.appClosedDuringDownload' WHERE status = 'downloading'",
                 [],
             )
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;

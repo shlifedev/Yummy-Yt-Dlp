@@ -65,17 +65,30 @@ fn emit_download_error(app: &AppHandle, task_id: u64, message: String, detail: O
 }
 
 /// Helper: handle a fatal download error by logging, updating DB, emitting event,
-/// and releasing the slot.
+/// and releasing the slot. `error_msg` must be a stable i18n key (the queue UI runs it
+/// through t()); the dynamic cause goes in `detail`, which is sanitized before persisting
+/// because the queue page renders error_detail verbatim, without translation.
 fn handle_download_failure(
     app: &AppHandle,
     task_id: u64,
     error_msg: &str,
+    detail: Option<&str>,
     db: &crate::DbState,
     manager: &Arc<DownloadManager>,
 ) {
-    logger::error_cat("download", &format!("[download:{}] {}", task_id, error_msg));
-    let _ = db.update_download_status(task_id, &DownloadStatus::Failed, Some(error_msg), None);
-    emit_download_error(app, task_id, error_msg.to_string(), None);
+    let log_line = match detail {
+        Some(d) => format!("[download:{}] {}: {}", task_id, error_msg, d),
+        None => format!("[download:{}] {}", task_id, error_msg),
+    };
+    logger::error_cat("download", &log_line);
+    let detail = detail.map(security::sanitize_error_message);
+    let _ = db.update_download_status(
+        task_id,
+        &DownloadStatus::Failed,
+        Some(error_msg),
+        detail.as_deref(),
+    );
+    emit_download_error(app, task_id, error_msg.to_string(), detail);
     manager.unregister_cancel(task_id);
     manager.release();
     process_next_pending(app.clone());
@@ -136,23 +149,47 @@ fn is_resolved_path(path: Option<&str>) -> bool {
     matches!(path, Some(p) if !p.is_empty() && !p.contains("%("))
 }
 
+/// Static directory prefix of an output template: every path component before the first one
+/// containing a `%(` placeholder. Splitting the raw string at `%(` would truncate mid-component
+/// for templates like `prefix%(title)s.%(ext)s`. A template with no placeholders at all is a
+/// concrete file path, so its parent directory is the prefix.
+pub(super) fn static_template_prefix(output_path: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(output_path);
+    let mut prefix = std::path::PathBuf::new();
+    for component in path.components() {
+        if component.as_os_str().to_string_lossy().contains("%(") {
+            return prefix;
+        }
+        prefix.push(component);
+    }
+    path.parent().map(|p| p.to_path_buf()).unwrap_or_default()
+}
+
 /// Map a finished yt-dlp process's exit code + stderr to a stable i18n error key.
 /// Extracted as a pure function so the classification (cookie failures, network errors,
 /// Windows cp949 encoding crashes) is testable. The frontend translates the key; the raw
 /// stderr is logged separately, so it isn't embedded in the user-facing message anymore.
 pub(super) fn classify_download_error(code: Option<i32>, stderr_output: &str) -> String {
+    // "Could not copy" = cookie DB locked by a running browser; "cookies database" = yt-dlp's
+    // lowercase "could not find <browser> cookies database in ..." when the configured browser
+    // is uninstalled or its profile is unreadable (e.g. Safari without Full Disk Access).
+    let is_cookie_error = (stderr_output.contains("Could not copy")
+        && stderr_output.contains("cookie"))
+        || stderr_output.contains("cookies database");
     let Some(code) = code else {
         return "error.processTerminated".to_string();
     };
     match code {
         1 => {
-            if stderr_output.contains("Could not copy") && stderr_output.contains("cookie") {
+            if is_cookie_error {
                 "error.cookieAccess".to_string()
             } else {
                 "error.downloadFailed".to_string()
             }
         }
-        2 => "error.networkError".to_string(),
+        // yt-dlp reserves exit code 2 for invalid user-provided options (optparse), e.g. an
+        // outdated binary rejecting a flag. Network failures exit 1, not 2.
+        2 => "error.invalidOptions".to_string(),
         120 => {
             let is_encoding_error = stderr_output.contains("cp949")
                 || stderr_output.contains("cp932")
@@ -165,18 +202,31 @@ pub(super) fn classify_download_error(code: Option<i32>, stderr_output: &str) ->
                 "error.downloadFailed".to_string()
             }
         }
-        _ => "error.downloadFailed".to_string(),
+        _ => {
+            if is_cookie_error {
+                "error.cookieAccess".to_string()
+            } else {
+                "error.downloadFailed".to_string()
+            }
+        }
     }
 }
 
 /// Pull the most informative raw line out of yt-dlp's stderr so the UI can show the real cause
 /// (e.g. "ERROR: Postprocessing: Error opening output files: Encoder not found") alongside the
-/// generic classified key. Returns the last `ERROR:`-tagged line, or None when there is none.
+/// generic classified key. Returns the last `ERROR:`-tagged line, falling back to the lowercase
+/// optparse form ("yt-dlp: error: no such option: ..."), or None when neither is present.
 pub(super) fn extract_ytdlp_error(stderr: &str) -> Option<String> {
     stderr
         .lines()
         .map(str::trim)
         .rfind(|line| line.contains("ERROR:"))
+        .or_else(|| {
+            stderr
+                .lines()
+                .map(str::trim)
+                .rfind(|line| line.contains("yt-dlp: error:"))
+        })
         .map(str::to_string)
 }
 
@@ -502,19 +552,21 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
 
     let ytdlp_path = match binary::resolve_ytdlp_path_with_app(&app).await {
         Ok(p) => p,
-        Err(_e) => {
-            let error_msg = "yt-dlp not found. Please install via Homebrew or click Install.";
+        Err(e) => {
+            // Same i18n key in the DB row and the emitted event so both surfaces agree.
+            let error_msg = "error.ytdlpNotFound";
             logger::error_cat(
                 "download",
-                &format!("[download:{}] yt-dlp not found: {}", task_id, _e),
+                &format!("[download:{}] yt-dlp not found: {}", task_id, e),
             );
+            let detail = security::sanitize_error_message(&e.to_string());
             let _ = db_state.update_download_status(
                 task_id,
                 &DownloadStatus::Failed,
                 Some(error_msg),
-                None,
+                Some(&detail),
             );
-            emit_download_error(&app, task_id, "yt-dlp not found".to_string(), None);
+            emit_download_error(&app, task_id, error_msg.to_string(), Some(detail));
             manager.unregister_cancel(task_id);
             manager.release();
             process_next_pending(app);
@@ -525,12 +577,15 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     let settings = match settings::get_settings(&app) {
         Ok(s) => s,
         Err(e) => {
-            logger::error_cat(
-                "download",
-                &format!("[download:{}] failed to get settings: {}", task_id, e),
+            let detail = format!("Failed to load settings: {}", e);
+            handle_download_failure(
+                &app,
+                task_id,
+                "error.downloadFailed",
+                Some(&detail),
+                &db_state,
+                &manager,
             );
-            let error_msg = format!("Failed to load settings: {}", e);
-            handle_download_failure(&app, task_id, &error_msg, &db_state, &manager);
             return;
         }
     };
@@ -563,7 +618,8 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             handle_download_failure(
                 &app,
                 task_id,
-                &format!("invalid format selector: {}", e),
+                "error.downloadFailed",
+                Some(&format!("invalid format selector: {}", e)),
                 &db_state,
                 &manager,
             );
@@ -577,7 +633,8 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 handle_download_failure(
                     &app,
                     task_id,
-                    &format!("invalid audio format: {}", e),
+                    "error.downloadFailed",
+                    Some(&format!("invalid audio format: {}", e)),
                     &db_state,
                     &manager,
                 );
@@ -593,7 +650,8 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 handle_download_failure(
                     &app,
                     task_id,
-                    &format!("invalid audio quality: {}", e),
+                    "error.downloadFailed",
+                    Some(&format!("invalid audio quality: {}", e)),
                     &db_state,
                     &manager,
                 );
@@ -602,6 +660,24 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         },
         None => None,
     };
+
+    // Preflight the download directory: if the configured folder lives on a disconnected
+    // volume or offline network share, fail fast with a clear, retryable reason instead of
+    // letting yt-dlp die with a generic exit-1 for every queued item.
+    let static_dir = static_template_prefix(&task.output_path);
+    if !static_dir.as_os_str().is_empty() {
+        if let Err(e) = tokio::fs::create_dir_all(&static_dir).await {
+            handle_download_failure(
+                &app,
+                task_id,
+                "error.downloadPathUnavailable",
+                Some(&format!("{}: {}", static_dir.display(), e)),
+                &db_state,
+                &manager,
+            );
+            return;
+        }
+    }
 
     // Build yt-dlp args in a Vec for logging before passing to Command
     let mut args: Vec<String> = Vec::new();
@@ -684,8 +760,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
 
     // Anti-bot (410/403) auto-fallback: retry once with --impersonate. The block happens during
     // extraction before any file is written, and --no-overwrites keeps the retry safe.
-    if let AttemptOutcome::Failed { stderr, .. } = &outcome {
-        if crate::ytdlp::metadata::looks_like_antibot_block(stderr) {
+    if let AttemptOutcome::Failed {
+        code: first_code,
+        stderr: first_stderr,
+    } = &outcome
+    {
+        if crate::ytdlp::metadata::looks_like_antibot_block(first_stderr) {
+            let first_code = *first_code;
+            let first_stderr = first_stderr.clone();
             logger::warn_cat(
                 "download",
                 &format!(
@@ -702,6 +784,30 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 crate::ytdlp::metadata::IMPERSONATE_TARGET.to_string(),
             );
             outcome = run_download_attempt(&app, task_id, &ytdlp_path, &args, &mut cancel_rx).await;
+
+            // If the retry only proved that this yt-dlp doesn't know --impersonate (optparse
+            // exits 2 with lowercase "yt-dlp: error: no such option"), classifying it would
+            // report the wrong cause. Keep attempt 1's real outcome and append the optparse
+            // line so the outdated binary is still visible in the logged stderr.
+            if let AttemptOutcome::Failed { code, stderr } = &outcome {
+                if *code == Some(2) || stderr.contains("no such option") {
+                    logger::warn_cat(
+                        "download",
+                        &format!(
+                            "[download:{}] --impersonate unsupported by this yt-dlp (update it); keeping first attempt's failure",
+                            task_id
+                        ),
+                    );
+                    let combined = match extract_ytdlp_error(stderr) {
+                        Some(line) => format!("{}\n{}", first_stderr, line),
+                        None => first_stderr,
+                    };
+                    outcome = AttemptOutcome::Failed {
+                        code: first_code,
+                        stderr: combined,
+                    };
+                }
+            }
         }
     }
 
@@ -865,7 +971,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         }
         AttemptOutcome::Fatal { msg } => {
             // handle_download_failure already releases the slot and dispatches the next task.
-            handle_download_failure(&app, task_id, &msg, &db_state, &manager);
+            handle_download_failure(
+                &app,
+                task_id,
+                "error.downloadFailed",
+                Some(&msg),
+                &db_state,
+                &manager,
+            );
             return;
         }
     }
@@ -984,9 +1097,27 @@ mod tests {
     }
 
     #[test]
-    fn classify_network_error_on_code_2() {
-        let msg = classify_download_error(Some(2), "unable to resolve host");
-        assert_eq!(msg, "error.networkError");
+    fn classify_invalid_options_on_code_2() {
+        // yt-dlp reserves exit code 2 for optparse failures (e.g. an outdated binary
+        // rejecting --impersonate); network errors raise DownloadError and exit 1.
+        let msg = classify_download_error(Some(2), "yt-dlp: error: no such option: --impersonate");
+        assert_eq!(msg, "error.invalidOptions");
+    }
+
+    #[test]
+    fn classify_missing_cookies_database_on_code_1() {
+        let msg = classify_download_error(
+            Some(1),
+            "ERROR: could not find chrome cookies database in \"~/Library/Application Support/Google/Chrome\"",
+        );
+        assert_eq!(msg, "error.cookieAccess");
+    }
+
+    #[test]
+    fn classify_missing_cookies_database_on_unknown_code() {
+        let msg =
+            classify_download_error(Some(99), "ERROR: could not find firefox cookies database");
+        assert_eq!(msg, "error.cookieAccess");
     }
 
     #[test]
@@ -1028,6 +1159,50 @@ mod tests {
         assert_eq!(
             extract_ytdlp_error("[download] just progress\nfinished"),
             None
+        );
+    }
+
+    #[test]
+    fn extract_ytdlp_error_falls_back_to_optparse_line() {
+        let stderr = "Usage: yt-dlp [OPTIONS] URL\n\nyt-dlp: error: no such option: --impersonate";
+        assert_eq!(
+            extract_ytdlp_error(stderr).as_deref(),
+            Some("yt-dlp: error: no such option: --impersonate")
+        );
+    }
+
+    #[test]
+    fn extract_ytdlp_error_prefers_uppercase_error_line() {
+        let stderr =
+            "ERROR: HTTP Error 403: Forbidden\nyt-dlp: error: no such option: --impersonate";
+        assert_eq!(
+            extract_ytdlp_error(stderr).as_deref(),
+            Some("ERROR: HTTP Error 403: Forbidden")
+        );
+    }
+
+    #[test]
+    fn static_prefix_stops_before_placeholder_component() {
+        assert_eq!(
+            static_template_prefix("/Users/me/Downloads/%(title)s.%(ext)s"),
+            std::path::PathBuf::from("/Users/me/Downloads")
+        );
+        // The placeholder can start mid-component; a raw split at "%(" would keep "prefix".
+        assert_eq!(
+            static_template_prefix("/Users/me/Downloads/prefix%(title)s.%(ext)s"),
+            std::path::PathBuf::from("/Users/me/Downloads")
+        );
+        assert_eq!(
+            static_template_prefix("/Users/me/Downloads/%(uploader)s/%(title)s.%(ext)s"),
+            std::path::PathBuf::from("/Users/me/Downloads")
+        );
+    }
+
+    #[test]
+    fn static_prefix_of_concrete_path_is_its_parent() {
+        assert_eq!(
+            static_template_prefix("/Users/me/Downloads/video.mp4"),
+            std::path::PathBuf::from("/Users/me/Downloads")
         );
     }
 }

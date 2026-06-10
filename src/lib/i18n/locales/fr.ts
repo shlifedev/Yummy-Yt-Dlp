@@ -264,10 +264,10 @@ const fr: Record<string, string> = {
   "error.videoUnavailable": "Cette vidéo n'est pas disponible.",
   "error.unsupportedUrl": "Format d'URL non pris en charge.",
   "error.tooManyRequests": "Trop de requêtes. Veuillez réessayer dans un instant.",
-  "error.siteBlocked": "Le site a bloqué la requête (HTTP 410). La tentative d'usurpation du navigateur a aussi échoué. Réessayez plus tard, ou mettez à jour yt-dlp / configurez les cookies.",
+  "error.siteBlocked": "Le site a bloqué la requête (HTTP 410/403). La tentative d'usurpation du navigateur a aussi échoué. Réessayez plus tard, ou mettez à jour yt-dlp / configurez les cookies.",
   "error.noFormats": "Aucun format vidéo trouvé. Il peut s'agir d'un direct.",
   "error.ageRestricted": "Contenu soumis à une limite d'âge. Définissez un navigateur de cookies dans les Paramètres.",
-  "error.cookieAccess": "Impossible d'accéder aux cookies du navigateur. Fermez complètement le navigateur, ou utilisez les cookies de Firefox.",
+  "error.cookieAccess": "Impossible d'accéder aux cookies du navigateur. Fermez complètement le navigateur, ou changez/désactivez le navigateur de cookies dans les Paramètres.",
   "error.ytdlpGeneric": "Échec de la récupération des informations de la vidéo.",
   "error.ytdlpExecFailed": "Échec de l'exécution de yt-dlp.",
   "error.fetchTimeout": "La requête a expiré. Vérifiez votre connexion réseau.",
@@ -311,6 +311,15 @@ const fr: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "Afficher dans le dossier",
   "history.deleteItem": "Supprimer",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube a bloqué la requête comme trafic automatisé (vérification anti-bot). Définissez un navigateur de cookies dans les Paramètres pour y accéder connecté.",
+  "error.impersonateUnavailable": "Ce yt-dlp ne peut pas imiter un navigateur (curl_cffi manquant). Mettez à jour ou réinstallez yt-dlp dans les Paramètres, puis réessayez.",
+  "error.invalidOptions": "yt-dlp a rejeté les options de téléchargement. Votre yt-dlp est peut-être obsolète — mettez-le à jour dans les Paramètres.",
+  "error.ytdlpNotFound": "yt-dlp est introuvable. Installez-le depuis Paramètres → Dépendances.",
+  "error.appClosedDuringDownload": "L'application a été fermée pendant ce téléchargement.",
+  "error.downloadPathUnavailable": "Le dossier de téléchargement est indisponible (disque déconnecté ou dossier impossible à créer). Vérifiez le chemin de téléchargement dans les Paramètres, puis réessayez.",
+  "settings.cookieBrowserMissing": "{browser} (non détecté)",
 }
 
 export default fr

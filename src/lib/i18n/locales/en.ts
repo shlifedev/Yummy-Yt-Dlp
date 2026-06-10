@@ -272,10 +272,10 @@ const en: Record<string, string> = {
   "error.videoUnavailable": "This video is unavailable.",
   "error.unsupportedUrl": "Unsupported URL format.",
   "error.tooManyRequests": "Too many requests. Please try again shortly.",
-  "error.siteBlocked": "The site blocked the request (HTTP 410). Browser impersonation retry also failed. Try again later, or update yt-dlp / configure cookies.",
+  "error.siteBlocked": "The site blocked the request (HTTP 410/403). Browser impersonation retry also failed. Try again later, or update yt-dlp / configure cookies.",
   "error.noFormats": "No video formats found. This may be a live stream.",
   "error.ageRestricted": "Age-restricted content. Set a cookie browser in Settings.",
-  "error.cookieAccess": "Can't access browser cookies. Fully quit the browser, or use Firefox cookies.",
+  "error.cookieAccess": "Can't access browser cookies. Fully quit the browser, or change/clear the cookie browser in Settings.",
   "error.ytdlpGeneric": "Failed to fetch video info.",
   "error.ytdlpExecFailed": "Failed to run yt-dlp.",
   "error.fetchTimeout": "The request timed out. Check your network connection.",
@@ -319,6 +319,15 @@ const en: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "Show in folder",
   "history.deleteItem": "Delete",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube flagged this as automated traffic (bot check). Set a cookie browser in Settings to access it signed in.",
+  "error.impersonateUnavailable": "This yt-dlp can't impersonate a browser (curl_cffi missing). Update or reinstall yt-dlp in Settings and try again.",
+  "error.invalidOptions": "yt-dlp rejected the download options. Your yt-dlp may be outdated — update it in Settings.",
+  "error.ytdlpNotFound": "yt-dlp was not found. Install it from Settings → Dependencies.",
+  "error.appClosedDuringDownload": "The app was closed while this download was running.",
+  "error.downloadPathUnavailable": "The download folder is unavailable (drive disconnected or folder can't be created). Check the download path in Settings and retry.",
+  "settings.cookieBrowserMissing": "{browser} (not detected)",
 }
 
 export default en

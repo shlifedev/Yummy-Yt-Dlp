@@ -27,7 +27,7 @@
   // cookie-browser picker for auth-related failures).
   let errorKey = $state<string | null>(null)
 
-  const COOKIE_ERROR_KEYS = ["error.ageRestricted", "error.cookieAccess", "error.siteBlocked"]
+  const COOKIE_ERROR_KEYS = ["error.ageRestricted", "error.cookieAccess", "error.siteBlocked", "error.botCheck"]
   const showCookieHint = $derived(errorKey != null && COOKIE_ERROR_KEYS.includes(errorKey))
 
   // Set the error banner from a backend AppError, remembering its key for contextual actions.
@@ -1133,6 +1133,11 @@
                   {#each browsers as browser}
                     <option value={browser}>{browser}</option>
                   {/each}
+                  {#if cookieBrowser && !browsers.includes(cookieBrowser)}
+                    <!-- Saved browser no longer detected (e.g. uninstalled): keep it visible
+                         with a warning instead of letting the select render blank. -->
+                    <option value={cookieBrowser}>{t("settings.cookieBrowserMissing", { browser: cookieBrowser })}</option>
+                  {/if}
                 </select>
              </div>
 

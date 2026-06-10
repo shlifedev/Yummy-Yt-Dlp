@@ -59,18 +59,35 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
 
     // Parse JSON output
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| AppError::MetadataError(format!("Failed to parse JSON: {}", e)))?;
+    let json: serde_json::Value = serde_json::from_str(&stdout).map_err(|e| {
+        logger::error_cat(
+            "metadata",
+            &format!(
+                "fetch_video_info: failed to parse yt-dlp JSON: {}",
+                security::sanitize_error_message(&e.to_string())
+            ),
+        );
+        AppError::MetadataError("error.ytdlpGeneric".to_string())
+    })?;
 
     // Extract video info
     let video_id = json["id"]
         .as_str()
-        .ok_or_else(|| AppError::MetadataError("Missing video id".to_string()))?
+        .ok_or_else(|| {
+            logger::error_cat(
+                "metadata",
+                "fetch_video_info: missing video id in yt-dlp JSON",
+            );
+            AppError::MetadataError("error.ytdlpGeneric".to_string())
+        })?
         .to_string();
 
     let title = json["title"]
         .as_str()
-        .ok_or_else(|| AppError::MetadataError("Missing title".to_string()))?
+        .ok_or_else(|| {
+            logger::error_cat("metadata", "fetch_video_info: missing title in yt-dlp JSON");
+            AppError::MetadataError("error.ytdlpGeneric".to_string())
+        })?
         .to_string();
 
     let thumbnail = json["thumbnail"].as_str().unwrap_or("").to_string();
@@ -98,7 +115,13 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
     // Extract formats
     let formats = json["formats"]
         .as_array()
-        .ok_or_else(|| AppError::MetadataError("Missing formats array".to_string()))?
+        .ok_or_else(|| {
+            logger::error_cat(
+                "metadata",
+                "fetch_video_info: missing formats array in yt-dlp JSON",
+            );
+            AppError::MetadataError("error.noFormats".to_string())
+        })?
         .iter()
         .filter_map(|format| {
             let format_id = format["format_id"].as_str()?.to_string();
@@ -383,8 +406,16 @@ pub async fn detect_url_type(app: AppHandle, url: String) -> Result<UrlType, App
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(stdout.trim())
-        .map_err(|e| AppError::MetadataError(format!("Failed to parse JSON: {}", e)))?;
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+        logger::error_cat(
+            "metadata",
+            &format!(
+                "detect_url_type: failed to parse yt-dlp JSON: {}",
+                security::sanitize_error_message(&e.to_string())
+            ),
+        );
+        AppError::MetadataError("error.ytdlpGeneric".to_string())
+    })?;
 
     let url_type = match json["_type"].as_str() {
         Some("playlist") | Some("multi_video") => UrlType::Playlist,

@@ -264,10 +264,10 @@ const ja: Record<string, string> = {
   "error.videoUnavailable": "この動画は利用できません。",
   "error.unsupportedUrl": "対応していないURL形式です。",
   "error.tooManyRequests": "リクエストが多すぎます。しばらくしてからもう一度お試しください。",
-  "error.siteBlocked": "サイトがアクセスをブロックしました（HTTP 410）。ブラウザ偽装での再試行も失敗しました。しばらくしてから再試行するか、yt-dlpの更新やCookie設定を確認してください。",
+  "error.siteBlocked": "サイトがアクセスをブロックしました（HTTP 410/403）。ブラウザ偽装での再試行も失敗しました。しばらくしてから再試行するか、yt-dlpの更新やCookie設定を確認してください。",
   "error.noFormats": "動画フォーマットが見つかりません。ライブ配信の可能性があります。",
   "error.ageRestricted": "年齢制限付きコンテンツです。設定でCookieブラウザを指定してください。",
-  "error.cookieAccess": "ブラウザのCookieにアクセスできません。ブラウザを完全に終了するか、FirefoxのCookieを使用してください。",
+  "error.cookieAccess": "ブラウザのCookieにアクセスできません。ブラウザを完全に終了するか、設定でCookieブラウザを変更・解除してください。",
   "error.ytdlpGeneric": "動画情報の取得に失敗しました。",
   "error.ytdlpExecFailed": "yt-dlpの実行に失敗しました。",
   "error.fetchTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください。",
@@ -311,6 +311,15 @@ const ja: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "フォルダで表示",
   "history.deleteItem": "削除",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTubeが自動アクセス（ボット確認）としてブロックしました。設定でCookieブラウザを指定し、ログイン状態でアクセスしてください。",
+  "error.impersonateUnavailable": "現在のyt-dlpはブラウザ偽装に対応していません（curl_cffi未導入）。設定でyt-dlpを更新・再インストールしてから再試行してください。",
+  "error.invalidOptions": "yt-dlpがダウンロードオプションを認識できませんでした。yt-dlpが古い可能性があります。設定から更新してください。",
+  "error.ytdlpNotFound": "yt-dlpが見つかりません。設定 → 依存関係からインストールしてください。",
+  "error.appClosedDuringDownload": "ダウンロード中にアプリが終了しました。",
+  "error.downloadPathUnavailable": "ダウンロードフォルダーを使用できません（ドライブの切断またはフォルダー作成の失敗）。設定でダウンロード先を確認してから再試行してください。",
+  "settings.cookieBrowserMissing": "{browser}（未検出）",
 }
 
 export default ja

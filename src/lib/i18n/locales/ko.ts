@@ -264,10 +264,10 @@ const ko: Record<string, string> = {
   "error.videoUnavailable": "이 영상은 사용할 수 없습니다.",
   "error.unsupportedUrl": "지원하지 않는 URL 형식입니다.",
   "error.tooManyRequests": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
-  "error.siteBlocked": "사이트가 접근을 차단했습니다(HTTP 410). 브라우저 위장 재시도에도 실패했습니다. 잠시 후 다시 시도하거나 yt-dlp 업데이트/쿠키 설정을 확인하세요.",
+  "error.siteBlocked": "사이트가 접근을 차단했습니다(HTTP 410/403). 브라우저 위장 재시도에도 실패했습니다. 잠시 후 다시 시도하거나 yt-dlp 업데이트/쿠키 설정을 확인하세요.",
   "error.noFormats": "영상 형식을 찾을 수 없습니다. 라이브 스트림일 수 있습니다.",
   "error.ageRestricted": "연령 제한 콘텐츠입니다. 설정에서 쿠키 브라우저를 지정하세요.",
-  "error.cookieAccess": "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나 Firefox 쿠키를 사용하세요.",
+  "error.cookieAccess": "브라우저 쿠키에 접근할 수 없습니다. 브라우저를 완전히 종료하거나, 설정에서 쿠키 브라우저를 변경/해제하세요.",
   "error.ytdlpGeneric": "영상 정보를 가져오지 못했습니다.",
   "error.ytdlpExecFailed": "yt-dlp 실행에 실패했습니다.",
   "error.fetchTimeout": "요청 시간이 초과되었습니다. 네트워크 연결을 확인하세요.",
@@ -311,6 +311,15 @@ const ko: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "폴더에서 보기",
   "history.deleteItem": "삭제",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube가 자동화된 요청(봇 확인)으로 차단했습니다. 설정에서 쿠키 브라우저를 지정해 로그인 상태로 접근하세요.",
+  "error.impersonateUnavailable": "현재 yt-dlp가 브라우저 위장을 지원하지 않습니다(curl_cffi 없음). 설정에서 yt-dlp를 업데이트/재설치한 후 다시 시도하세요.",
+  "error.invalidOptions": "yt-dlp가 다운로드 옵션을 인식하지 못했습니다. yt-dlp가 오래된 버전일 수 있으니 설정에서 업데이트하세요.",
+  "error.ytdlpNotFound": "yt-dlp를 찾을 수 없습니다. 설정 → 의존성에서 설치하세요.",
+  "error.appClosedDuringDownload": "다운로드 진행 중에 앱이 종료되었습니다.",
+  "error.downloadPathUnavailable": "다운로드 폴더를 사용할 수 없습니다(드라이브 분리 또는 폴더 생성 실패). 설정에서 다운로드 경로를 확인한 후 다시 시도하세요.",
+  "settings.cookieBrowserMissing": "{browser} (감지되지 않음)",
 }
 
 export default ko

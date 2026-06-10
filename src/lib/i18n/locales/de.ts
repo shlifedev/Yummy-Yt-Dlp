@@ -264,10 +264,10 @@ const de: Record<string, string> = {
   "error.videoUnavailable": "Dieses Video ist nicht verfügbar.",
   "error.unsupportedUrl": "Nicht unterstütztes URL-Format.",
   "error.tooManyRequests": "Zu viele Anfragen. Bitte versuchen Sie es in Kürze erneut.",
-  "error.siteBlocked": "Die Website hat die Anfrage blockiert (HTTP 410). Der Browser-Imitationsversuch ist ebenfalls fehlgeschlagen. Versuchen Sie es später erneut oder aktualisieren Sie yt-dlp / konfigurieren Sie Cookies.",
+  "error.siteBlocked": "Die Website hat die Anfrage blockiert (HTTP 410/403). Der Browser-Imitationsversuch ist ebenfalls fehlgeschlagen. Versuchen Sie es später erneut oder aktualisieren Sie yt-dlp / konfigurieren Sie Cookies.",
   "error.noFormats": "Keine Videoformate gefunden. Möglicherweise ein Livestream.",
   "error.ageRestricted": "Altersbeschränkter Inhalt. Legen Sie in den Einstellungen einen Cookie-Browser fest.",
-  "error.cookieAccess": "Kein Zugriff auf Browser-Cookies. Beenden Sie den Browser vollständig oder verwenden Sie Firefox-Cookies.",
+  "error.cookieAccess": "Kein Zugriff auf Browser-Cookies. Beenden Sie den Browser vollständig oder ändern/entfernen Sie den Cookie-Browser in den Einstellungen.",
   "error.ytdlpGeneric": "Videoinformationen konnten nicht abgerufen werden.",
   "error.ytdlpExecFailed": "yt-dlp konnte nicht ausgeführt werden.",
   "error.fetchTimeout": "Zeitüberschreitung der Anfrage. Überprüfen Sie Ihre Netzwerkverbindung.",
@@ -311,6 +311,15 @@ const de: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "Im Ordner anzeigen",
   "history.deleteItem": "Löschen",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube hat die Anfrage als automatisierten Zugriff eingestuft (Bot-Prüfung). Legen Sie in den Einstellungen einen Cookie-Browser fest, um angemeldet zuzugreifen.",
+  "error.impersonateUnavailable": "Dieses yt-dlp kann keinen Browser imitieren (curl_cffi fehlt). Aktualisieren oder installieren Sie yt-dlp in den Einstellungen neu und versuchen Sie es erneut.",
+  "error.invalidOptions": "yt-dlp hat die Download-Optionen abgelehnt. Ihr yt-dlp ist möglicherweise veraltet – aktualisieren Sie es in den Einstellungen.",
+  "error.ytdlpNotFound": "yt-dlp wurde nicht gefunden. Installieren Sie es unter Einstellungen → Abhängigkeiten.",
+  "error.appClosedDuringDownload": "Die App wurde geschlossen, während dieser Download lief.",
+  "error.downloadPathUnavailable": "Der Download-Ordner ist nicht verfügbar (Laufwerk getrennt oder Ordner kann nicht erstellt werden). Prüfen Sie den Download-Pfad in den Einstellungen und versuchen Sie es erneut.",
+  "settings.cookieBrowserMissing": "{browser} (nicht erkannt)",
 }
 
 export default de
