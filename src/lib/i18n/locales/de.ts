@@ -258,6 +258,8 @@ const de: Record<string, string> = {
   "settings.licensesDesc": "Diese App bündelt oder lädt folgende Open-Source-Tools herunter:",
   "settings.ffmpegGplNotice": "FFmpeg wird unter der GPLv3 vertrieben; der mitgelieferte GPL-Build und sein Quellcode sind über die obigen Projektlinks verfügbar.",
   "settings.openLocation": "Dateispeicherort öffnen",
+  "settings.saveFailed": "Einstellungen konnten nicht gespeichert werden: {error}",
+  "settings.welcomeSaveFailed": "Die Einrichtung konnte nicht gespeichert werden — der Willkommensbildschirm erscheint beim nächsten Start möglicherweise erneut",
 
   // Errors (backend i18n keys)
   "error.privateVideo": "Dies ist ein privates Video und kann nicht aufgerufen werden.",

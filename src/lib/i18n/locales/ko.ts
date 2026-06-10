@@ -258,6 +258,8 @@ const ko: Record<string, string> = {
   "settings.licensesDesc": "이 앱은 다음 오픈소스 도구를 포함하거나 다운로드합니다:",
   "settings.ffmpegGplNotice": "FFmpeg는 GPLv3 라이선스로 배포됩니다. 번들된 GPL 빌드와 소스 코드는 위 프로젝트 링크에서 확인할 수 있습니다.",
   "settings.openLocation": "파일 위치 열기",
+  "settings.saveFailed": "설정 저장에 실패했습니다: {error}",
+  "settings.welcomeSaveFailed": "초기 설정을 저장하지 못했습니다. 다음 실행 시 시작 화면이 다시 표시될 수 있습니다",
 
   // Errors (백엔드 i18n 키; src-tauri metadata/mod.rs, download/executor.rs 참고)
   "error.privateVideo": "비공개 영상입니다. 접근할 수 없습니다.",

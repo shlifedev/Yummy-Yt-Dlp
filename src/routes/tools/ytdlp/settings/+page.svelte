@@ -6,6 +6,7 @@
   import { t, setLocale, getLocale, supportedLocales } from "$lib/i18n/index.svelte"
   import { setTheme, getTheme } from "$lib/theme/index.svelte"
   import { themes, themeList, type ThemeId } from "$lib/theme/themes"
+  import { extractError } from "$lib/utils/errors"
 
   let settings = $state<AppSettings>({
     downloadPath: "",
@@ -28,6 +29,7 @@
   })
 
   let loading = $state(true)
+  let saveError = $state<string | null>(null)
 
   onMount(async () => {
     try {
@@ -37,21 +39,38 @@
     loading = false
   })
 
-  async function autoSave() {
-    try { await commands.updateSettings(settings) }
-    catch (e) { console.error("Failed to save settings:", e) }
+  // tauri-specta Results don't throw: check the status so a rejected save is surfaced
+  // instead of the toggle silently reverting on the next launch.
+  async function autoSave(): Promise<boolean> {
+    saveError = null
+    try {
+      const result = await commands.updateSettings(settings)
+      if (result.status === "error") {
+        saveError = t("settings.saveFailed", { error: extractError(result.error) })
+        return false
+      }
+      return true
+    } catch (e) {
+      console.error("Failed to save settings:", e)
+      saveError = t("settings.saveFailed", { error: extractError(e) })
+      return false
+    }
   }
 
   async function handleMinimizeChange(e: Event) {
+    const previous = settings.minimizeToTray
     settings.minimizeToTray = (e.target as HTMLInputElement).checked
-    await autoSave()
+    if (!(await autoSave())) settings.minimizeToTray = previous
   }
 
   async function handleAutoUpdateChange(e: Event) {
+    const previous = settings.autoUpdateYtdlp
     settings.autoUpdateYtdlp = (e.target as HTMLInputElement).checked
-    await autoSave()
+    if (!(await autoSave())) settings.autoUpdateYtdlp = previous
   }
 
+  // Language/theme stay applied locally on a failed save (a hard mid-session revert would be
+  // jarring); the inline notice tells the user the choice won't survive a restart.
   async function handleLanguageChange(locale: string) {
     setLocale(locale)
     settings.language = locale
@@ -71,6 +90,13 @@
   </div>
 {:else}
   <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
+
+    {#if saveError}
+      <div class="flex items-center gap-2 text-xs text-yt-error bg-yt-error/10 border border-yt-error/30 rounded-md px-3 py-2">
+        <span class="material-symbols-outlined text-[16px]">error</span>
+        <span>{saveError}</span>
+      </div>
+    {/if}
 
     <!-- General Section -->
     <section>

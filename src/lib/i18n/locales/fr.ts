@@ -258,6 +258,8 @@ const fr: Record<string, string> = {
   "settings.licensesDesc": "Cette application intègre ou télécharge les outils open source suivants :",
   "settings.ffmpegGplNotice": "FFmpeg est distribué sous licence GPLv3 ; la version GPL fournie et son code source sont disponibles via les liens de projet ci-dessus.",
   "settings.openLocation": "Ouvrir l'emplacement du fichier",
+  "settings.saveFailed": "Échec de l'enregistrement des paramètres : {error}",
+  "settings.welcomeSaveFailed": "Impossible d'enregistrer la configuration initiale — l'écran de bienvenue pourra réapparaître au prochain démarrage",
 
   // Errors (backend i18n keys)
   "error.privateVideo": "Cette vidéo est privée et inaccessible.",

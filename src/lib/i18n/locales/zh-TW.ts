@@ -258,6 +258,8 @@ const zhTW: Record<string, string> = {
   "settings.licensesDesc": "本應用程式內建或下載了以下開源工具：",
   "settings.ffmpegGplNotice": "FFmpeg 依 GPLv3 授權發布，內建的 GPL 建置版本及其原始碼可透過上方專案連結取得。",
   "settings.openLocation": "開啟檔案位置",
+  "settings.saveFailed": "設定儲存失敗：{error}",
+  "settings.welcomeSaveFailed": "初始設定未能儲存，下次啟動時可能會再次顯示歡迎畫面",
 
   // Errors (backend i18n keys)
   "error.privateVideo": "這是私人影片，無法存取。",

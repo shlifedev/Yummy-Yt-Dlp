@@ -258,6 +258,8 @@ const zhCN: Record<string, string> = {
   "settings.licensesDesc": "本应用内置或下载了以下开源工具：",
   "settings.ffmpegGplNotice": "FFmpeg 遵循 GPLv3 协议发布，内置的 GPL 构建版本及其源代码可通过上方项目链接获取。",
   "settings.openLocation": "打开文件位置",
+  "settings.saveFailed": "设置保存失败：{error}",
+  "settings.welcomeSaveFailed": "初始设置未能保存，下次启动时可能会再次显示欢迎界面",
 
   // Errors (backend i18n keys)
   "error.privateVideo": "这是私享视频，无法访问。",

@@ -196,17 +196,38 @@
     }
   }
 
-  async function autoSave() {
-    try { await commands.updateSettings(settings) }
-    catch (e) { console.error("Failed to save settings:", e) }
+  let saveError = $state<string | null>(null)
+
+  // tauri-specta Results don't throw: check the status so a rejected save is surfaced and
+  // the mode/source picker doesn't show a choice the backend never persisted.
+  async function autoSave(): Promise<boolean> {
+    saveError = null
+    try {
+      const result = await commands.updateSettings(settings)
+      if (result.status === "error") {
+        saveError = t("settings.saveFailed", { error: extractError(result.error) })
+        return false
+      }
+      return true
+    } catch (e) {
+      console.error("Failed to save settings:", e)
+      saveError = t("settings.saveFailed", { error: extractError(e) })
+      return false
+    }
   }
 
   async function handleDepModeChange(mode: string) {
+    const previousMode = settings.depMode
+    const previousOverrides = settings.depOverrides
     settings.depMode = mode
     // The new global mode is authoritative; drop any per-item overrides so a
     // lingering pick doesn't contradict it (e.g. a "system" pin under bundled).
     settings.depOverrides = {}
-    await autoSave()
+    if (!(await autoSave())) {
+      settings.depMode = previousMode
+      settings.depOverrides = previousOverrides
+      return
+    }
     await loadDepStatus(true)
   }
 
@@ -228,8 +249,12 @@
       return
     }
     sourceHint = null
+    const previousOverrides = settings.depOverrides
     settings.depOverrides = { ...(settings.depOverrides ?? {}), [depKey]: source }
-    await autoSave()
+    if (!(await autoSave())) {
+      settings.depOverrides = previousOverrides
+      return
+    }
     await loadDepStatus(true)
   }
 
@@ -271,6 +296,13 @@
   </div>
 {:else}
   <div class="max-w-5xl mx-auto px-8 py-8 space-y-10">
+
+    {#if saveError}
+      <div class="flex items-center gap-2 text-xs text-yt-error bg-yt-error/10 border border-yt-error/30 rounded-md px-3 py-2">
+        <span class="material-symbols-outlined text-[16px]">error</span>
+        <span>{saveError}</span>
+      </div>
+    {/if}
 
     <!-- Dependency Mode -->
     <section>
