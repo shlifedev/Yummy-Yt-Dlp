@@ -1,3 +1,11 @@
+<script module lang="ts">
+  // Scan ids must stay unique across page remounts and webview reloads: a delayed terminal
+  // event from a killed scan must never match a new scan's id (the backend's scan_id is a
+  // u32, so never seed from Date.now()). Module scope survives remounts; the random seed
+  // covers full reloads (F5/HMR) while backend scan tasks linger.
+  let scanSeq = Math.floor(Math.random() * 0x7fffffff)
+</script>
+
 <script lang="ts">
   import { commands, type PlaylistScanMeta, type PlaylistScanEvent, type PlaylistEntry, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions } from "$lib/bindings"
   import {
@@ -11,7 +19,7 @@
   } from "$lib/advanced"
   import { platform } from "@tauri-apps/plugin-os"
   import { listen } from "@tauri-apps/api/event"
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, untrack } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
   import { extractError, getErrorKey } from "$lib/utils/errors"
   import { formatSize, formatDuration } from "$lib/utils/format"
@@ -51,7 +59,9 @@
   // the handler's id check even when it arrives before the invoke ack.
   let scanning = $state(false)
   let scanId = $state<number | null>(null)
-  let scanSeq = 0
+  // Trimmed URL (as typed) that started the active scan — used to ignore same-URL
+  // re-analyze requests while the scan is still streaming.
+  let activeScanUrl: string | null = null
   // De-dup across batches (yt-dlp continuations can occasionally repeat entries).
   let seenVideoIds = new Set<string>()
   // Resolved when the scan reaches a terminal state (done/error/cancelled) — Download All waits on it.
@@ -217,11 +227,15 @@
     const currentUrl = url // Only tracked dependency
     clearAnalyzeDebounce()
     // A duplicate warning belongs to a specific URL; once the user edits the field it no longer
-    // matches what's on screen, so drop it (and its captured request) right away.
-    if (duplicateCheck && currentUrl.trim() !== duplicateUrl) {
-      duplicateCheck = null
-      pendingRequest = null
-    }
+    // matches what's on screen, so drop it (and its captured request) right away. untrack keeps
+    // duplicateCheck/duplicateUrl out of the dependency set, so raising or dismissing the
+    // warning can't re-run this effect and schedule a re-analysis that wipes the dialog.
+    untrack(() => {
+      if (duplicateCheck && currentUrl.trim() !== duplicateUrl) {
+        duplicateCheck = null
+        pendingRequest = null
+      }
+    })
     if (looksLikeVideoUrl(currentUrl)) {
       analyzeTimeoutId = setTimeout(() => {
         // Don't gate on `analyzing`: if a previous fetch is still in flight, handleAnalyze bumps
@@ -431,6 +445,7 @@
       commands.cancelPlaylistScan(scanId).catch(() => {})
       scanId = null
     }
+    activeScanUrl = null
     scanning = false
     scanFinished = null
     settleScanWaiters()
@@ -489,6 +504,10 @@
   async function handleAnalyze() {
     const requestedUrl = url.trim()
     if (!requestedUrl) return
+    // A reflexive Enter (or whitespace-only edit) while a scan of the same URL is still
+    // streaming must not silently restart it from entry zero; cancel via the in-field X
+    // first to rescan the same URL.
+    if (scanning && requestedUrl === activeScanUrl) return
     if (analyzePromise && analyzePromiseUrl === requestedUrl) {
       await analyzePromise
       return
@@ -592,6 +611,7 @@
         const id = ++scanSeq
         // Set BEFORE invoking: the first "entries" event can arrive before the invoke resolves.
         scanId = id
+        activeScanUrl = requestedUrl
         scanning = true
         scanFinished = new Promise((resolve) => { resolveScanFinished = resolve })
         const firstResult = new Promise<void>((resolve) => { resolveFirstScanResult = resolve })
@@ -796,7 +816,10 @@
     }
   }
 
-  async function enqueueBatchDownloads(entries: Array<{ url: string, videoId: string, title: string | null }>) {
+  // Returns true when the batch is enqueued (or every entry was skipped as a duplicate),
+  // false when the backend rejected it — callers must keep the page state for a retry then.
+  async function enqueueBatchDownloads(entries: Array<{ url: string, videoId: string, title: string | null }>): Promise<boolean> {
+    const generation = analyzeGeneration
     const totalCount = entries.length
     batchProgress = { current: 0, total: totalCount }
     const formatStr = buildFormatString()
@@ -830,7 +853,7 @@
     if (skippedExistsTitles.length > 0) messages.push(t("download.skippedExists", { count: skippedExistsTitles.length }))
     if (messages.length) notice = messages.join(" ")
 
-    if (survivors.length === 0) return
+    if (survivors.length === 0) return true
 
     const requests = survivors.map((entry) => ({
       videoUrl: entry.url,
@@ -851,9 +874,14 @@
 
     if (result.status === "error") {
       console.error("Batch enqueue failed:", extractError(result.error))
-    } else {
-      window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: survivors.length } }))
+      batchProgress = { current: 0, total: 0 }
+      // Don't surface a stale failure over a newer analysis.
+      if (generation === analyzeGeneration) setError(result.error)
+      return false
     }
+    // The backend may skip invalid entries, so report the actually-enqueued count.
+    window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: result.data.taskIds.length } }))
+    return true
   }
 
   async function handleDownloadSelected() {
@@ -865,12 +893,14 @@
 
     try {
       const entries = playlistResult.entries.filter(e => selectedEntries.has(e.videoId))
-      await enqueueBatchDownloads(entries)
-      url = ""
-      videoInfo = null
-      playlistResult = null
-      cancelActiveScan()
-      selectedEntries = new Set()
+      // On failure keep the list, the selection, and the live scan so the user can retry.
+      if (await enqueueBatchDownloads(entries)) {
+        url = ""
+        videoInfo = null
+        playlistResult = null
+        cancelActiveScan()
+        selectedEntries = new Set()
+      }
     } catch (e: any) {
       errorKey = null
       error = e.message || String(e)
@@ -896,8 +926,12 @@
         return
       }
 
-      await enqueueBatchDownloads(playlistResult.entries)
+      const enqueued = await enqueueBatchDownloads(playlistResult.entries)
       if (downloadGeneration !== analyzeGeneration) {
+        return
+      }
+      // On failure keep the scanned list on screen so the user can retry without rescanning.
+      if (!enqueued) {
         return
       }
 
@@ -1028,7 +1062,7 @@
             onkeydown={handleKeydown}
             disabled={downloading}
           />
-           {#if analyzing}
+           {#if analyzing || scanning}
             <div class="absolute inset-y-0 right-3 flex items-center gap-2">
                <span class="material-symbols-outlined text-yt-primary text-[18px] animate-spin">progress_activity</span>
                {#if analyzeElapsed > 0}<span class="text-xs text-yt-text-secondary font-mono">{analyzeElapsed}s</span>{/if}

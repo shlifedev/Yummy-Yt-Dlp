@@ -208,8 +208,19 @@ pub(super) fn parse_flat_entry(entry: &serde_json::Value) -> Option<PlaylistEntr
             Some(id) if is_youtube || ie_key.is_empty() => {
                 format!("https://www.youtube.com/watch?v={}", id)
             }
-            // 비-YouTube + id-form이면 그대로 둬 yt-dlp가 ie_key로 재해석하게 한다.
-            Some(id) => id.to_string(),
+            // 비-YouTube + id-form은 다운로드 경로의 sanitize_url이 어차피 거부한다
+            // (ie_key 컨텍스트가 yt-dlp까지 전달되지 않으므로 bare id는 다운로드 불가).
+            // 배치 전체를 오염시키지 말고 항목을 건너뛴다.
+            Some(id) => {
+                logger::warn_cat(
+                    "metadata",
+                    &format!(
+                        "Skipping id-only flat entry without a usable URL ({}: {})",
+                        ie_key, id
+                    ),
+                );
+                return None;
+            }
             None => String::new(),
         },
     };
@@ -457,10 +468,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_entry_keeps_non_youtube_ids_verbatim() {
+    fn flat_entry_skips_id_only_non_youtube_entries() {
+        // A bare non-YouTube id can never be downloaded (sanitize_url rejects non-http
+        // values), so the entry must be dropped instead of poisoning a batch enqueue.
         let entry = serde_json::json!({ "id": "BV1xx411c7mD", "ie_key": "BiliBili" });
-        let parsed = parse_flat_entry(&entry).unwrap();
-        assert_eq!(parsed.url, "BV1xx411c7mD");
+        assert!(parse_flat_entry(&entry).is_none());
     }
 
     #[test]

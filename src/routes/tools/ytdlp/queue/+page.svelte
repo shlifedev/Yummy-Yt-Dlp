@@ -6,6 +6,7 @@
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { onMount, onDestroy } from "svelte"
   import { t, getDateLocale } from "$lib/i18n/index.svelte"
+  import { extractError } from "$lib/utils/errors"
   import { formatSize } from "$lib/utils/format"
   import { fade } from "svelte/transition"
   import GroupHeader from "$lib/components/GroupHeader.svelte"
@@ -23,6 +24,8 @@
   let searchTimeout: ReturnType<typeof setTimeout>
   let activeFilter = $state<string | null>(null)
   let busyActions = $state<Set<string>>(new Set())
+  // Last queue/history action failure (retry/cancel/clear/delete), shown as a dismissible banner.
+  let actionError = $state<string | null>(null)
 
   // Batch-group fold-out state. Active groups default expanded (you're watching them
   // download); history groups default collapsed. Both survive the 2s poll since they
@@ -140,6 +143,7 @@
 
   async function withBusy(key: string, action: () => Promise<void>) {
     if (busyActions.has(key)) return
+    actionError = null
     busyActions = new Set([...busyActions, key])
     try {
       await action()
@@ -233,7 +237,14 @@
       try {
         const r = await commands.cancelDownload(id)
         if (r.status === "ok") await loadActive()
-      } catch (e) { console.error("Failed to cancel:", e) }
+        else {
+          console.error("Failed to cancel:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to cancel:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -242,7 +253,14 @@
       try {
         const r = await commands.retryDownload(id)
         if (r.status === "ok") await loadActive()
-      } catch (e) { console.error("Failed to retry:", e) }
+        else {
+          console.error("Failed to retry:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to retry:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -251,7 +269,14 @@
       try {
         const r = await commands.cancelAllDownloads()
         if (r.status === "ok") await loadActive()
-      } catch (e) { console.error("Failed to cancel all:", e) }
+        else {
+          console.error("Failed to cancel all:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to cancel all:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -260,7 +285,14 @@
       try {
         const r = await commands.cancelGroup(gid)
         if (r.status === "ok") await loadActive()
-      } catch (e) { console.error("Failed to cancel group:", e) }
+        else {
+          console.error("Failed to cancel group:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to cancel group:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -272,8 +304,14 @@
         if (r.status === "ok") {
           activeFilter = null
           await Promise.all([loadActive(), loadHistory()])
+        } else {
+          console.error("Failed to clear all:", r.error)
+          actionError = extractError(r.error)
         }
-      } catch (e) { console.error("Failed to clear all:", e) }
+      } catch (e: any) {
+        console.error("Failed to clear all:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -283,7 +321,14 @@
       try {
         const r = await commands.deleteHistoryItem(id)
         if (r.status === "ok") await loadHistory()
-      } catch (e) { console.error("Failed to delete history item:", e) }
+        else {
+          console.error("Failed to delete history item:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to delete history item:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -293,7 +338,14 @@
       try {
         const r = await commands.deleteHistoryGroup(gid)
         if (r.status === "ok") await loadHistory()
-      } catch (e) { console.error("Failed to delete history group:", e) }
+        else {
+          console.error("Failed to delete history group:", r.error)
+          actionError = extractError(r.error)
+        }
+      } catch (e: any) {
+        console.error("Failed to delete history group:", e)
+        actionError = e?.message || String(e)
+      }
     })
   }
 
@@ -470,6 +522,19 @@
       </div>
     </div>
   </header>
+
+  {#if actionError}
+    <div class="mx-6 mt-4 bg-yt-error/10 border border-yt-error/20 rounded-lg px-4 py-3 flex items-start gap-3">
+      <span class="material-symbols-outlined text-yt-error text-[20px] shrink-0 mt-0.5">error</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-yt-text font-medium">{t("queue.actionFailed")}</p>
+        <p class="text-xs text-yt-text-secondary mt-0.5">{actionError}</p>
+      </div>
+      <button class="text-yt-text-secondary hover:text-yt-text" aria-label={t("download.close")} onclick={() => actionError = null}>
+        <span class="material-symbols-outlined text-[18px]">close</span>
+      </button>
+    </div>
+  {/if}
 
   {#if firstLoad}
     <div class="flex justify-center py-16">

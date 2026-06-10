@@ -150,16 +150,38 @@ pub async fn add_to_queue_batch(
     security::sanitize_filename_template(&settings.filename_template)?;
 
     // Validate each request and build its output template (same as add_to_queue).
+    // Invalid entries are skipped (and logged) instead of `?`-failing the whole batch,
+    // so one bad URL can't poison the other items.
     let mut items = Vec::with_capacity(requests.len());
     for req in &requests {
-        security::sanitize_url(&req.video_url)?;
+        if let Err(e) = security::sanitize_url(&req.video_url) {
+            logger::warn_cat(
+                "download",
+                &format!("Skipping invalid batch entry '{}': {}", req.video_url, e),
+            );
+            continue;
+        }
         let output_dir = req.output_dir.as_deref().unwrap_or(&settings.download_path);
-        security::sanitize_output_path(output_dir)?;
+        if let Err(e) = security::sanitize_output_path(output_dir) {
+            logger::warn_cat(
+                "download",
+                &format!(
+                    "Skipping batch entry '{}': invalid output path: {}",
+                    req.video_url, e
+                ),
+            );
+            continue;
+        }
         let output_template = std::path::Path::new(output_dir)
             .join(&settings.filename_template)
             .to_string_lossy()
             .to_string();
         items.push((req.clone(), output_template));
+    }
+
+    // Never create an empty group: if every entry was invalid, fail loudly instead.
+    if items.is_empty() {
+        return Err(AppError::InvalidUrl("No valid URLs in batch".to_string()));
     }
 
     let db_state = app.state::<crate::DbState>();

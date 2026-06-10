@@ -322,6 +322,15 @@ const ja: Record<string, string> = {
   "error.appClosedDuringDownload": "ダウンロード中にアプリが終了しました。",
   "error.downloadPathUnavailable": "ダウンロードフォルダーを使用できません（ドライブの切断またはフォルダー作成の失敗）。設定でダウンロード先を確認してから再試行してください。",
   "settings.cookieBrowserMissing": "{browser}（未検出）",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "ダウンロード失敗: {title}",
+  "layout.failedCount": "{count}件のダウンロードが失敗しました",
+  "queue.actionFailed": "操作を実行できませんでした",
+  "update.failed": "アップデートに失敗しました",
+  "update.restartNow": "今すぐ再起動",
+  "update.restartManually": "アップデートはインストールされましたが、自動再起動に失敗しました。手動でアプリを再起動してください。",
+  "update.hide": "非表示",
 }
 
 export default ja

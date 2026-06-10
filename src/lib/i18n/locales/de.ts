@@ -322,6 +322,15 @@ const de: Record<string, string> = {
   "error.appClosedDuringDownload": "Die App wurde geschlossen, während dieser Download lief.",
   "error.downloadPathUnavailable": "Der Download-Ordner ist nicht verfügbar (Laufwerk getrennt oder Ordner kann nicht erstellt werden). Prüfen Sie den Download-Pfad in den Einstellungen und versuchen Sie es erneut.",
   "settings.cookieBrowserMissing": "{browser} (nicht erkannt)",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "Download fehlgeschlagen: {title}",
+  "layout.failedCount": "{count} Download(s) fehlgeschlagen",
+  "queue.actionFailed": "Aktion fehlgeschlagen",
+  "update.failed": "Update fehlgeschlagen",
+  "update.restartNow": "Jetzt neu starten",
+  "update.restartManually": "Das Update wurde installiert, aber der automatische Neustart ist fehlgeschlagen. Bitte starte die App manuell neu.",
+  "update.hide": "Ausblenden",
 }
 
 export default de

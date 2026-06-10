@@ -52,6 +52,9 @@
   let progressCache = $state<Map<number, ProgressCacheEntry>>(new Map())
   let activeCount = $derived(activeDownloads.filter(d => d.status === "downloading").length)
   let pendingCount = $derived(activeDownloads.filter(d => d.status === "pending").length)
+  // Failed rows never appear in the queue summary (it only carries downloading/pending +
+  // recent completed), so count them separately from the full queue.
+  let failedCount = $state(0)
 
   // Toast state
   let toastMessage = $state("")
@@ -69,6 +72,7 @@
   let updateTotalSize = $state(0)
   let updateDownloaded = $state(0)
   let updateReady = $state(false)
+  let updateError = $state<string | null>(null)
 
   // Welcome (first-run) state
   type DepMode = "hybrid" | "bundled"
@@ -159,7 +163,13 @@
 
   async function loadQueueSummary() {
     try {
-      const result = await commands.getQueueSummary()
+      const [result, queueResult] = await Promise.all([
+        commands.getQueueSummary(),
+        commands.getActiveQueue(),
+      ])
+      if (queueResult.status === "ok") {
+        failedCount = queueResult.data.filter((d) => d.status === "failed").length
+      }
       if (result.status === "ok") {
         const data = result.data
         activeDownloads = data.activeItems.map((item: any) => {
@@ -192,8 +202,14 @@
       const result = await commands.cancelAllDownloads()
       if (result.status === "ok") {
         await queueSummaryPromise
+      } else {
+        console.error("Failed to cancel all downloads:", result.error)
+        showErrorToast(extractError(result.error))
       }
-    } catch (e) { console.error("Failed to cancel all downloads:", e) }
+    } catch (e: any) {
+      console.error("Failed to cancel all downloads:", e)
+      showErrorToast(e?.message || String(e))
+    }
     // Refresh immediately
     loadQueueSummary()
   }
@@ -330,6 +346,11 @@
           if (data.eventType === "completed") {
             const title = activeDownloads.find(d => d.id === data.taskId)?.title
             showToast(t("layout.downloadComplete", { title: title || "video" }), "download_done")
+          } else if (data.eventType === "error") {
+            // Look up the title before the summary refresh drops the failed row from
+            // activeDownloads. "cancelled" stays silent — it's user-initiated.
+            const title = activeDownloads.find(d => d.id === data.taskId)?.title
+            showErrorToast(`${t("layout.downloadFailedToast", { title: title || "video" })} — ${t(data.message ?? "error.downloadFailed")}`)
           }
           debouncedLoadQueueSummary()
         }
@@ -382,8 +403,10 @@
   function handleDebugKey(e: KeyboardEvent) {
     if (e.key === "Escape") {
       // Dismiss the lightest-weight open dialog first. The blocked-close dialog stays put on
-      // Escape (closing it would imply a choice), so it's intentionally excluded here.
-      if (showUpdateDialog && !updateDownloading) { showUpdateDialog = false; return }
+      // Escape (closing it would imply a choice), so it's intentionally excluded here. The
+      // update dialog may be hidden even mid-download — the download keeps running in the
+      // background and the dialog re-surfaces when it finishes or fails.
+      if (showUpdateDialog) { showUpdateDialog = false; return }
       if (showCloseDialog) { showCloseDialog = false; rememberChoice = false; return }
     }
     if (e.key === "F10") {
@@ -562,6 +585,8 @@
     updateDownloaded = 0
     updateTotalSize = 0
     updateProgress = 0
+    updateReady = false
+    updateError = null
     try {
       await updateInfo.downloadAndInstall((progress) => {
         if (progress.event === "Started" && progress.data.contentLength) {
@@ -575,10 +600,28 @@
           updateReady = true
         }
       })
-      await relaunch()
+      updateReady = true
+      updateProgress = 100
     } catch (e) {
       console.error("Update failed:", e)
+      updateError = e instanceof Error ? e.message : String(e)
+      updateReady = false
+      updateProgress = 0
+      updateDownloaded = 0
+    } finally {
       updateDownloading = false
+      // The dialog may have been hidden during the download; never restart (or fail)
+      // silently in the background — re-surface it and let the user choose.
+      showUpdateDialog = true
+    }
+  }
+
+  async function handleRestartNow() {
+    try {
+      await relaunch()
+    } catch (e) {
+      console.error("Relaunch failed:", e)
+      updateError = t("update.restartManually")
     }
   }
 
@@ -667,8 +710,8 @@
         >
           <span class="material-symbols-outlined text-[20px] {isActive(item.href, item.exact) ? 'text-yt-primary' : ''}">{item.icon}</span>
           <span>{t(item.labelKey)}</span>
-          {#if item.href === "/tools/ytdlp/queue" && (activeCount + pendingCount) > 0}
-            <span class="absolute right-2 w-2 h-2 bg-yt-primary rounded-full ring-2 ring-yt-surface animate-pulse"></span>
+          {#if item.href === "/tools/ytdlp/queue" && (activeCount + pendingCount + failedCount) > 0}
+            <span class="absolute right-2 w-2 h-2 {(activeCount + pendingCount) > 0 ? 'bg-yt-primary' : 'bg-yt-error'} rounded-full ring-2 ring-yt-surface animate-pulse"></span>
           {/if}
         </a>
       {/each}
@@ -688,7 +731,7 @@
     <!-- Update Button -->
     <div class="px-3 mb-1">
       <button
-        onclick={() => { showUpdateDialog = true }}
+        onclick={() => { updateError = null; showUpdateDialog = true }}
         class="flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium text-yt-text-secondary hover:bg-yt-overlay hover:text-yt-text w-full"
       >
         <span class="material-symbols-outlined text-[20px]">system_update</span>
@@ -708,8 +751,8 @@
         <div class="flex items-center gap-2.5">
           <div class="relative">
              <span class="material-symbols-outlined text-yt-text-secondary group-hover:text-yt-text text-[20px]">downloading</span>
-             {#if (activeCount + pendingCount) > 0}
-              <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-yt-primary rounded-full ring-2 ring-yt-surface"></span>
+             {#if (activeCount + pendingCount + failedCount) > 0}
+              <span class="absolute -top-1 -right-1 w-2.5 h-2.5 {(activeCount + pendingCount) > 0 ? 'bg-yt-primary' : 'bg-yt-error'} rounded-full ring-2 ring-yt-surface"></span>
              {/if}
           </div>
           <div class="text-left">
@@ -1011,10 +1054,22 @@
       </div>
 
       <div class="flex-1 overflow-y-auto hide-scrollbar p-2 space-y-2">
-        {#if activeDownloads.length === 0 && recentCompleted.length === 0}
+        {#if activeDownloads.length === 0 && recentCompleted.length === 0 && failedCount === 0}
            <div class="py-8 text-center">
              <p class="text-xs text-yt-text-muted">{t("layout.noActiveDownloads")}</p>
            </div>
+        {/if}
+
+        {#if failedCount > 0}
+          <a
+            href="/tools/ytdlp/queue"
+            onclick={() => popupOpen = false}
+            class="flex items-center gap-2 px-2.5 py-2 rounded bg-yt-error/10 border border-yt-error/20 hover:bg-yt-error/15 transition-colors"
+          >
+            <span class="material-symbols-outlined text-yt-error text-[16px]">error</span>
+            <span class="text-xs text-yt-error font-medium flex-1">{t("layout.failedCount", { count: failedCount })}</span>
+            <span class="material-symbols-outlined text-yt-error/70 text-[14px]">chevron_right</span>
+          </a>
         {/if}
 
         {#each activeDownloads as item (item.id)}
@@ -1105,7 +1160,7 @@
             </div>
           {/if}
 
-          {#if updateDownloading}
+          {#if updateDownloading || updateReady}
             <div class="mb-4">
               <div class="flex items-center justify-between mb-2">
                 <p class="text-xs text-yt-text-secondary">
@@ -1122,8 +1177,48 @@
             </div>
           {/if}
 
+          {#if updateError}
+            <div class="mb-4 bg-yt-error/10 border border-yt-error/20 rounded-lg px-3 py-2 flex items-start gap-2">
+              <span class="material-symbols-outlined text-yt-error text-[18px] shrink-0 mt-0.5">error</span>
+              <div class="min-w-0">
+                <p class="text-xs text-yt-text font-medium">{t("update.failed")}</p>
+                <p class="text-xs text-yt-text-secondary mt-0.5 break-all">{updateError}</p>
+              </div>
+            </div>
+          {/if}
+
           <div class="flex gap-3">
-            {#if !updateDownloading}
+            {#if updateDownloading}
+              <!-- The download can't be aborted, but the dialog can be hidden; it re-surfaces
+                   once downloadAndInstall settles, so the app is never locked behind it. -->
+              <button
+                onclick={() => { showUpdateDialog = false }}
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
+              >
+                {t("update.hide")}
+              </button>
+              <button
+                disabled
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight text-yt-text-secondary text-sm font-medium cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                {t("update.downloading")}
+              </button>
+            {:else if updateReady}
+              <button
+                onclick={() => { showUpdateDialog = false }}
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
+              >
+                {t("update.later")}
+              </button>
+              <button
+                onclick={handleRestartNow}
+                class="flex-1 px-4 py-2 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]">restart_alt</span>
+                {t("update.restartNow")}
+              </button>
+            {:else}
               <button
                 onclick={() => { showUpdateDialog = false }}
                 class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
@@ -1136,14 +1231,6 @@
               >
                 <span class="material-symbols-outlined text-[18px]">download</span>
                 {t("update.install")}
-              </button>
-            {:else}
-              <button
-                disabled
-                class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight text-yt-text-secondary text-sm font-medium cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-                {t("update.downloading")}
               </button>
             {/if}
           </div>

@@ -322,6 +322,15 @@ const fr: Record<string, string> = {
   "error.appClosedDuringDownload": "L'application a été fermée pendant ce téléchargement.",
   "error.downloadPathUnavailable": "Le dossier de téléchargement est indisponible (disque déconnecté ou dossier impossible à créer). Vérifiez le chemin de téléchargement dans les Paramètres, puis réessayez.",
   "settings.cookieBrowserMissing": "{browser} (non détecté)",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "Échec du téléchargement : {title}",
+  "layout.failedCount": "{count} téléchargement(s) échoué(s)",
+  "queue.actionFailed": "L'action a échoué",
+  "update.failed": "Échec de la mise à jour",
+  "update.restartNow": "Redémarrer maintenant",
+  "update.restartManually": "La mise à jour a été installée, mais le redémarrage automatique a échoué. Veuillez redémarrer l'application manuellement.",
+  "update.hide": "Masquer",
 }
 
 export default fr

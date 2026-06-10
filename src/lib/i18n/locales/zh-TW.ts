@@ -322,6 +322,15 @@ const zhTW: Record<string, string> = {
   "error.appClosedDuringDownload": "下載進行時應用程式被關閉。",
   "error.downloadPathUnavailable": "下載資料夾無法使用（磁碟已中斷連線或無法建立資料夾）。請在設定中檢查下載路徑後再試。",
   "settings.cookieBrowserMissing": "{browser}（未偵測到）",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "下載失敗：{title}",
+  "layout.failedCount": "{count} 個下載失敗",
+  "queue.actionFailed": "操作失敗",
+  "update.failed": "更新失敗",
+  "update.restartNow": "立即重新啟動",
+  "update.restartManually": "更新已安裝，但自動重新啟動失敗。請手動重新啟動應用程式。",
+  "update.hide": "隱藏",
 }
 
 export default zhTW

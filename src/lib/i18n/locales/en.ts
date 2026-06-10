@@ -330,6 +330,15 @@ const en: Record<string, string> = {
   "error.appClosedDuringDownload": "The app was closed while this download was running.",
   "error.downloadPathUnavailable": "The download folder is unavailable (drive disconnected or folder can't be created). Check the download path in Settings and retry.",
   "settings.cookieBrowserMissing": "{browser} (not detected)",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "Download failed: {title}",
+  "layout.failedCount": "{count} download(s) failed",
+  "queue.actionFailed": "Action failed",
+  "update.failed": "Update failed",
+  "update.restartNow": "Restart now",
+  "update.restartManually": "The update was installed, but the app couldn't restart automatically. Please restart it manually.",
+  "update.hide": "Hide",
 }
 
 export default en
