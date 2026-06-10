@@ -62,11 +62,6 @@ bun run tauri build
 
 La compilación de producción se genera en `src-tauri/target/release/bundle/`.
 
-## Hoja de ruta
-
-1. Aplicación de descarga para usuarios móviles (puede alojar su propio servidor yt-dlp)
-2. Actualizador de versiones
-
 ## Créditos y Licencias de Terceros
 
 Esta aplicación incluye o descarga los siguientes binarios de código abierto:

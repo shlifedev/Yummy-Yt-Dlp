@@ -62,11 +62,6 @@ bun run tauri build
 
 Das Produktions-Build befindet sich in `src-tauri/target/release/bundle/`.
 
-## Roadmap
-
-1. Downloader-App für mobile Nutzer (Sie können Ihren eigenen yt-dlp-Server hosten)
-2. Versions-Updater
-
 ## Danksagungen & Drittanbieter-Lizenzen
 
 Diese App bündelt oder lädt die folgenden Open-Source-Binärdateien herunter:

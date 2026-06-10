@@ -62,11 +62,6 @@ bun run tauri build
 
 Kết quả biên dịch sản xuất nằm trong `src-tauri/target/release/bundle/`.
 
-## Lộ trình
-
-1. Ứng dụng tải xuống cho người dùng di động (bạn có thể tự lưu trữ máy chủ yt-dlp của riêng mình)
-2. Trình cập nhật phiên bản
-
 ## Ghi công & Giấy phép Bên thứ ba
 
 Ứng dụng này đóng gói hoặc tải xuống các tệp nhị phân mã nguồn mở sau:

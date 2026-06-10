@@ -62,11 +62,6 @@ bun run tauri build
 
 Le résultat de la compilation se trouve dans `src-tauri/target/release/bundle/`.
 
-## Feuille de route
-
-1. Application de téléchargement pour les utilisateurs mobiles (vous pouvez héberger votre propre serveur yt-dlp)
-2. Mise à jour automatique des versions
-
 ## Crédits et Licences Tierces
 
 Cette application intègre ou télécharge les binaires open source suivants :

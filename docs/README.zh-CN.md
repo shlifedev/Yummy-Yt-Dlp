@@ -62,11 +62,6 @@ bun run tauri build
 
 生产环境构建输出位于 `src-tauri/target/release/bundle/`。
 
-## 路线图
-
-1. 面向移动用户的下载器应用（可以自行托管 yt-dlp 服务器）
-2. 版本更新器
-
 ## 致谢与第三方许可证
 
 本应用捆绑或下载以下开源二进制文件：

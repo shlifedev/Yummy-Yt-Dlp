@@ -62,11 +62,6 @@ bun run tauri build
 
 正式環境建置輸出位於 `src-tauri/target/release/bundle/`。
 
-## 路線圖
-
-1. 面向行動裝置使用者的下載器應用程式（可以自行託管 yt-dlp 伺服器）
-2. 版本更新器
-
 ## 致謝與第三方授權
 
 本應用程式捆綁或下載以下開源二進位檔：

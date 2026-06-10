@@ -62,11 +62,6 @@ bun run tauri build
 
 A saída da compilação de produção estará em `src-tauri/target/release/bundle/`.
 
-## Roteiro
-
-1. Aplicativo de download para usuários móveis (você pode hospedar seu próprio servidor yt-dlp)
-2. Atualizador de versão
-
 ## Créditos e Licenças de Terceiros
 
 Este aplicativo inclui ou baixa os seguintes binários de código aberto:
