@@ -1,0 +1,3 @@
+# Placeholder so tauri-build resource validation (bundle.resources -> binaries/ytdlp)
+# passes at compile time (cargo check/clippy/dev). CI fills this dir with the
+# yt-dlp onedir tree before bundling.

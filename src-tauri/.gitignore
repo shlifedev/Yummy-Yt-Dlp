@@ -6,8 +6,12 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-# Bundled sidecar binaries fetched at build time (CI fills these; not committed)
+# Bundled sidecar binaries fetched at build time (CI fills these; not committed).
+# binaries/ytdlp/ must still exist at compile time so tauri-build can validate the
+# bundle.resources path during cargo check/clippy; keep its .gitkeep, ignore contents.
 /binaries/yt-dlp*
-/binaries/ytdlp/
+/binaries/ytdlp/*
+!/binaries/ytdlp/.gitkeep
 /binaries/ffmpeg*
 /binaries/ffprobe*
+/binaries/deno*
