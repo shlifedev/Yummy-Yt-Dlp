@@ -274,6 +274,16 @@ pub fn clamp_max_concurrent(n: u32) -> u32 {
     n.clamp(1, MAX_CONCURRENT_LIMIT)
 }
 
+/// Maximum --sleep-interval in seconds. Generous for rate-limit avoidance while staying far
+/// below the 6h download timeout (yt-dlp can sleep once per format, so a merged video+audio
+/// download may wait twice). Mirrored by MAX_SLEEP_INTERVAL in src/lib/advanced.ts.
+pub const MAX_SLEEP_INTERVAL_SECS: u32 = 600;
+
+/// Clamp the advanced sleep_interval to [0, MAX_SLEEP_INTERVAL_SECS].
+pub fn clamp_sleep_interval(secs: u32) -> u32 {
+    secs.min(MAX_SLEEP_INTERVAL_SECS)
+}
+
 /// Sanitize error messages before sending to the frontend.
 /// Removes potentially sensitive data: the user's home directory, credential-like URL
 /// query parameters, and OS temp paths that leak the local username or layout.
@@ -613,6 +623,14 @@ mod tests {
         assert_eq!(clamp_max_concurrent(5), 5);
         assert_eq!(clamp_max_concurrent(100), MAX_CONCURRENT_LIMIT);
         assert_eq!(clamp_max_concurrent(u32::MAX), MAX_CONCURRENT_LIMIT);
+    }
+
+    #[test]
+    fn test_clamp_sleep_interval() {
+        assert_eq!(clamp_sleep_interval(0), 0);
+        assert_eq!(clamp_sleep_interval(30), 30);
+        assert_eq!(clamp_sleep_interval(86_400), MAX_SLEEP_INTERVAL_SECS);
+        assert_eq!(clamp_sleep_interval(u32::MAX), MAX_SLEEP_INTERVAL_SECS);
     }
 
     // === Advanced option validators ===

@@ -128,7 +128,8 @@ pub fn build_advanced_args(
     }
     if adv.sleep_interval > 0 {
         args.push("--sleep-interval".to_string());
-        args.push(adv.sleep_interval.min(86_400).to_string());
+        // Load-bearing clamp: also sanitizes oversized values persisted before the cap existed.
+        args.push(security::clamp_sleep_interval(adv.sleep_interval).to_string());
     }
 
     // --- Container (video only) ---
@@ -316,6 +317,32 @@ mod tests {
         assert_eq!(
             val_after(&build_advanced_args(&adv, false, true), "--retries"),
             Some(&"100".to_string())
+        );
+    }
+
+    #[test]
+    fn sleep_interval_clamped() {
+        let adv = AdvancedOptions::default();
+        assert!(!has(
+            &build_advanced_args(&adv, false, true),
+            "--sleep-interval"
+        ));
+        let adv = AdvancedOptions {
+            sleep_interval: 30,
+            ..Default::default()
+        };
+        assert_eq!(
+            val_after(&build_advanced_args(&adv, false, true), "--sleep-interval"),
+            Some(&"30".to_string())
+        );
+        // Oversized values persisted before the cap existed must be clamped here too.
+        let adv = AdvancedOptions {
+            sleep_interval: 86_400,
+            ..Default::default()
+        };
+        assert_eq!(
+            val_after(&build_advanced_args(&adv, false, true), "--sleep-interval"),
+            Some(&security::MAX_SLEEP_INTERVAL_SECS.to_string())
         );
     }
 

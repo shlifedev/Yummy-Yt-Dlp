@@ -43,9 +43,11 @@ pub fn update_settings(app: AppHandle, settings: AppSettings) -> Result<(), AppE
         security::sanitize_proxy(&adv.proxy)?;
     }
 
-    // Clamp max_concurrent to safe range
+    // Clamp max_concurrent and sleep_interval to safe ranges
     let mut settings = settings;
     settings.max_concurrent = security::clamp_max_concurrent(settings.max_concurrent);
+    settings.advanced.sleep_interval =
+        security::clamp_sleep_interval(settings.advanced.sleep_interval);
 
     // Snapshot the dependency-affecting settings to know whether to drop the cache.
     let old = crate::ytdlp::settings::get_settings(&app).ok();
@@ -108,7 +110,7 @@ pub fn get_available_browsers() -> Vec<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let checks: &[(&str, &str)] = &[
+        let mut checks: Vec<(&str, String)> = [
             (
                 "chrome",
                 r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -130,9 +132,40 @@ pub fn get_available_browsers() -> Vec<String> {
                 "brave",
                 r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
             ),
-        ];
+            ("opera", r"C:\Program Files\Opera\opera.exe"),
+            (
+                "vivaldi",
+                r"C:\Program Files\Vivaldi\Application\vivaldi.exe",
+            ),
+            (
+                "whale",
+                r"C:\Program Files\Naver\Naver Whale\Application\whale.exe",
+            ),
+        ]
+        .iter()
+        .map(|(name, path)| (*name, path.to_string()))
+        .collect();
 
-        for (name, path) in checks {
+        // Per-user installs: Chrome's default without admin rights, and the usual home of
+        // user-level Edge/Brave/Opera/Vivaldi/Whale setups.
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            for (name, rel) in [
+                ("chrome", r"Google\Chrome\Application\chrome.exe"),
+                ("firefox", r"Mozilla Firefox\firefox.exe"),
+                ("edge", r"Microsoft\Edge\Application\msedge.exe"),
+                (
+                    "brave",
+                    r"BraveSoftware\Brave-Browser\Application\brave.exe",
+                ),
+                ("opera", r"Programs\Opera\opera.exe"),
+                ("vivaldi", r"Vivaldi\Application\vivaldi.exe"),
+                ("whale", r"Naver\Naver Whale\Application\whale.exe"),
+            ] {
+                checks.push((name, format!(r"{}\{}", local, rel)));
+            }
+        }
+
+        for (name, path) in &checks {
             if std::path::Path::new(path).exists() && !browsers.contains(&name.to_string()) {
                 browsers.push(name.to_string());
             }
@@ -150,7 +183,7 @@ pub fn get_available_browsers() -> Vec<String> {
         ];
 
         for (name, path) in checks {
-            if std::path::Path::new(path).exists() {
+            if std::path::Path::new(path).exists() && !browsers.contains(&name.to_string()) {
                 browsers.push(name.to_string());
             }
         }
@@ -158,7 +191,7 @@ pub fn get_available_browsers() -> Vec<String> {
 
     #[cfg(target_os = "linux")]
     {
-        let checks: &[(&str, &str)] = &[
+        let mut checks: Vec<(&str, String)> = [
             ("chrome", "/usr/bin/google-chrome-stable"),
             ("chrome", "/usr/bin/google-chrome"),
             ("chromium", "/usr/bin/chromium-browser"),
@@ -166,9 +199,40 @@ pub fn get_available_browsers() -> Vec<String> {
             ("firefox", "/usr/bin/firefox"),
             ("brave", "/usr/bin/brave-browser"),
             ("edge", "/usr/bin/microsoft-edge"),
-        ];
+            // Snap installs (Ubuntu ships firefox/chromium as snaps by default)
+            ("firefox", "/snap/bin/firefox"),
+            ("chromium", "/snap/bin/chromium"),
+            ("brave", "/snap/bin/brave"),
+            ("opera", "/snap/bin/opera"),
+        ]
+        .iter()
+        .map(|(name, path)| (*name, path.to_string()))
+        .collect();
 
-        for (name, path) in checks {
+        // Flatpak installs: system-wide exports plus the per-user export/app dirs.
+        const FLATPAK_IDS: &[(&str, &str)] = &[
+            ("firefox", "org.mozilla.firefox"),
+            ("chrome", "com.google.Chrome"),
+            ("chromium", "org.chromium.Chromium"),
+            ("brave", "com.brave.Browser"),
+            ("edge", "com.microsoft.Edge"),
+            ("opera", "com.opera.Opera"),
+            ("vivaldi", "com.vivaldi.Vivaldi"),
+        ];
+        for &(name, id) in FLATPAK_IDS {
+            checks.push((name, format!("/var/lib/flatpak/exports/bin/{}", id)));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            for &(name, id) in FLATPAK_IDS {
+                checks.push((
+                    name,
+                    format!("{}/.local/share/flatpak/exports/bin/{}", home, id),
+                ));
+                checks.push((name, format!("{}/.var/app/{}", home, id)));
+            }
+        }
+
+        for (name, path) in &checks {
             if std::path::Path::new(path).exists() && !browsers.contains(&name.to_string()) {
                 browsers.push(name.to_string());
             }

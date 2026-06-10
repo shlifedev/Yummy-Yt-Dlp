@@ -133,6 +133,11 @@ pub fn run() {
             }
             app.manage(Arc::new(db));
 
+            // Recover from a settings.json corrupted by a mid-write crash BEFORE anything
+            // opens the store (first user is setup_tray below): the store plugin silently
+            // loads a broken file as empty and its next save would wipe every setting.
+            ytdlp::settings::recover_corrupt_settings(&app_data_dir);
+
             // Initialize DownloadManager with max_concurrent from settings
             let settings =
                 ytdlp::settings::get_settings_from_path(&app_data_dir).unwrap_or_default();
