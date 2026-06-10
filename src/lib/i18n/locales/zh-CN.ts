@@ -264,10 +264,10 @@ const zhCN: Record<string, string> = {
   "error.videoUnavailable": "该视频不可用。",
   "error.unsupportedUrl": "不支持的 URL 格式。",
   "error.tooManyRequests": "请求过多，请稍后再试。",
-  "error.siteBlocked": "网站拦截了请求（HTTP 410）。浏览器伪装重试也失败了。请稍后重试，或更新 yt-dlp／配置 Cookie。",
+  "error.siteBlocked": "网站拦截了请求（HTTP 410/403）。浏览器伪装重试也失败了。请稍后重试，或更新 yt-dlp／配置 Cookie。",
   "error.noFormats": "未找到视频格式，可能是直播。",
   "error.ageRestricted": "年龄限制内容。请在设置中指定 Cookie 浏览器。",
-  "error.cookieAccess": "无法访问浏览器 Cookie。请完全退出浏览器，或使用 Firefox Cookie。",
+  "error.cookieAccess": "无法访问浏览器 Cookie。请完全退出浏览器，或在设置中更改/清除 Cookie 浏览器。",
   "error.ytdlpGeneric": "获取视频信息失败。",
   "error.ytdlpExecFailed": "运行 yt-dlp 失败。",
   "error.fetchTimeout": "请求超时，请检查网络连接。",
@@ -311,6 +311,15 @@ const zhCN: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "在文件夹中显示",
   "history.deleteItem": "删除",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube 将该请求识别为自动化流量（人机验证）。请在设置中指定 Cookie 浏览器以登录状态访问。",
+  "error.impersonateUnavailable": "当前 yt-dlp 不支持浏览器伪装（缺少 curl_cffi）。请在设置中更新或重新安装 yt-dlp 后重试。",
+  "error.invalidOptions": "yt-dlp 无法识别下载选项。您的 yt-dlp 可能已过时，请在设置中更新。",
+  "error.ytdlpNotFound": "未找到 yt-dlp。请在 设置 → 依赖项 中安装。",
+  "error.appClosedDuringDownload": "下载进行时应用被关闭。",
+  "error.downloadPathUnavailable": "下载文件夹不可用（驱动器已断开或无法创建文件夹）。请在设置中检查下载路径后重试。",
+  "settings.cookieBrowserMissing": "{browser}（未检测到）",
 }
 
 export default zhCN

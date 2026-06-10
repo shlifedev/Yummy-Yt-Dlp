@@ -264,10 +264,10 @@ const zhTW: Record<string, string> = {
   "error.videoUnavailable": "此影片無法使用。",
   "error.unsupportedUrl": "不支援的 URL 格式。",
   "error.tooManyRequests": "請求過多，請稍後再試。",
-  "error.siteBlocked": "網站封鎖了請求（HTTP 410）。瀏覽器偽裝重試也失敗了。請稍後重試，或更新 yt-dlp／設定 Cookie。",
+  "error.siteBlocked": "網站封鎖了請求（HTTP 410/403）。瀏覽器偽裝重試也失敗了。請稍後重試，或更新 yt-dlp／設定 Cookie。",
   "error.noFormats": "找不到影片格式，可能是直播。",
   "error.ageRestricted": "年齡限制內容。請在設定中指定 Cookie 瀏覽器。",
-  "error.cookieAccess": "無法存取瀏覽器 Cookie。請完全結束瀏覽器，或使用 Firefox Cookie。",
+  "error.cookieAccess": "無法存取瀏覽器 Cookie。請完全結束瀏覽器，或在設定中變更/清除 Cookie 瀏覽器。",
   "error.ytdlpGeneric": "取得影片資訊失敗。",
   "error.ytdlpExecFailed": "執行 yt-dlp 失敗。",
   "error.fetchTimeout": "請求逾時，請檢查網路連線。",
@@ -311,6 +311,15 @@ const zhTW: Record<string, string> = {
   // Added: history actions
   "history.revealInFolder": "在資料夾中顯示",
   "history.deleteItem": "刪除",
+
+  // Added: error classification & i18n fixes
+  "error.botCheck": "YouTube 將該請求視為自動化流量（人機驗證）。請在設定中指定 Cookie 瀏覽器以登入狀態存取。",
+  "error.impersonateUnavailable": "目前的 yt-dlp 不支援瀏覽器偽裝（缺少 curl_cffi）。請在設定中更新或重新安裝 yt-dlp 後再試。",
+  "error.invalidOptions": "yt-dlp 無法識別下載選項。您的 yt-dlp 可能已過時，請在設定中更新。",
+  "error.ytdlpNotFound": "找不到 yt-dlp。請在 設定 → 相依性 中安裝。",
+  "error.appClosedDuringDownload": "下載進行時應用程式被關閉。",
+  "error.downloadPathUnavailable": "下載資料夾無法使用（磁碟已中斷連線或無法建立資料夾）。請在設定中檢查下載路徑後再試。",
+  "settings.cookieBrowserMissing": "{browser}（未偵測到）",
 }
 
 export default zhTW

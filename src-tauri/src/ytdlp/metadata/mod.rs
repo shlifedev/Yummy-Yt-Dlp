@@ -15,29 +15,10 @@ pub use validation::*;
 /// user's current UI language (see `extractError` + `src/lib/i18n/locales`). The raw stderr is
 /// logged by the caller, so messages stay clean and fully localized for every language.
 fn map_stderr_error(stderr: &str) -> AppError {
-    if stderr.contains("Private video") || stderr.contains("Sign in") {
-        return AppError::MetadataError("error.privateVideo".to_string());
-    }
-    if stderr.contains("Video unavailable") || stderr.contains("not available") {
-        return AppError::MetadataError("error.videoUnavailable".to_string());
-    }
-    if stderr.contains("is not a valid URL") || stderr.contains("Unsupported URL") {
-        return AppError::InvalidUrl("error.unsupportedUrl".to_string());
-    }
-    if stderr.contains("HTTP Error 429") || stderr.contains("Too Many Requests") {
-        return AppError::NetworkError("error.tooManyRequests".to_string());
-    }
-    // 410이 여기까지 왔다는 건 --impersonate 자동 재시도(run_with_impersonate_fallback)에도
-    // 여전히 차단됐다는 뜻이다.
-    if stderr.contains("HTTP Error 410") || stderr.contains(": Gone") {
-        return AppError::MetadataError("error.siteBlocked".to_string());
-    }
-    if stderr.contains("No video formats found") {
-        return AppError::MetadataError("error.noFormats".to_string());
-    }
-    // Match specific age-restriction phrases only. A bare "age" substring also matches the
-    // very common "Unable to download webpage" error, mislabeling network failures as
-    // age-restricted content.
+    // Match specific age-restriction phrases only, and BEFORE any "Sign in" handling: the real
+    // YouTube age gate is "Sign in to confirm your age. This video may be inappropriate for
+    // some users." A bare "age" substring also matches the very common "Unable to download
+    // webpage" error, mislabeling network failures as age-restricted content.
     if stderr.contains("confirm your age")
         || stderr.contains("age-restricted")
         || stderr.contains("age restricted")
@@ -45,8 +26,54 @@ fn map_stderr_error(stderr: &str) -> AppError {
     {
         return AppError::MetadataError("error.ageRestricted".to_string());
     }
-    if stderr.contains("Could not copy") && stderr.contains("cookie") {
+    // YouTube anti-bot check: "Sign in to confirm you're not a bot. Use --cookies-from-browser
+    // ...". Matching "not a bot" sidesteps the apostrophe variants (you're / you’re).
+    if stderr.contains("not a bot") {
+        return AppError::MetadataError("error.botCheck".to_string());
+    }
+    if stderr.contains("Private video") {
+        return AppError::MetadataError("error.privateVideo".to_string());
+    }
+    // The --impersonate retry against a yt-dlp built without curl_cffi fails with
+    // 'Impersonate target "chrome" is not available' — match it before the broad
+    // "not available" branch below so a live video isn't reported as unavailable.
+    if stderr.contains("Impersonate target") || stderr.contains("curl_cffi") {
+        return AppError::MetadataError("error.impersonateUnavailable".to_string());
+    }
+    if stderr.contains("Video unavailable") || stderr.contains("not available") {
+        return AppError::MetadataError("error.videoUnavailable".to_string());
+    }
+    if stderr.contains("is not a valid URL") || stderr.contains("Unsupported URL") {
+        return AppError::InvalidUrl("error.unsupportedUrl".to_string());
+    }
+    // 429 must stay before the 403 branch: rate limiting isn't fixable with cookies.
+    if stderr.contains("HTTP Error 429") || stderr.contains("Too Many Requests") {
+        return AppError::NetworkError("error.tooManyRequests".to_string());
+    }
+    // 410/403이 여기까지 왔다는 건 --impersonate 자동 재시도(run_with_impersonate_fallback)에도
+    // 여전히 차단됐다는 뜻이다.
+    if stderr.contains("HTTP Error 410")
+        || stderr.contains(": Gone")
+        || stderr.contains("HTTP Error 403")
+        || stderr.contains("Forbidden")
+    {
+        return AppError::MetadataError("error.siteBlocked".to_string());
+    }
+    if stderr.contains("No video formats found") {
+        return AppError::MetadataError("error.noFormats".to_string());
+    }
+    // "Could not copy" = cookie DB locked by a running browser; "cookies database" = yt-dlp's
+    // lowercase "could not find <browser> cookies database in ..." for an uninstalled browser
+    // or an unreadable profile (e.g. Safari without Full Disk Access).
+    if (stderr.contains("Could not copy") && stderr.contains("cookie"))
+        || stderr.contains("cookies database")
+    {
         return AppError::MetadataError("error.cookieAccess".to_string());
+    }
+    // Late catch-all: nearly every remaining "Sign in ..." yt-dlp error is cookie-fixable, so
+    // keep the coverage the old broad "Sign in" branch had, just with an accurate label.
+    if stderr.contains("Sign in") {
+        return AppError::MetadataError("error.botCheck".to_string());
     }
 
     AppError::MetadataError("error.ytdlpGeneric".to_string())
@@ -107,7 +134,89 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::looks_like_antibot_block;
+    use super::{looks_like_antibot_block, map_stderr_error};
+    use crate::modules::types::AppError;
+
+    fn key(stderr: &str) -> String {
+        match map_stderr_error(stderr) {
+            AppError::MetadataError(k) | AppError::InvalidUrl(k) | AppError::NetworkError(k) => k,
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bot_check_wins_over_private_video() {
+        // Real YouTube anti-bot message (the dominant failure since 2024).
+        assert_eq!(
+            key("ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication."),
+            "error.botCheck"
+        );
+    }
+
+    #[test]
+    fn age_gate_wins_over_sign_in() {
+        // Real YouTube age-gate message also starts with "Sign in".
+        assert_eq!(
+            key("ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users."),
+            "error.ageRestricted"
+        );
+    }
+
+    #[test]
+    fn private_video_still_matches() {
+        assert_eq!(
+            key("ERROR: [youtube] abc: Private video. Sign in if you've been granted access to this video"),
+            "error.privateVideo"
+        );
+    }
+
+    #[test]
+    fn bare_sign_in_falls_back_to_bot_check() {
+        assert_eq!(
+            key("ERROR: [youtube] abc: Sign in to view this content"),
+            "error.botCheck"
+        );
+    }
+
+    #[test]
+    fn impersonate_target_not_available_is_not_video_unavailable() {
+        assert_eq!(
+            key("ERROR: Impersonate target \"chrome\" is not available. You may be missing dependencies required to support this target."),
+            "error.impersonateUnavailable"
+        );
+    }
+
+    #[test]
+    fn geo_block_still_maps_to_video_unavailable() {
+        assert_eq!(
+            key("ERROR: [youtube] abc: This video is not available in your country"),
+            "error.videoUnavailable"
+        );
+    }
+
+    #[test]
+    fn persistent_403_maps_to_site_blocked() {
+        assert_eq!(
+            key("ERROR: unable to download video data: HTTP Error 403: Forbidden"),
+            "error.siteBlocked"
+        );
+    }
+
+    #[test]
+    fn rate_limit_stays_too_many_requests() {
+        assert_eq!(
+            key("ERROR: HTTP Error 429: Too Many Requests"),
+            "error.tooManyRequests"
+        );
+    }
+
+    #[test]
+    fn missing_cookies_database_maps_to_cookie_access() {
+        assert_eq!(
+            key("ERROR: could not find chrome cookies database in \"~/Library/Application Support/Google/Chrome\""),
+            "error.cookieAccess"
+        );
+    }
 
     #[test]
     fn antibot_block_detects_410_and_403() {
