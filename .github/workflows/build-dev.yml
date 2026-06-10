@@ -1,0 +1,266 @@
+name: Build Dev
+
+# Dev builds: produce installable bundles (sidecars included) and publish them
+# to a single rolling "dev" GitHub pre-release. Unlike Build & Release (main), this
+# workflow does NOT bump the version, does NOT create a semver tag/CHANGELOG, and
+# does NOT upload anything to Cloudflare R2 — so the auto-updater is never touched.
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-dev
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows
+          - platform: macos-14
+            target: universal-apple-darwin
+            name: macos
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: ${{ matrix.name }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # Gate the dev build on the same lint/type checks as CI so a broken dev
+      # commit never produces a publishable bundle.
+      - name: Svelte/TypeScript check
+        run: bun run check
+
+      - name: Rust fmt & clippy
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo fmt -- --check
+          cargo clippy --target ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin' || matrix.target }} -- -D warnings
+
+      # Compute a dev label "<currentVersion>-dev.<shortsha>" for artifact/release naming.
+      # We deliberately do NOT write this into package.json/tauri.conf.json/Cargo.toml:
+      # the Windows MSI/NSIS bundlers reject semver pre-release identifiers, so the
+      # internal bundle version stays the numeric current version (no bump).
+      - name: Compute dev label
+        id: devlabel
+        shell: bash
+        run: |
+          BASE_VERSION=$(jq -r '.version' package.json)
+          SHORT_SHA="${GITHUB_SHA::7}"
+          DEV_LABEL="${BASE_VERSION}-dev.${SHORT_SHA}"
+          echo "label=${DEV_LABEL}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Dev label: ${DEV_LABEL}"
+
+      # Sidecar binaries (yt-dlp, ffmpeg, ffprobe, deno) are bundled via bundle.resources.
+      # URLs mirror dep_ytdlp.rs / dep_ffmpeg.rs / dep_deno.rs. ffprobe is optional (skip if absent).
+      # yt-dlp ships as a PyInstaller onedir zip (executable + _internal/); we extract the
+      # whole tree to binaries/ytdlp/ so the executable can find its bundled runtime.
+      - name: Prepare bundled binaries (Windows)
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip" -o /tmp/ytdlp.zip
+          rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
+          unzip -l /tmp/ytdlp.zip | head -20
+          unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
+          mkdir -p "$BIN/ytdlp"
+          cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
+          # The onedir zip already names the executable yt-dlp.exe; fail loudly if the
+          # layout ever changes so we never ship a bundle that can't resolve yt-dlp.
+          test -f "$BIN/ytdlp/yt-dlp.exe"
+          test -d "$BIN/ytdlp/_internal"
+          ls -la "$BIN/ytdlp"
+          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -o /tmp/ffmpeg.zip
+          unzip -q /tmp/ffmpeg.zip -d /tmp/ffx
+          cp "$(find /tmp/ffx -type f -name ffmpeg.exe | head -1)" "$BIN/ffmpeg.exe"
+          PROBE=$(find /tmp/ffx -type f -name ffprobe.exe | head -1 || true)
+          [ -n "$PROBE" ] && cp "$PROBE" "$BIN/ffprobe.exe"
+          curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -o /tmp/deno.zip
+          unzip -q /tmp/deno.zip -d /tmp/denox
+          cp "$(find /tmp/denox -type f -name deno.exe | head -1)" "$BIN/deno.exe"
+          ls -la "$BIN"
+
+      # macOS is a universal build: the yt-dlp_macos onedir executable is already
+      # universal2; ffmpeg/deno are per-arch, so lipo arm64+x64 into fat binaries.
+      - name: Prepare bundled binaries (macOS universal)
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip" -o /tmp/ytdlp.zip
+          rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
+          unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
+          mkdir -p "$BIN/ytdlp"
+          cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
+          # yt-dlp_macos.zip ships the executable as yt-dlp_macos; normalize to yt-dlp.
+          mv "$BIN/ytdlp/yt-dlp_macos" "$BIN/ytdlp/yt-dlp"
+          chmod +x "$BIN/ytdlp/yt-dlp"
+          test -d "$BIN/ytdlp/_internal"
+          # The bundled executable is the universal2 build straight from upstream.
+          file "$BIN/ytdlp/yt-dlp"
+          for ARCH in arm64 x64; do
+            curl -fL "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${ARCH}.tar.gz" -o "/tmp/ffmpeg-${ARCH}.tar.gz"
+            mkdir -p "/tmp/ff-${ARCH}" && tar -xzf "/tmp/ffmpeg-${ARCH}.tar.gz" -C "/tmp/ff-${ARCH}"
+          done
+          lipo -create \
+            "$(find /tmp/ff-arm64 -type f -name ffmpeg | head -1)" \
+            "$(find /tmp/ff-x64 -type f -name ffmpeg | head -1)" \
+            -output "$BIN/ffmpeg"
+          chmod +x "$BIN/ffmpeg"
+          PA=$(find /tmp/ff-arm64 -type f -name ffprobe | head -1 || true)
+          PX=$(find /tmp/ff-x64 -type f -name ffprobe | head -1 || true)
+          if [ -n "$PA" ] && [ -n "$PX" ]; then
+            lipo -create "$PA" "$PX" -output "$BIN/ffprobe"
+            chmod +x "$BIN/ffprobe"
+          fi
+          for ARCH in aarch64 x86_64; do
+            curl -fL "https://github.com/denoland/deno/releases/latest/download/deno-${ARCH}-apple-darwin.zip" -o "/tmp/deno-${ARCH}.zip"
+            mkdir -p "/tmp/deno-${ARCH}" && unzip -q "/tmp/deno-${ARCH}.zip" -d "/tmp/deno-${ARCH}"
+          done
+          lipo -create \
+            "$(find /tmp/deno-aarch64 -type f -name deno | head -1)" \
+            "$(find /tmp/deno-x86_64 -type f -name deno | head -1)" \
+            -output "$BIN/deno"
+          chmod +x "$BIN/deno"
+          lipo -info "$BIN/ffmpeg" "$BIN/deno"
+          ls -la "$BIN" "$BIN/ytdlp"
+
+      # No TAURI_SIGNING_* env here: dev builds are unsigned for the updater since they
+      # never feed the R2 updater manifest. (App code signing, if any, is separate.)
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: bun run tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Rename portable exe
+        if: matrix.name == 'windows'
+        shell: bash
+        env:
+          DEV_LABEL: ${{ steps.devlabel.outputs.label }}
+        run: |
+          cp "src-tauri/target/${{ matrix.target }}/release/yummy-yt-dlp.exe" \
+             "src-tauri/target/${{ matrix.target }}/release/bundle/yummy-yt-dlp_${DEV_LABEL}_portable.exe"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-build-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/*portable*.exe
+          if-no-files-found: ignore
+
+  publish-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f | head -50
+
+      - name: Compute dev label
+        id: devlabel
+        shell: bash
+        run: |
+          BASE_VERSION=$(jq -r '.version' package.json)
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "label=${BASE_VERSION}-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # Roll the single "dev" tag forward to this commit. Deleting the old release +
+      # tag first ensures the rolling release always points at the latest dev commit
+      # and never accumulates stale assets.
+      - name: Reset rolling dev release & tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete dev --cleanup-tag --yes 2>/dev/null || true
+          git push origin :refs/tags/dev 2>/dev/null || true
+
+      - name: Prepare release body
+        env:
+          DEV_LABEL: ${{ steps.devlabel.outputs.label }}
+          SHORT_SHA: ${{ steps.devlabel.outputs.short_sha }}
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          {
+            echo "**Dev build** — unstable, for testing only."
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | \`${DEV_LABEL}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Built | ${BUILD_DATE} |"
+            echo ""
+            echo "Latest dev commit: ${COMMIT_MSG}"
+            echo ""
+            echo "> This build is **not** published to the auto-updater. Install manually."
+          } > release_body.md
+          cat release_body.md
+
+      - name: Publish rolling dev pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev
+          name: Dev Build (${{ steps.devlabel.outputs.label }})
+          body_path: release_body.md
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.dmg

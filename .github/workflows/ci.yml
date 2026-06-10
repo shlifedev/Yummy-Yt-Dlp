@@ -1,9 +1,8 @@
 name: CI
 
+# Dev branch pushes are handled by build-dev.yml (full bundle build + dev pre-release),
+# which runs the same lint/type gate — so this lightweight CI runs on PRs only.
 on:
-  push:
-    branches:
-      - dev
   pull_request:
     branches:
       - main
