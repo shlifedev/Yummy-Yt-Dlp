@@ -65,9 +65,7 @@ const zhCN: Record<string, string> = {
   "download.selectAll": "全选",
   "download.deselect": "取消选择",
   "download.noTitle": "无标题",
-  "download.loadMore": "加载更多",
   "download.loading": "加载中...",
-  "download.loadingMore": "继续加载中",
   "download.format": "格式",
   "download.quality": "画质",
   "download.lossless": "无损",
@@ -280,9 +278,11 @@ const zhCN: Record<string, string> = {
   "error.downloadCancelled": "下载已取消。",
   "error.downloadTimeout": "下载超时（最长 6 小时）。",
   "error.unknown": "发生未知错误。",
+  "error.noEntries": "未在该播放列表或频道中找到视频。",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "{count} 个视频",
+  "download.videosFound": "已发现 {count} 个视频…",
   "download.filenamePreview": "预览：",
   "download.showSkipped": "显示已跳过",
   "download.hideSkipped": "隐藏已跳过",

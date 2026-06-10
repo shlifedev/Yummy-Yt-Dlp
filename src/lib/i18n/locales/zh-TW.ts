@@ -65,9 +65,7 @@ const zhTW: Record<string, string> = {
   "download.selectAll": "全選",
   "download.deselect": "取消選擇",
   "download.noTitle": "無標題",
-  "download.loadMore": "載入更多",
   "download.loading": "載入中...",
-  "download.loadingMore": "繼續載入中",
   "download.format": "格式",
   "download.quality": "畫質",
   "download.lossless": "無損",
@@ -280,9 +278,11 @@ const zhTW: Record<string, string> = {
   "error.downloadCancelled": "下載已取消。",
   "error.downloadTimeout": "下載逾時（最長 6 小時）。",
   "error.unknown": "發生未知錯誤。",
+  "error.noEntries": "未在該播放清單或頻道中找到影片。",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "{count} 部影片",
+  "download.videosFound": "已找到 {count} 部影片…",
   "download.filenamePreview": "預覽：",
   "download.showSkipped": "顯示已略過",
   "download.hideSkipped": "隱藏已略過",

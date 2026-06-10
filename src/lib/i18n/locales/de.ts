@@ -65,9 +65,7 @@ const de: Record<string, string> = {
   "download.selectAll": "Alle auswählen",
   "download.deselect": "Abwählen",
   "download.noTitle": "Kein Titel",
-  "download.loadMore": "Mehr laden",
   "download.loading": "Wird geladen...",
-  "download.loadingMore": "lädt weiter",
   "download.format": "Format",
   "download.quality": "Qualität",
   "download.lossless": "Verlustfrei",
@@ -280,9 +278,11 @@ const de: Record<string, string> = {
   "error.downloadCancelled": "Download abgebrochen.",
   "error.downloadTimeout": "Zeitüberschreitung beim Download (max. 6 Stunden).",
   "error.unknown": "Ein unbekannter Fehler ist aufgetreten.",
+  "error.noEntries": "Keine Videos in dieser Playlist oder diesem Kanal gefunden.",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "{count} Videos",
+  "download.videosFound": "{count} Videos gefunden…",
   "download.filenamePreview": "Vorschau:",
   "download.showSkipped": "Übersprungene anzeigen",
   "download.hideSkipped": "Übersprungene ausblenden",

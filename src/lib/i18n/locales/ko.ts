@@ -65,9 +65,7 @@ const ko: Record<string, string> = {
   "download.selectAll": "전체 선택",
   "download.deselect": "선택 해제",
   "download.noTitle": "제목 없음",
-  "download.loadMore": "더 보기",
   "download.loading": "불러오는 중...",
-  "download.loadingMore": "추가 로드중",
   "download.format": "형식",
   "download.quality": "화질",
   "download.lossless": "무손실",
@@ -280,9 +278,11 @@ const ko: Record<string, string> = {
   "error.downloadCancelled": "다운로드가 취소되었습니다.",
   "error.downloadTimeout": "다운로드 시간이 초과되었습니다(최대 6시간).",
   "error.unknown": "알 수 없는 오류가 발생했습니다.",
+  "error.noEntries": "재생목록/채널에서 영상을 찾지 못했습니다.",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "영상 {count}개",
+  "download.videosFound": "{count}개 영상 발견…",
   "download.filenamePreview": "미리보기:",
   "download.showSkipped": "건너뛴 항목 보기",
   "download.hideSkipped": "건너뛴 항목 숨기기",

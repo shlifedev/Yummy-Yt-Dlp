@@ -15,6 +15,7 @@ pub mod modules {
 
 pub type DbState = Arc<ytdlp::db::Database>;
 pub type DownloadManagerState = Arc<ytdlp::download::DownloadManager>;
+pub type ScanManagerState = Arc<ytdlp::metadata::ScanManager>;
 pub type LogDbState = Arc<modules::log_db::LogDatabase>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,7 +43,8 @@ pub fn run() {
             ytdlp::metadata::validate_url,
             ytdlp::metadata::detect_url_type,
             ytdlp::metadata::fetch_video_info,
-            ytdlp::metadata::fetch_playlist_info,
+            ytdlp::metadata::start_playlist_scan,
+            ytdlp::metadata::cancel_playlist_scan,
             ytdlp::metadata::fetch_quick_metadata,
             ytdlp::download::start_download,
             ytdlp::download::add_to_queue,
@@ -70,6 +72,7 @@ pub fn run() {
             ytdlp::types::GlobalDownloadEvent,
             ytdlp::types::DepInstallEvent,
             ytdlp::types::NewLogEvent,
+            ytdlp::types::PlaylistScanEvent,
         ]);
 
     #[cfg(debug_assertions)]
@@ -137,6 +140,8 @@ pub fn run() {
                 settings.max_concurrent,
             ));
             app.manage(download_manager);
+
+            app.manage(Arc::new(ytdlp::metadata::ScanManager::default()));
 
             // Setup system tray. Treat tray setup as best-effort: if the OS doesn't provide a
             // window icon (or tray creation otherwise fails), log and continue rather than
@@ -210,6 +215,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let manager = app_handle.state::<DownloadManagerState>();
                 manager.cancel_all();
+                app_handle.state::<ScanManagerState>().cancel_current();
             }
         });
 }

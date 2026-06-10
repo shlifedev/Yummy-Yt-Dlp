@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { commands, type PlaylistResult, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions } from "$lib/bindings"
+  import { commands, type PlaylistScanMeta, type PlaylistScanEvent, type PlaylistEntry, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions } from "$lib/bindings"
   import {
     defaultAdvancedOptions,
     validateAdvancedField,
@@ -9,12 +9,12 @@
     SUB_CONVERT_FORMATS,
   } from "$lib/advanced"
   import { platform } from "@tauri-apps/plugin-os"
+  import { listen } from "@tauri-apps/api/event"
   import { onMount, onDestroy } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
   import { extractError, getErrorKey } from "$lib/utils/errors"
   import { formatSize, formatDuration } from "$lib/utils/format"
   import { buildSingleDownloadRequest } from "$lib/utils/download-request.js"
-  import { getPlaylistReadyForDownload } from "$lib/utils/playlist-download.js"
 
   // URL & analyze state
   let url = $state("")
@@ -42,14 +42,24 @@
     cookieSelectEl?.scrollIntoView({ behavior: "smooth", block: "center" })
     cookieSelectEl?.focus()
   }
-  let playlistResult = $state<PlaylistResult | null>(null)
-  let playlistPage = $state(0)
-  let loadingMore = $state(false)
-  // Auto-loading the rest of a channel/playlist in the background after the first page.
-  let autoLoading = $state(false)
-  let autoLoadPromise: Promise<void> | null = null
+  type PlaylistView = PlaylistScanMeta & { entries: PlaylistEntry[] }
 
-  const PLAYLIST_PAGE_SIZE = 50
+  let playlistResult = $state<PlaylistView | null>(null)
+  // Streaming playlist scan state. The scan id is generated client-side (monotonic counter)
+  // and set BEFORE invoking startPlaylistScan, so the first "entries" event can never beat
+  // the handler's id check even when it arrives before the invoke ack.
+  let scanning = $state(false)
+  let scanId = $state<number | null>(null)
+  let scanSeq = 0
+  // De-dup across batches (yt-dlp continuations can occasionally repeat entries).
+  let seenVideoIds = new Set<string>()
+  // Resolved when the scan reaches a terminal state (done/error/cancelled) — Download All waits on it.
+  let scanFinished: Promise<void> | null = null
+  let resolveScanFinished: (() => void) | null = null
+  // Resolved at the first entries batch (or terminal event) so runAnalyze returns with
+  // playlistResult populated, like the old first-page fetch did.
+  let resolveFirstScanResult: (() => void) | null = null
+  let unlistenScan: (() => void) | null = null
 
   // Download options
   let format = $state<"mp4" | "mkv" | "mp3" | "flac" | "opus" | "wav">("mp4")
@@ -128,10 +138,6 @@
   let analyzeGeneration = $state(0)
   let analyzePromise: Promise<void> | null = null
   let analyzePromiseUrl = ""
-
-  // "Load more" end-of-list flag
-  let noMoreEntries = $state(false)
-  let loadMoreSeq = 0
 
   // Tooltip state (appended to document.body to escape stacking context)
   let tooltipEl: HTMLDivElement | null = null
@@ -233,6 +239,11 @@
 
   onMount(async () => {
     currentPlatform = platform()
+    // Register the scan listener before anything can start a scan, so a fast first batch
+    // is never missed.
+    unlistenScan = await listen<PlaylistScanEvent>("playlist-scan-event", (event) => {
+      onScanEvent(event.payload)
+    })
     await loadSettings()
     try {
       browsers = await commands.getAvailableBrowsers()
@@ -241,6 +252,9 @@
 
   onDestroy(() => {
     stopAnalyzeTimer()
+    unlistenScan?.()
+    unlistenScan = null
+    cancelActiveScan()
     if (tooltipTimerId) clearTimeout(tooltipTimerId)
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
   })
@@ -375,13 +389,68 @@
     analyzeElapsed = 0
   }
 
+  // Resolve every promise waiting on the active scan (first batch + terminal waiters).
+  function settleScanWaiters() {
+    resolveFirstScanResult?.()
+    resolveFirstScanResult = null
+    resolveScanFinished?.()
+    resolveScanFinished = null
+  }
+
+  function cancelActiveScan() {
+    if (scanId != null) {
+      commands.cancelPlaylistScan(scanId).catch(() => {})
+      scanId = null
+    }
+    scanning = false
+    scanFinished = null
+    settleScanWaiters()
+  }
+
+  function onScanEvent(payload: PlaylistScanEvent) {
+    if (scanId == null || payload.scanId !== scanId) return
+
+    if (payload.eventType === "entries") {
+      if (!playlistResult && payload.meta) {
+        playlistResult = { ...payload.meta, entries: [] }
+        analyzing = false
+        stopAnalyzeTimer()
+        resolveFirstScanResult?.()
+        resolveFirstScanResult = null
+      }
+      if (!playlistResult) return
+      const fresh = payload.entries.filter((e) => {
+        if (seenVideoIds.has(e.videoId)) return false
+        seenVideoIds.add(e.videoId)
+        return true
+      })
+      if (fresh.length > 0) {
+        playlistResult = { ...playlistResult, entries: [...playlistResult.entries, ...fresh] }
+      }
+      return
+    }
+
+    // Terminal events: done / error / cancelled
+    scanning = false
+    if (payload.eventType === "done" && playlistResult) {
+      // Use the local (de-duped) length so the header matches the rendered list.
+      playlistResult = { ...playlistResult, videoCount: playlistResult.entries.length }
+    } else if (payload.eventType === "error") {
+      errorKey = payload.message ?? null
+      error = extractError(payload.message ?? "error.ytdlpGeneric")
+      // Entries that already arrived stay on screen and remain downloadable.
+      analyzing = false
+      stopAnalyzeTimer()
+    }
+    settleScanWaiters()
+  }
+
   function handleCancelAnalyze() {
     analyzeGeneration++ // invalidate in-flight requests
     analyzing = false
     quickInfo = null
     loadingFormats = false
-    autoLoading = false
-    autoLoadPromise = null
+    cancelActiveScan()
     analyzePromise = null
     analyzePromiseUrl = ""
     stopAnalyzeTimer()
@@ -418,13 +487,8 @@
     quickInfo = null
     loadingFormats = false
     playlistResult = null
-    playlistPage = 0
-    loadingMore = false
-    loadMoreSeq++
+    cancelActiveScan()
     selectedEntries = new Set()
-    noMoreEntries = false
-    autoLoading = false
-    autoLoadPromise = null
     // Dismiss any stale duplicate-warning dialog so its captured request can't be confirmed
     // against a different, newly-analyzed video.
     duplicateCheck = null
@@ -495,20 +559,25 @@
         quickInfo = null // Replace quick preview with full info
         loadingFormats = false
       } else if (resolvedType === "channel" || resolvedType === "playlist") {
-        const plResult = await commands.fetchPlaylistInfo(normalized, 0, PLAYLIST_PAGE_SIZE)
+        seenVideoIds = new Set()
+        const id = ++scanSeq
+        // Set BEFORE invoking: the first "entries" event can arrive before the invoke resolves.
+        scanId = id
+        scanning = true
+        scanFinished = new Promise((resolve) => { resolveScanFinished = resolve })
+        const firstResult = new Promise<void>((resolve) => { resolveFirstScanResult = resolve })
+        const startRes = await commands.startPlaylistScan(normalized, id)
         if (currentGeneration !== analyzeGeneration) return
-        if (plResult.status === "error") {
-          setError(plResult.error)
+        if (startRes.status === "error") {
+          cancelActiveScan()
+          setError(startRes.error)
           return
         }
-        playlistResult = plResult.data
-        // First page already fits everything → nothing more to fetch. Otherwise keep
-        // pulling pages in the background until the list is exhausted, no clicks needed.
-        if (plResult.data.entries.length < PLAYLIST_PAGE_SIZE) {
-          noMoreEntries = true
-        } else {
-          startAutoLoadRemaining(currentGeneration)
-        }
+        // Wait for the first batch (or a terminal event) so callers that await handleAnalyze
+        // (e.g. ensureMetadataForDownload) see playlistResult populated, like the old
+        // first-page fetch did. Entries keep streaming in via onScanEvent afterwards.
+        await firstResult
+        if (currentGeneration !== analyzeGeneration) return
       }
     } catch (e: any) {
       if (currentGeneration !== analyzeGeneration) return
@@ -523,79 +592,6 @@
         if (!videoInfo) quickInfo = null
         stopAnalyzeTimer()
       }
-    }
-  }
-
-  async function handleLoadMore() {
-    if (!playlistResult || loadingMore) return
-    const requestId = ++loadMoreSeq
-    const requestedUrl = playlistResult.url
-    loadingMore = true
-    try {
-      const nextPage = playlistPage + 1
-      const result = await commands.fetchPlaylistInfo(requestedUrl, nextPage, PLAYLIST_PAGE_SIZE)
-      if (requestId !== loadMoreSeq || !playlistResult || playlistResult.url !== requestedUrl) return
-      if (result.status === "ok" && result.data.entries.length > 0) {
-        playlistResult = {
-          ...playlistResult,
-          entries: [...playlistResult.entries, ...result.data.entries],
-        }
-        playlistPage = nextPage
-      } else {
-        noMoreEntries = true
-      }
-    } catch (e: any) {
-      if (requestId !== loadMoreSeq) return
-      errorKey = null
-      error = e.message || String(e)
-    } finally {
-      if (requestId === loadMoreSeq) loadingMore = false
-    }
-  }
-
-  // Keep pulling pages until the channel/playlist is exhausted. `generation` is the analyze
-  // token captured when this run started; if the user changes the URL or re-analyzes it bumps
-  // `analyzeGeneration`, so every guard below bails out and leaves the new analysis alone.
-  function startAutoLoadRemaining(generation: number) {
-    const promise = autoLoadRemaining(generation)
-    autoLoadPromise = promise
-    promise.finally(() => {
-      if (generation === analyzeGeneration && autoLoadPromise === promise) {
-        autoLoadPromise = null
-      }
-    })
-  }
-
-  async function autoLoadRemaining(generation: number) {
-    autoLoading = true
-    try {
-      while (true) {
-        if (generation !== analyzeGeneration || !playlistResult) return
-        const nextPage = playlistPage + 1
-        const result = await commands.fetchPlaylistInfo(playlistResult.url, nextPage, PLAYLIST_PAGE_SIZE)
-        if (generation !== analyzeGeneration || !playlistResult) return
-        if (result.status === "error") {
-          setError(result.error)
-          return
-        }
-        const batch = result.data.entries
-        if (batch.length > 0) {
-          playlistResult = {
-            ...playlistResult,
-            entries: [...playlistResult.entries, ...batch],
-          }
-          playlistPage = nextPage
-        }
-        // A short page means yt-dlp reached the end of the list.
-        if (batch.length < PLAYLIST_PAGE_SIZE) {
-          noMoreEntries = true
-          return
-        }
-      }
-    } catch (e: any) {
-      if (generation === analyzeGeneration) { errorKey = null; error = e.message || String(e) }
-    } finally {
-      if (generation === analyzeGeneration) autoLoading = false
     }
   }
 
@@ -727,6 +723,7 @@
         url = ""
         videoInfo = null
         playlistResult = null
+        cancelActiveScan()
       }
     } catch (e: any) {
       downloading = false
@@ -843,6 +840,7 @@
       url = ""
       videoInfo = null
       playlistResult = null
+      cancelActiveScan()
       selectedEntries = new Set()
     } catch (e: any) {
       errorKey = null
@@ -862,31 +860,14 @@
     notice = null
 
     try {
-      const readyPlaylist = await getPlaylistReadyForDownload({
-        getPlaylist: () => playlistResult,
-        getNoMoreEntries: () => noMoreEntries,
-        getAutoLoadPromise: () => autoLoadPromise,
-        fetchFullPlaylist: async (playlistUrl: string) => {
-          const fullResult = await commands.fetchPlaylistInfo(playlistUrl, 0, 99999)
-          if (fullResult.status === "error") {
-            throw new Error(extractError(fullResult.error))
-          }
-          return fullResult.data
-        },
-        setPlaylist: (next: PlaylistResult) => {
-          playlistResult = next
-        },
-        markNoMoreEntries: () => {
-          noMoreEntries = true
-        },
-        isCurrent: () => downloadGeneration === analyzeGeneration,
-      })
-
-      if (!readyPlaylist || downloadGeneration !== analyzeGeneration) {
+      // Scan still streaming: wait until it reaches a terminal state. On a mid-scan error we
+      // proceed with whatever loaded — partial entries are real and downloadable.
+      if (scanning && scanFinished) await scanFinished
+      if (downloadGeneration !== analyzeGeneration || !playlistResult) {
         return
       }
 
-      await enqueueBatchDownloads(readyPlaylist.entries)
+      await enqueueBatchDownloads(playlistResult.entries)
       if (downloadGeneration !== analyzeGeneration) {
         return
       }
@@ -1277,17 +1258,18 @@
                     <div class="min-w-0">
                        <h3 class="text-sm font-semibold text-yt-text truncate">{playlistResult.title}</h3>
                        <p data-testid="playlist-count" class="text-xs text-yt-text-secondary flex items-center gap-1.5">
-                          <span>{t("download.videosCount", { count: playlistResult.videoCount ?? playlistResult.entries.length })}</span>
-                          {#if autoLoading}
+                          {#if scanning}
                             <span
-                              data-testid="playlist-auto-loading"
+                              data-testid="playlist-scanning"
                               role="status"
                               aria-live="polite"
                               class="inline-flex items-center gap-1 text-yt-primary font-medium"
                             >
                               <span class="material-symbols-outlined text-[13px] animate-spin" aria-hidden="true">progress_activity</span>
-                              <span>({t("download.loadingMore")})</span>
+                              <span>{t("download.videosFound", { count: playlistResult.entries.length })}</span>
                             </span>
+                          {:else}
+                            <span>{t("download.videosCount", { count: playlistResult.videoCount ?? playlistResult.entries.length })}</span>
                           {/if}
                        </p>
                     </div>
@@ -1342,20 +1324,10 @@
                  {/each}
               </div>
               
-              {#if autoLoading}
+              {#if scanning}
                  <div class="p-2 border-t border-yt-border flex items-center justify-center gap-2 text-xs font-medium text-yt-text-secondary">
                     <span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
                     <span>{t("download.loading")} ({playlistResult.entries.length})</span>
-                 </div>
-              {:else if !noMoreEntries && (playlistResult.videoCount == null || playlistResult.entries.length < playlistResult.videoCount)}
-                 <div class="p-2 border-t border-yt-border">
-                    <button
-                      class="w-full py-2 text-xs font-medium text-yt-text-secondary hover:text-yt-text hover:bg-yt-highlight rounded transition-colors"
-                      onclick={handleLoadMore}
-                      disabled={loadingMore}
-                    >
-                      {loadingMore ? t("download.loading") : t("download.loadMore")}
-                    </button>
                  </div>
               {/if}
            </div>

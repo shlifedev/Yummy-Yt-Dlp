@@ -68,9 +68,7 @@ const en: Record<string, string> = {
   "download.selectAll": "Select All",
   "download.deselect": "Deselect",
   "download.noTitle": "No title",
-  "download.loadMore": "Load More",
   "download.loading": "Loading...",
-  "download.loadingMore": "loading more",
   "download.format": "Format",
   "download.quality": "Quality",
   "download.lossless": "Lossless",
@@ -288,9 +286,11 @@ const en: Record<string, string> = {
   "error.downloadCancelled": "Download cancelled.",
   "error.downloadTimeout": "Download timed out (max 6 hours).",
   "error.unknown": "An unknown error occurred.",
+  "error.noEntries": "No videos found in this playlist or channel.",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "{count} videos",
+  "download.videosFound": "{count} videos found…",
   "download.filenamePreview": "Preview:",
   "download.showSkipped": "Show skipped",
   "download.hideSkipped": "Hide skipped",

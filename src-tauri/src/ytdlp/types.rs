@@ -33,15 +33,33 @@ pub struct FormatInfo {
 
 // === Playlist / Channel ===
 
+/// Playlist-level metadata extracted from the first flat-dump entry of a streaming scan.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
-pub struct PlaylistResult {
+pub struct PlaylistScanMeta {
     pub playlist_id: String,
     pub title: String,
+    /// Normalized URL actually scanned (bare channel URLs get a `/videos` suffix).
     pub url: String,
-    pub video_count: Option<u64>,
     pub channel_name: Option<String>,
+    /// yt-dlp's `playlist_count` — often absent under `--lazy-playlist`.
+    pub video_count: Option<u64>,
+}
+
+/// Streaming playlist scan event. Entries arrive in batches while yt-dlp walks the
+/// playlist; a terminal event ("done" | "error" | "cancelled") always closes the scan.
+#[derive(Debug, Clone, Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistScanEvent {
+    pub scan_id: u32,
+    pub event_type: String, // "entries", "done", "error", "cancelled"
+    /// Present only on the first "entries" event of a scan.
+    pub meta: Option<PlaylistScanMeta>,
     pub entries: Vec<PlaylistEntry>,
+    /// Running total of entries delivered so far (final count on "done").
+    pub total: u32,
+    /// i18n error key on "error" (translated by the frontend, like AppError messages).
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]

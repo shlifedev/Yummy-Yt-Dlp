@@ -17,7 +17,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
 /// On Windows, uses `taskkill /F /T /PID` to kill the entire process tree.
 /// On Unix, sends SIGKILL to the child's process group. Falls back to tokio child.kill().
 /// Includes a timeout to prevent hanging if the process doesn't respond.
-async fn kill_process_tree(child: &mut tokio::process::Child) {
+pub(crate) async fn kill_process_tree(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
         #[cfg(target_os = "windows")]
         {
@@ -81,7 +81,7 @@ fn handle_download_failure(
     process_next_pending(app.clone());
 }
 
-pub(super) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
+pub(crate) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
     if !buffer.is_empty() {
         buffer.push('\n');
     }

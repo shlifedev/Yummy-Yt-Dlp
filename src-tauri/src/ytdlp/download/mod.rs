@@ -7,4 +7,5 @@ mod manager;
 pub use commands::*;
 pub use executor::execute_download_public;
 pub use executor::process_next_pending_public;
+pub(crate) use executor::{append_limited, kill_process_tree};
 pub use manager::DownloadManager;

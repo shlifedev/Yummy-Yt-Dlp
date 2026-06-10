@@ -65,9 +65,7 @@ const ja: Record<string, string> = {
   "download.selectAll": "すべて選択",
   "download.deselect": "選択解除",
   "download.noTitle": "タイトルなし",
-  "download.loadMore": "もっと読み込む",
   "download.loading": "読み込み中...",
-  "download.loadingMore": "追加読み込み中",
   "download.format": "形式",
   "download.quality": "画質",
   "download.lossless": "ロスレス",
@@ -280,9 +278,11 @@ const ja: Record<string, string> = {
   "error.downloadCancelled": "ダウンロードをキャンセルしました。",
   "error.downloadTimeout": "ダウンロードがタイムアウトしました（最大6時間）。",
   "error.unknown": "不明なエラーが発生しました。",
+  "error.noEntries": "プレイリスト/チャンネルに動画が見つかりませんでした。",
 
   // Added: playlist count, filename preview, batch skip detail, cookie fix
   "download.videosCount": "{count}本の動画",
+  "download.videosFound": "{count}本の動画を検出…",
   "download.filenamePreview": "プレビュー:",
   "download.showSkipped": "スキップした項目を表示",
   "download.hideSkipped": "スキップした項目を隠す",
