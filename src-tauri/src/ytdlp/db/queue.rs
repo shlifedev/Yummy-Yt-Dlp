@@ -329,6 +329,22 @@ impl Database {
         Ok(rows as u32)
     }
 
+    /// Delete terminal queue rows older than `max_age_days` so the downloads table stays
+    /// bounded; nothing else ever removes failed/cancelled rows. Completed rows are mirrored
+    /// into history at completion time (complete_and_record), so pruning them loses nothing.
+    /// download_groups rows are intentionally left alone — the history view JOINs them.
+    pub fn prune_old_terminal_downloads(&self, max_age_days: u32) -> Result<u32, AppError> {
+        let conn = self.conn();
+        let cutoff = chrono::Utc::now().timestamp() - (max_age_days as i64 * 24 * 60 * 60);
+        let rows = conn
+            .execute(
+                "DELETE FROM downloads WHERE status IN ('completed', 'failed', 'cancelled') AND created_at < ?1",
+                params![cutoff],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows as u32)
+    }
+
     pub fn get_queue_summary(&self, recent_completed_limit: u32) -> Result<QueueSummary, AppError> {
         let conn = self.conn();
 
@@ -420,12 +436,31 @@ impl Database {
     /// history table and are shown in the records section instead.
     /// Rows backing the queue page's status filters. Includes `completed` so the "Completed"
     /// filter tab can list finished downloads; the page keeps them out of the default view.
+    ///
+    /// All 'downloading'/'pending' rows are always returned unbounded (a global LIMIT could
+    /// hide genuinely active items behind newer terminal rows); only terminal rows are capped
+    /// at the newest ACTIVE_QUEUE_TERMINAL_LIMIT, since this query is polled every 5s and
+    /// re-serialized over IPC in full. Note: the queue page's filter-tab counts are derived
+    /// from this array, so terminal counts undercount once the cap is exceeded — acceptable
+    /// because the startup prune (prune_old_terminal_downloads) keeps the table bounded.
     pub fn get_active_queue(&self) -> Result<Vec<DownloadTaskInfo>, AppError> {
+        const ACTIVE_QUEUE_TERMINAL_LIMIT: u32 = 1000;
+
         let conn = self.conn();
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT {} FROM downloads d LEFT JOIN download_groups g ON g.id = d.group_id WHERE d.status IN ('downloading', 'pending', 'failed', 'cancelled', 'completed') ORDER BY d.created_at DESC",
-                DOWNLOAD_COLUMNS_G
+                "SELECT {} FROM downloads d LEFT JOIN download_groups g ON g.id = d.group_id
+                 WHERE d.id IN (
+                     SELECT id FROM downloads WHERE status IN ('downloading', 'pending')
+                     UNION ALL
+                     SELECT id FROM (
+                         SELECT id FROM downloads
+                         WHERE status IN ('failed', 'cancelled', 'completed')
+                         ORDER BY created_at DESC LIMIT {}
+                     )
+                 )
+                 ORDER BY d.created_at DESC",
+                DOWNLOAD_COLUMNS_G, ACTIVE_QUEUE_TERMINAL_LIMIT
             ))
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
@@ -436,5 +471,73 @@ impl Database {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(tasks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn insert_row(db: &Database, status: &str, created_at: i64) -> i64 {
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO downloads (video_url, video_id, title, format_id, quality_label, output_path, status, created_at)
+             VALUES ('https://example.com/v', 'vid', 'title', 'fmt', '1080p', '/tmp', ?1, ?2)",
+            params![status, created_at],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn prune_removes_only_old_terminal_rows() {
+        let db = Database::new_in_memory().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let old = now - 40 * 24 * 60 * 60;
+
+        let old_completed = insert_row(&db, "completed", old);
+        let old_failed = insert_row(&db, "failed", old);
+        let old_pending = insert_row(&db, "pending", old);
+        let recent_failed = insert_row(&db, "failed", now);
+
+        let pruned = db.prune_old_terminal_downloads(30).unwrap();
+        assert_eq!(pruned, 2);
+
+        let remaining: Vec<i64> = {
+            let conn = db.conn();
+            let mut stmt = conn.prepare("SELECT id FROM downloads").unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<i64>>>()
+                .unwrap()
+        };
+        assert!(remaining.contains(&old_pending));
+        assert!(remaining.contains(&recent_failed));
+        assert!(!remaining.contains(&old_completed));
+        assert!(!remaining.contains(&old_failed));
+    }
+
+    #[test]
+    fn get_active_queue_never_drops_active_rows_beyond_terminal_cap() {
+        let db = Database::new_in_memory().unwrap();
+        let base = chrono::Utc::now().timestamp();
+
+        // One old pending row buried under far more than the terminal cap of newer rows.
+        let pending_id = insert_row(&db, "pending", base - 10_000);
+        for i in 0..1100i64 {
+            insert_row(&db, "failed", base + i);
+        }
+
+        let tasks = db.get_active_queue().unwrap();
+
+        assert!(
+            tasks.iter().any(|t| t.id as i64 == pending_id),
+            "active row must never be hidden by the terminal cap"
+        );
+        let terminal_count = tasks
+            .iter()
+            .filter(|t| matches!(t.status, DownloadStatus::Failed))
+            .count();
+        assert_eq!(terminal_count, 1000);
     }
 }

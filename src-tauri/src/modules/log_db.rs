@@ -18,12 +18,28 @@ impl LogDatabase {
         let conn =
             Connection::open(&db_path).map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        // WAL mode + relaxed sync for write performance
+        // WAL mode + relaxed sync for write performance. busy_timeout avoids dropping
+        // records with an immediate SQLITE_BUSY under cross-process contention (e.g. an
+        // external sqlite3 shell inspecting logs.db per the debugging workflow).
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;",
+             PRAGMA synchronous=NORMAL;
+             PRAGMA busy_timeout=5000;",
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        Self::create_tables(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// In-memory fallback used when logs.db cannot be opened or recreated, so the app
+    /// still launches (structured logs simply don't persist for this session).
+    pub fn new_in_memory() -> Result<Self, AppError> {
+        let conn =
+            Connection::open_in_memory().map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Self::create_tables(&conn)?;
 
