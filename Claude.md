@@ -53,8 +53,8 @@ ytdlp/
   settings.rs       # Settings via tauri-plugin-store (settings.json)
   security.rs       # URL/IP (SSRF), output-path & filename-template, cookie-browser validation; error-message sanitization
   tray.rs           # System tray menu integration
-  dep_download.rs   # Shared streamed download + SHA-256 verification helper
-  dep_ytdlp.rs      # yt-dlp install/update (checksum-verified)
+  dep_download.rs   # Shared streamed download + SHA-256 verify; zip extract (flatten + tree/zip-slip-safe) + dir finalize helpers
+  dep_ytdlp.rs      # yt-dlp install/update (onedir zip, checksum-verified, extracted to bin/ytdlp/)
   dep_ffmpeg.rs     # ffmpeg/ffprobe install
   dep_deno.rs       # deno install (used by yt-dlp for some extractors)
   binary/

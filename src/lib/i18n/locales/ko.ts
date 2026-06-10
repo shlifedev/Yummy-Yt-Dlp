@@ -84,7 +84,7 @@ const ko: Record<string, string> = {
   "download.duplicateFound": "중복 발견",
   "download.include": "포함:",
   "download.cookie": "쿠키:",
-  "download.concurrent": "동시:",
+  "download.concurrent": "동시 다운로드:",
   "download.emptyState": "URL을 붙여넣어 다운로드를 시작하세요",
 
   // Advanced options panel
@@ -280,6 +280,37 @@ const ko: Record<string, string> = {
   "error.downloadCancelled": "다운로드가 취소되었습니다.",
   "error.downloadTimeout": "다운로드 시간이 초과되었습니다(최대 6시간).",
   "error.unknown": "알 수 없는 오류가 발생했습니다.",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "영상 {count}개",
+  "download.filenamePreview": "미리보기:",
+  "download.showSkipped": "건너뛴 항목 보기",
+  "download.hideSkipped": "건너뛴 항목 숨기기",
+  "download.skippedReasonQueue": "이미 큐에 있음",
+  "download.skippedReasonExists": "이미 다운로드됨",
+  "download.fixWithCookies": "쿠키 브라우저 지정",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "의존성을 설치하지 못했습니다.",
+  "layout.installRetry": "재시도",
+  "layout.installSeeLogs": "자세한 내용은 로그 확인",
+  "layout.installErrorDetail": "오류 상세",
+
+  // Added: debug panel strings
+  "debug.copied": "복사됨!",
+  "debug.copyToClipboard": "클립보드에 복사",
+  "debug.clickRefresh": "\"새로고침\"을 눌러 의존성 상태를 불러오세요",
+  "debug.deleteBinaryWarning": "앱 관리 바이너리를 삭제하면 다음 실행 시 다시 설치해야 합니다.",
+
+  // Added: active-download close warning
+  "close.activeTitle": "다운로드 진행 중",
+  "close.activeMessage": "다운로드 {count}개가 진행 중입니다. 종료하면 취소됩니다.",
+  "close.keepDownloading": "계속 받기",
+  "close.exitAnyway": "종료",
+
+  // Added: history actions
+  "history.revealInFolder": "폴더에서 보기",
+  "history.deleteItem": "삭제",
 }
 
 export default ko

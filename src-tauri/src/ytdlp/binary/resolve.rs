@@ -14,8 +14,10 @@ pub(super) async fn try_get_version(binary_path: &Path) -> Result<String, String
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    // PyInstaller binaries (yt-dlp_macos) need time to extract on first run
-    let timeout_result = tokio::time::timeout(Duration::from_secs(10), cmd.output()).await;
+    // The first run of a freshly extracted onedir build still does a one-time
+    // PyInstaller bootstrap and (on macOS) a Gatekeeper scan — measured ~9s — so
+    // give it generous headroom; warmed-up runs return in ~0.2s.
+    let timeout_result = tokio::time::timeout(Duration::from_secs(20), cmd.output()).await;
 
     let cmd_result = match timeout_result {
         Ok(result) => result,
@@ -242,13 +244,37 @@ pub(super) fn app_managed_binary(
     path.exists().then_some(path)
 }
 
+/// Platform executable name for app-managed yt-dlp.
+fn ytdlp_exe_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    }
+}
+
+/// Resolve the app-managed yt-dlp executable on disk, if any.
+///
+/// Prefers the onedir layout `bin/ytdlp/yt-dlp(.exe)`; falls back to the legacy
+/// `--onefile` binary `bin/yt-dlp(.exe)` left by older installs so upgrades keep
+/// working until the next reinstall replaces it with the onedir tree.
+pub(super) fn app_managed_ytdlp_binary(app: &AppHandle) -> Option<PathBuf> {
+    let bin_dir = app_bin_dir(app)?;
+    let exe = ytdlp_exe_name();
+    let onedir = bin_dir.join("ytdlp").join(exe);
+    if onedir.exists() {
+        return Some(onedir);
+    }
+    let legacy = bin_dir.join(exe);
+    legacy.exists().then_some(legacy)
+}
+
 /// Resolve yt-dlp per the effective source order for it.
 ///
 /// Always returns an absolute path so the launched copy is decided here, not by
 /// PATH ordering (which `command_with_path_app` tunes for deno discovery).
 pub async fn resolve_ytdlp_path_with_app(app: &AppHandle) -> Result<String, AppError> {
-    let app_path =
-        app_managed_binary(app, "yt-dlp", "yt-dlp.exe").map(|p| p.to_string_lossy().to_string());
+    let app_path = app_managed_ytdlp_binary(app).map(|p| p.to_string_lossy().to_string());
     let system_path = which_first("yt-dlp").await;
 
     for src in source_order(app, "yt-dlp") {
@@ -365,8 +391,18 @@ pub async fn check_deno_version(deno_path: &Path) -> Option<String> {
     }
 }
 
-/// Update yt-dlp using --update flag
-pub async fn update_ytdlp() -> Result<String, AppError> {
+/// Update yt-dlp.
+///
+/// onedir (and the legacy onefile) builds don't support `yt-dlp --update` — the
+/// self-updater can't rewrite the running executable inside the extracted tree.
+/// So when yt-dlp is app-managed we re-run the installer, which re-downloads the
+/// latest onedir zip and swaps it in. Only a genuine system-PATH yt-dlp (pip/brew
+/// build) keeps the `--update` path.
+pub async fn update_ytdlp(app: &AppHandle) -> Result<String, AppError> {
+    if app_managed_ytdlp_binary(app).is_some() {
+        return crate::ytdlp::dep_ytdlp::install_ytdlp(app).await;
+    }
+
     let ytdlp_path = resolve_ytdlp_path().await?;
 
     let mut cmd = command_with_path(&ytdlp_path);

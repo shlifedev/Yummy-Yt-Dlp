@@ -31,7 +31,13 @@ impl DownloadManager {
         self.max_concurrent.load(Ordering::SeqCst)
     }
 
-    // Clamp max_concurrent to a safe range (see security::clamp_max_concurrent) to prevent resource exhaustion
+    /// Update the concurrency limit, clamped to a safe range
+    /// (see `security::clamp_max_concurrent`) to prevent resource exhaustion.
+    ///
+    /// Lowering the limit below the number of in-flight downloads is intentional and does
+    /// NOT reclaim the excess slots: running downloads keep their slot and finish naturally.
+    /// Only *new* acquisitions are blocked until `active_count` falls back under the new
+    /// limit, so the queue drains down to the new ceiling on its own.
     pub fn set_max_concurrent(&self, val: u32) {
         self.max_concurrent
             .store(security::clamp_max_concurrent(val), Ordering::SeqCst);

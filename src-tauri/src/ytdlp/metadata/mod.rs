@@ -66,12 +66,17 @@ pub(crate) const IMPERSONATE_TARGET: &str = "chrome";
 /// yt-dlp를 실행하고, 안티봇으로 의심되는 실패(410/403)면 `--impersonate`를 붙여 1회만
 /// 자동 재시도한다. 성공이거나 비-안티봇 실패면 첫 결과를 그대로 반환한다(호출부가
 /// map_stderr_error로 변환). 평소에는 impersonate를 쓰지 않아 성능·호환성 영향이 없다.
-pub(super) async fn run_with_impersonate_fallback(
-    mut cmd: tokio::process::Command,
+/// `build_cmd(impersonate)`가 시도마다 Command를 새로 만든다. 인자가 `-- <url>`로 끝나기
+/// 때문에 기존 Command에 `--impersonate`를 덧붙이면 플래그가 아니라 URL로 파싱된다.
+pub(super) async fn run_with_impersonate_fallback<F>(
+    build_cmd: F,
     timeout: Duration,
     timeout_msg: &str,
-) -> Result<std::process::Output, AppError> {
-    let first = tokio::time::timeout(timeout, cmd.output())
+) -> Result<std::process::Output, AppError>
+where
+    F: Fn(bool) -> tokio::process::Command,
+{
+    let first = tokio::time::timeout(timeout, build_cmd(false).output())
         .await
         .map_err(|_| AppError::MetadataError(timeout_msg.to_string()))?
         .map_err(|e| {
@@ -88,8 +93,7 @@ pub(super) async fn run_with_impersonate_fallback(
         "metadata",
         "anti-bot block detected (410/403), retrying with --impersonate",
     );
-    cmd.arg("--impersonate").arg(IMPERSONATE_TARGET);
-    let retry = tokio::time::timeout(timeout, cmd.output())
+    let retry = tokio::time::timeout(timeout, build_cmd(true).output())
         .await
         .map_err(|_| AppError::MetadataError(timeout_msg.to_string()))?
         .map_err(|e| {

@@ -230,6 +230,8 @@ const de: Record<string, string> = {
   "tray.quit": "Beenden",
   "settings.minimizeToTray": "In den Tray minimieren",
   "settings.minimizeToTrayDesc": "Beim Schließen in den System-Tray minimieren",
+  "settings.autoUpdateDeps": "Abhängigkeiten automatisch aktualisieren",
+  "settings.autoUpdateDepsDesc": "yt-dlp beim Start aktuell halten (ffmpeg und deno nur, wenn veraltet). Deaktivieren, um manuell über den Abhängigkeiten-Tab zu aktualisieren",
 
   // Update
   "update.checkUpdate": "Nach Updates suchen",
@@ -278,6 +280,37 @@ const de: Record<string, string> = {
   "error.downloadCancelled": "Download abgebrochen.",
   "error.downloadTimeout": "Zeitüberschreitung beim Download (max. 6 Stunden).",
   "error.unknown": "Ein unbekannter Fehler ist aufgetreten.",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count} Videos",
+  "download.filenamePreview": "Vorschau:",
+  "download.showSkipped": "Übersprungene anzeigen",
+  "download.hideSkipped": "Übersprungene ausblenden",
+  "download.skippedReasonQueue": "Bereits in der Warteschlange",
+  "download.skippedReasonExists": "Bereits heruntergeladen",
+  "download.fixWithCookies": "Cookie-Browser festlegen",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "Abhängigkeiten konnten nicht installiert werden.",
+  "layout.installRetry": "Erneut versuchen",
+  "layout.installSeeLogs": "Details in den Protokollen ansehen",
+  "layout.installErrorDetail": "Fehlerdetails",
+
+  // Added: debug panel strings
+  "debug.copied": "Kopiert!",
+  "debug.copyToClipboard": "In die Zwischenablage kopieren",
+  "debug.clickRefresh": "Auf „Aktualisieren“ klicken, um den Abhängigkeitsstatus zu laden",
+  "debug.deleteBinaryWarning": "Das Löschen app-verwalteter Binärdateien erfordert eine Neuinstallation beim nächsten Start.",
+
+  // Added: active-download close warning
+  "close.activeTitle": "Downloads laufen",
+  "close.activeMessage": "{count} Download(s) laufen gerade. Beim Beenden werden sie abgebrochen.",
+  "close.keepDownloading": "Weiter herunterladen",
+  "close.exitAnyway": "Beenden",
+
+  // Added: history actions
+  "history.revealInFolder": "Im Ordner anzeigen",
+  "history.deleteItem": "Löschen",
 }
 
 export default de

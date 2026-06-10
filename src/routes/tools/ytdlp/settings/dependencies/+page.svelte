@@ -6,6 +6,7 @@
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { t } from "$lib/i18n/index.svelte"
+  import { extractError } from "$lib/utils/errors"
 
   let settings = $state<AppSettings>({
     downloadPath: "",
@@ -111,7 +112,7 @@
       if (result.status === "ok") {
         setResult(depName, true, result.data)
       } else {
-        setResult(depName, false, Object.values(result.error)[0] as string)
+        setResult(depName, false, extractError(result.error))
       }
     } catch (e: any) {
       setResult(depName, false, e?.message || String(e))
@@ -165,7 +166,7 @@
           setResult("all", true, t("layout.installSuccess"))
         }
       } else {
-        setResult("all", false, Object.values(result.error)[0] as string)
+        setResult("all", false, extractError(result.error))
       }
     } catch (e: any) {
       setResult("all", false, e?.message || String(e))
@@ -185,7 +186,7 @@
       if (result.status === "ok") {
         setResult(depName, true, result.data)
       } else {
-        setResult(depName, false, Object.values(result.error)[0] as string)
+        setResult(depName, false, extractError(result.error))
       }
     } catch (e: any) {
       setResult(depName, false, e?.message || String(e))

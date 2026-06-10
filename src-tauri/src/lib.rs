@@ -184,7 +184,17 @@ pub fn run() {
                         let _ = window.hide();
                     }
                     Some(false) => {
-                        // Let window close normally (cancel_all runs in RunEvent::Exit)
+                        // Closing is allowed, but warn first if downloads are still running so
+                        // the user doesn't silently lose in-progress work. The frontend shows a
+                        // confirm dialog and, on confirm, exits via the process plugin.
+                        let manager = app.state::<DownloadManagerState>();
+                        let active = manager.active_count();
+                        if active > 0 {
+                            api.prevent_close();
+                            let _ = app.emit("close-blocked", active);
+                        }
+                        // active == 0: let the window close normally
+                        // (cancel_all runs in RunEvent::Exit).
                     }
                     None => {
                         // Not decided yet: prevent close and ask frontend

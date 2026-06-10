@@ -2,6 +2,7 @@ use chrono::Local;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, OnceLock};
 
 use super::log_db::LogDatabase;
@@ -12,6 +13,89 @@ static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 /// Maximum log file size before rotation (5 MB)
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+
+/// A single log record handed off to the background writer thread.
+struct LogRecord {
+    timestamp_millis: i64,
+    formatted_time: String,
+    level: String,
+    category: String,
+    message: String,
+    details: Option<String>,
+}
+
+/// Unbounded channel to the background writer. Lazily started on first log so callers never
+/// block on file I/O, the SQLite mutex, or event emission in an async context.
+static LOG_TX: OnceLock<Sender<LogRecord>> = OnceLock::new();
+
+/// Lazily start (once) the background writer thread and return the sender.
+fn writer_tx() -> &'static Sender<LogRecord> {
+    LOG_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<LogRecord>();
+        std::thread::Builder::new()
+            .name("log-writer".to_string())
+            .spawn(move || {
+                // Drains until every Sender is dropped (process shutdown). All file rotation,
+                // file appends, DB inserts, and live-update emits happen here, off the hot path.
+                for rec in rx {
+                    write_record(&rec);
+                }
+            })
+            .expect("failed to spawn log writer thread");
+        tx
+    })
+}
+
+/// Perform the actual side effects for one record on the writer thread.
+fn write_record(rec: &LogRecord) {
+    // 1. File logging (crash fallback)
+    if let Some(log_path) = LOG_PATH.get() {
+        if let Some(parent) = log_path.parent() {
+            let _ = create_dir_all(parent);
+        }
+        maybe_rotate(log_path);
+
+        let log_entry = format!(
+            "[{}] [{}] [{}] {}\n",
+            rec.formatted_time, rec.level, rec.category, rec.message
+        );
+
+        match OpenOptions::new().create(true).append(true).open(log_path) {
+            Ok(mut file) => {
+                let _ = file.write_all(log_entry.as_bytes());
+            }
+            Err(e) => {
+                eprintln!("[Logger] Failed to write log: {}", e);
+            }
+        }
+
+        eprint!("{}", log_entry);
+    }
+
+    // 2. DB logging + 3. event emission for live updates
+    if let Some(db) = LOG_DB.get() {
+        if let Ok(id) = db.insert_log(
+            rec.timestamp_millis,
+            &rec.level,
+            &rec.category,
+            &rec.message,
+            rec.details.as_deref(),
+        ) {
+            if let Some(app) = APP_HANDLE.get() {
+                use tauri::Emitter;
+                let entry = crate::ytdlp::types::LogEntry {
+                    id,
+                    timestamp: rec.timestamp_millis,
+                    level: rec.level.clone(),
+                    category: rec.category.clone(),
+                    message: rec.message.clone(),
+                    details: rec.details.clone(),
+                };
+                let _ = app.emit("new-log-event", crate::ytdlp::types::NewLogEvent { entry });
+            }
+        }
+    }
+}
 
 /// Initialize the logger with the app data directory
 pub fn init(app_data_dir: PathBuf) {
@@ -45,56 +129,36 @@ fn maybe_rotate(log_path: &PathBuf) {
     }
 }
 
-/// Core log function with category support
+/// Core log function with category support. Formats the timestamp on the caller's thread
+/// (cheap) and hands the record to the background writer; all I/O happens off this thread.
 fn write_log_with_category(level: &str, category: &str, message: &str, details: Option<&str>) {
     let now = Local::now();
     let timestamp_millis = chrono::Utc::now().timestamp_millis();
 
-    // 1. File logging (crash fallback)
-    let log_path = get_log_path();
-    if let Some(log_path) = log_path {
-        if let Some(parent) = log_path.parent() {
-            let _ = create_dir_all(parent);
-        }
-        maybe_rotate(log_path);
-
-        let timestamp = now.format("%Y-%m-%d %H:%M:%S%.3f");
-        let log_entry = format!("[{}] [{}] [{}] {}\n", timestamp, level, category, message);
-
-        match OpenOptions::new().create(true).append(true).open(log_path) {
-            Ok(mut file) => {
-                let _ = file.write_all(log_entry.as_bytes());
-            }
-            Err(e) => {
-                eprintln!("[Logger] Failed to write log: {}", e);
-            }
-        }
-
-        eprint!("{}", log_entry);
-    } else {
+    if LOG_PATH.get().is_none() && LOG_DB.get().is_none() {
         eprintln!(
             "[Logger] Not initialized: [{}] [{}] {}",
             level, category, message
         );
+        return;
     }
 
-    // 2. DB logging
-    if let Some(db) = LOG_DB.get() {
-        if let Ok(id) = db.insert_log(timestamp_millis, level, category, message, details) {
-            // 3. Event emission for live updates
-            if let Some(app) = APP_HANDLE.get() {
-                use tauri::Emitter;
-                let entry = crate::ytdlp::types::LogEntry {
-                    id,
-                    timestamp: timestamp_millis,
-                    level: level.to_string(),
-                    category: category.to_string(),
-                    message: message.to_string(),
-                    details: details.map(|s| s.to_string()),
-                };
-                let _ = app.emit("new-log-event", crate::ytdlp::types::NewLogEvent { entry });
-            }
-        }
+    let record = LogRecord {
+        timestamp_millis,
+        formatted_time: now.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+        level: level.to_string(),
+        category: category.to_string(),
+        message: message.to_string(),
+        details: details.map(|s| s.to_string()),
+    };
+
+    // Send is non-blocking on an unbounded channel. A failure only happens if the writer
+    // thread died, in which case fall back to stderr so the line isn't silently lost.
+    if writer_tx().send(record).is_err() {
+        eprintln!(
+            "[Logger] writer thread unavailable: [{}] [{}] {}",
+            level, category, message
+        );
     }
 }
 

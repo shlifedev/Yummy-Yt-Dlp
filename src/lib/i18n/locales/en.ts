@@ -288,6 +288,37 @@ const en: Record<string, string> = {
   "error.downloadCancelled": "Download cancelled.",
   "error.downloadTimeout": "Download timed out (max 6 hours).",
   "error.unknown": "An unknown error occurred.",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count} videos",
+  "download.filenamePreview": "Preview:",
+  "download.showSkipped": "Show skipped",
+  "download.hideSkipped": "Hide skipped",
+  "download.skippedReasonQueue": "Already in queue",
+  "download.skippedReasonExists": "Already downloaded",
+  "download.fixWithCookies": "Set a cookie browser",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "Couldn't install the dependencies.",
+  "layout.installRetry": "Retry",
+  "layout.installSeeLogs": "See logs for details",
+  "layout.installErrorDetail": "Error details",
+
+  // Added: debug panel strings
+  "debug.copied": "Copied!",
+  "debug.copyToClipboard": "Copy to Clipboard",
+  "debug.clickRefresh": "Click \"Refresh\" to load dependency status",
+  "debug.deleteBinaryWarning": "Deleting app-managed binaries will require re-installation on next app launch.",
+
+  // Added: active-download close warning
+  "close.activeTitle": "Downloads in progress",
+  "close.activeMessage": "{count} download(s) are in progress. Quitting will cancel them.",
+  "close.keepDownloading": "Keep downloading",
+  "close.exitAnyway": "Quit",
+
+  // Added: history actions
+  "history.revealInFolder": "Show in folder",
+  "history.deleteItem": "Delete",
 }
 
 export default en

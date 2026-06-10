@@ -8,9 +8,10 @@
   import { onMount, onDestroy } from "svelte"
   import { openUrl } from "@tauri-apps/plugin-opener"
   import { t, initLocale } from "$lib/i18n/index.svelte"
+  import { extractError } from "$lib/utils/errors"
   import { initTheme } from "$lib/theme/index.svelte"
   import { check, type Update } from "@tauri-apps/plugin-updater"
-  import { relaunch } from "@tauri-apps/plugin-process"
+  import { relaunch, exit } from "@tauri-apps/plugin-process"
   import type { ActiveDownload, ProgressCacheEntry } from "$lib/types"
 
   let { children } = $props()
@@ -41,6 +42,7 @@
   let installProgress = $state<Record<string, { stage: string, percent: number, message: string | null }>>({})
   let installError = $state<string | null>(null)
   let showManualInstall = $state(false)
+  let showInstallErrorDetail = $state(false)
   let unlistenDepInstall: (() => void) | null = null
 
   // Popup state
@@ -71,7 +73,7 @@
   // Welcome (first-run) state
   type DepMode = "hybrid" | "bundled"
   let setupCompleted = $state<boolean | null>(null) // null = loading
-  let selectedDepMode = $state<DepMode>("hybrid")
+  let selectedDepMode = $state<DepMode>("bundled")
 
   // Debug command menu state (F9)
   let showDebugCmd = $state(false)
@@ -102,7 +104,7 @@
       if (r.status === "ok") {
         debugCmdResults[depName] = { status: "success", message: r.data }
       } else {
-        debugCmdResults[depName] = { status: "error", message: Object.values(r.error)[0] as string }
+        debugCmdResults[depName] = { status: "error", message: extractError(r.error) }
       }
     } catch (e: any) {
       debugCmdResults[depName] = { status: "error", message: e?.message || String(e) }
@@ -115,6 +117,18 @@
   let showCloseDialog = $state(false)
   let rememberChoice = $state(false)
   let unlistenClose: (() => void) | null = null
+
+  // Active-download close warning (emitted by the backend when a close is blocked)
+  let showCloseBlockedDialog = $state(false)
+  let closeBlockedCount = $state(0)
+  let unlistenCloseBlocked: (() => void) | null = null
+
+  async function handleCloseBlockedExit() {
+    showCloseBlockedDialog = false
+    try {
+      await exit(0)
+    } catch (e) { console.error("Failed to exit:", e) }
+  }
 
   // Queue flash animation
   let queueFlash = $state(false)
@@ -181,10 +195,13 @@
   const queueSummaryPromise = loadQueueSummary()
 
   function startPopupRefresh() {
+    // Pull once on open so the popup reflects current state, then poll on a relaxed cadence —
+    // and only while something is actually downloading or queued, so an idle popup is silent.
     loadQueueSummary()
     popupInterval = setInterval(() => {
+      if (activeCount + pendingCount === 0) return
       loadQueueSummary()
-    }, 2000)
+    }, 5000)
   }
 
   function stopPopupRefresh() {
@@ -314,7 +331,8 @@
       unlisten = unlistenFn
     } catch (e) { console.error("Failed to listen for download events:", e) }
 
-    loadQueueSummary()
+    // Initial queue summary is already kicked off at module init (queueSummaryPromise); the
+    // download-event listener above keeps it fresh from here on, so no extra fetch needed.
 
     window.addEventListener("queue-added", handleQueueAdded)
 
@@ -325,19 +343,43 @@
       })
       unlistenClose = unlistenCloseFn
     } catch (e) { console.error("Failed to listen for close-requested:", e) }
+
+    // Backend blocks a close while downloads are active and tells us how many.
+    try {
+      const unlistenBlockedFn = await listen("close-blocked", (event: any) => {
+        closeBlockedCount = typeof event.payload === "number" ? event.payload : (event.payload?.count ?? 0)
+        showCloseBlockedDialog = true
+      })
+      unlistenCloseBlocked = unlistenBlockedFn
+    } catch (e) { console.error("Failed to listen for close-blocked:", e) }
   })
 
   onDestroy(() => {
     stopPopupRefresh()
     if (unlisten) unlisten()
     if (unlistenClose) unlistenClose()
+    if (unlistenCloseBlocked) unlistenCloseBlocked()
     if (unlistenDepInstall) unlistenDepInstall()
     window.removeEventListener("queue-added", handleQueueAdded)
     if (toastTimeout) clearTimeout(toastTimeout)
     if (loadDebounceTimer) clearTimeout(loadDebounceTimer)
   })
 
+  // Move focus into a dialog when it opens (first focusable element), for keyboard/AT users.
+  function autofocusDialog(node: HTMLElement) {
+    const focusable = node.querySelector<HTMLElement>(
+      "button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+    )
+    focusable?.focus()
+  }
+
   function handleDebugKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      // Dismiss the lightest-weight open dialog first. The blocked-close dialog stays put on
+      // Escape (closing it would imply a choice), so it's intentionally excluded here.
+      if (showUpdateDialog && !updateDownloading) { showUpdateDialog = false; return }
+      if (showCloseDialog) { showCloseDialog = false; rememberChoice = false; return }
+    }
     if (e.key === "F10") {
       e.preventDefault()
       showDebug = !showDebug
@@ -461,7 +503,7 @@
           installError = failures.join("\n")
         }
       } else {
-        installError = Object.values(result.error)[0] as string
+        installError = extractError(result.error)
       }
     } catch (e: any) {
       installError = e?.message || String(e)
@@ -665,7 +707,7 @@
             </span>
           </div>
         </div>
-        <span class="material-symbols-outlined text-yt-text-muted text-[16px]">expand_less</span>
+        <span class="material-symbols-outlined text-yt-text-muted text-[16px]">{popupOpen ? "expand_more" : "expand_less"}</span>
       </button>
     </div>
   </aside>
@@ -699,33 +741,7 @@
 
           <!-- Mode Selection Cards -->
           <div class="w-full space-y-3">
-            <!-- Hybrid (recommended) -->
-            <button
-              onclick={() => selectedDepMode = "hybrid"}
-              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'hybrid'
-                ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary/20'
-                : 'border-yt-border bg-yt-surface hover:border-yt-text-secondary/30'}"
-            >
-              <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
-                  <span class="material-symbols-outlined text-xl">auto_awesome</span>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-semibold text-sm text-yt-text">{t("welcome.hybrid")}</span>
-                    <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-yt-primary/15 text-yt-primary">{t("welcome.appManagedTag")}</span>
-                  </div>
-                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.hybridDesc")}</p>
-                </div>
-                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'border-yt-primary' : 'border-yt-border'}">
-                  {#if selectedDepMode === "hybrid"}
-                    <div class="w-2.5 h-2.5 rounded-full bg-yt-primary"></div>
-                  {/if}
-                </div>
-              </div>
-            </button>
-
-            <!-- Bundled -->
+            <!-- Bundled (recommended) -->
             <button
               onclick={() => selectedDepMode = "bundled"}
               class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'bundled'
@@ -737,11 +753,37 @@
                   <span class="material-symbols-outlined text-xl">package_2</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                  <span class="font-semibold text-sm text-yt-text">{t("welcome.bundled")}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-sm text-yt-text">{t("welcome.bundled")}</span>
+                    <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-yt-primary/15 text-yt-primary">{t("welcome.appManagedTag")}</span>
+                  </div>
                   <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.bundledDesc")}</p>
                 </div>
                 <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'bundled' ? 'border-yt-primary' : 'border-yt-border'}">
                   {#if selectedDepMode === "bundled"}
+                    <div class="w-2.5 h-2.5 rounded-full bg-yt-primary"></div>
+                  {/if}
+                </div>
+              </div>
+            </button>
+
+            <!-- Hybrid -->
+            <button
+              onclick={() => selectedDepMode = "hybrid"}
+              class="w-full text-left p-4 rounded-xl border-2 transition-all {selectedDepMode === 'hybrid'
+                ? 'border-yt-primary bg-yt-primary/5 ring-1 ring-yt-primary/20'
+                : 'border-yt-border bg-yt-surface hover:border-yt-text-secondary/30'}"
+            >
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'bg-yt-primary text-white' : 'bg-yt-highlight text-yt-text-secondary'}">
+                  <span class="material-symbols-outlined text-xl">auto_awesome</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <span class="font-semibold text-sm text-yt-text">{t("welcome.hybrid")}</span>
+                  <p class="text-xs text-yt-text-secondary mt-1 leading-relaxed">{t("welcome.hybridDesc")}</p>
+                </div>
+                <div class="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center {selectedDepMode === 'hybrid' ? 'border-yt-primary' : 'border-yt-border'}">
+                  {#if selectedDepMode === "hybrid"}
                     <div class="w-2.5 h-2.5 rounded-full bg-yt-primary"></div>
                   {/if}
                 </div>
@@ -826,8 +868,39 @@
           </div>
 
           {#if installError}
-            <div class="w-full bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <p class="text-xs text-red-400 font-mono whitespace-pre-wrap">{installError}</p>
+            <div class="w-full bg-yt-error/10 border border-yt-error/30 rounded-lg p-3 space-y-2.5">
+              <div class="flex items-start gap-2">
+                <span class="material-symbols-outlined text-yt-error text-[18px] shrink-0 mt-0.5">error</span>
+                <p class="text-xs text-yt-text font-medium">{t("layout.installFailedSummary")}</p>
+              </div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <button
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-yt-primary hover:bg-yt-primary-hover text-white text-xs font-medium transition-colors disabled:opacity-50"
+                  onclick={handleAutoInstall}
+                  disabled={installing}
+                >
+                  <span class="material-symbols-outlined text-[15px]">refresh</span>
+                  {t("layout.installRetry")}
+                </button>
+                <a
+                  href="/tools/ytdlp/logs"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-yt-primary hover:underline"
+                >
+                  <span class="material-symbols-outlined text-[14px]">description</span>
+                  {t("layout.installSeeLogs")}
+                </a>
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-[11px] font-medium text-yt-text-secondary hover:text-yt-text transition-colors"
+                onclick={() => (showInstallErrorDetail = !showInstallErrorDetail)}
+              >
+                <span class="material-symbols-outlined text-[14px]">{showInstallErrorDetail ? "expand_less" : "expand_more"}</span>
+                {t("layout.installErrorDetail")}
+              </button>
+              {#if showInstallErrorDetail}
+                <p class="text-[11px] text-yt-error/90 font-mono whitespace-pre-wrap bg-yt-bg/50 rounded p-2 max-h-32 overflow-y-auto">{installError}</p>
+              {/if}
             </div>
           {/if}
 
@@ -902,7 +975,7 @@
     <button
       class="fixed inset-0 bg-black/20 z-40"
       onclick={() => popupOpen = false}
-      aria-label="Close popup"
+      aria-label={t("download.close")}
     ></button>
 
     <!-- Floating Popup (Anchored near bottom left sidebar) -->
@@ -974,7 +1047,7 @@
   <!-- Toast Notification -->
   <!-- Toast Notification -->
   {#if toastVisible}
-    <div class="fixed top-6 left-1/2 -translate-x-1/2 z-[200] animate-toast-in">
+    <div class="fixed top-6 left-1/2 -translate-x-1/2 z-[200] animate-toast-in" role="alert" aria-live={toastType === "error" ? "assertive" : "polite"}>
       <div class="flex items-center gap-4 bg-yt-surface border border-yt-border border-l-4 {toastType === 'error' ? 'border-l-yt-error' : 'border-l-yt-success'} text-yt-text px-6 py-4 rounded-lg shadow-2xl">
         <span class="material-symbols-outlined text-[24px] {toastType === 'error' ? 'text-yt-error' : 'text-yt-success'}">{toastIcon}</span>
         <span class="text-base font-medium">{toastMessage}</span>
@@ -985,7 +1058,13 @@
   <!-- Update Dialog -->
   {#if showUpdateDialog}
     <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 animate-scale-in">
+      <div
+        class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 animate-scale-in"
+        role="dialog"
+        aria-modal="true"
+        aria-label={updateAvailable ? t("update.available") : t("update.checkUpdate")}
+        use:autofocusDialog
+      >
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-lg bg-yt-primary/10 flex items-center justify-center">
             <span class="material-symbols-outlined text-yt-primary text-2xl">system_update</span>
@@ -1068,7 +1147,13 @@
   <!-- Close Dialog -->
   {#if showCloseDialog}
     <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 animate-scale-in">
+      <div
+        class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 animate-scale-in"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("tray.dialogTitle")}
+        use:autofocusDialog
+      >
         <h3 class="font-display font-semibold text-lg text-yt-text mb-2">{t("tray.dialogTitle")}</h3>
         <p class="text-sm text-yt-text-secondary mb-6">{t("tray.dialogMessage")}</p>
 
@@ -1089,6 +1174,42 @@
             class="flex-1 px-4 py-2 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors"
           >
              {t("tray.minimize")}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Active downloads close warning -->
+  {#if showCloseBlockedDialog}
+    <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm">
+      <div
+        class="bg-yt-surface border border-yt-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 animate-scale-in"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("close.activeTitle")}
+        use:autofocusDialog
+      >
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-lg bg-yt-warning/15 flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-yt-warning text-2xl">warning</span>
+          </div>
+          <h3 class="font-display font-semibold text-lg text-yt-text">{t("close.activeTitle")}</h3>
+        </div>
+        <p class="text-sm text-yt-text-secondary mb-6">{t("close.activeMessage", { count: closeBlockedCount })}</p>
+
+        <div class="flex gap-3">
+          <button
+            onclick={() => (showCloseBlockedDialog = false)}
+            class="flex-1 px-4 py-2 rounded-lg bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors"
+          >
+            {t("close.keepDownloading")}
+          </button>
+          <button
+            onclick={handleCloseBlockedExit}
+            class="flex-1 px-4 py-2 rounded-lg bg-yt-highlight hover:bg-yt-border text-yt-text text-sm font-medium transition-colors"
+          >
+            {t("close.exitAnyway")}
           </button>
         </div>
       </div>
@@ -1116,7 +1237,7 @@
          <div class="px-4 py-3 border-b border-yt-border flex items-center justify-between bg-yt-surface">
             <h3 class="font-mono text-sm font-bold text-yt-text">Debug Logs</h3>
              <button onclick={copyLogs} class="text-xs font-medium text-yt-primary hover:underline">
-               {logsCopied ? "Copied!" : "Copy to Clipboard"}
+               {logsCopied ? t("debug.copied") : t("debug.copyToClipboard")}
              </button>
          </div>
          <div class="flex-1 overflow-auto bg-yt-bg p-4 font-mono text-xs text-yt-text-secondary">
@@ -1230,7 +1351,7 @@
                 <div>Loading status...</div>
               {:else}
                 <span class="material-symbols-outlined text-2xl mb-2 opacity-50">info</span>
-                <div>Click "Refresh" to load dependency status</div>
+                <div>{t("debug.clickRefresh")}</div>
               {/if}
             </div>
           {/if}
@@ -1280,7 +1401,7 @@
 
         <div class="px-5 py-3 border-t border-yt-border bg-yt-bg/50">
           <p class="text-[10px] text-yt-text-secondary font-mono">
-            Deleting app-managed binaries will require re-installation on next app launch.
+            {t("debug.deleteBinaryWarning")}
           </p>
         </div>
       </div>

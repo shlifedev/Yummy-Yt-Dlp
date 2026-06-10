@@ -1,7 +1,7 @@
 use super::path::{command_with_path, source_order, DepSourcePref};
 use super::resolve::{
-    app_managed_binary, check_deno_version, check_ffmpeg, check_ytdlp, deno_home_path,
-    deno_on_system_path, try_get_version, which_first,
+    app_managed_binary, app_managed_ytdlp_binary, check_deno_version, check_ffmpeg, check_ytdlp,
+    deno_home_path, deno_on_system_path, try_get_version, which_first,
 };
 use crate::ytdlp::types::{DepInfo, DepSource, FullDependencyStatus};
 use std::sync::RwLock;
@@ -97,7 +97,7 @@ fn choose_dep(
 
 /// app-managed yt-dlp, if the binary exists in the app bin dir.
 async fn app_managed_ytdlp(app: &AppHandle) -> Option<DepInfo> {
-    let app_binary = app_managed_binary(app, "yt-dlp", "yt-dlp.exe")?;
+    let app_binary = app_managed_ytdlp_binary(app)?;
     // Version check may fail on first run (PyInstaller extraction, Gatekeeper, etc.),
     // but the binary's presence on disk is enough to report it installed.
     let version = try_get_version(&app_binary).await.ok();
@@ -278,8 +278,9 @@ pub async fn check_full_dependencies(app: &AppHandle) -> FullDependencyStatus {
 }
 
 /// Warmup yt-dlp by running `--version` in the background.
-/// PyInstaller `--onefile` binaries need to extract the Python runtime on each run;
-/// triggering this early primes the OS file cache so subsequent invocations are faster.
+/// The first run of a freshly extracted onedir build still pays a one-time cost
+/// (PyInstaller bootstrap + macOS Gatekeeper scan); triggering it early primes the
+/// OS file cache so the user's first real download isn't the one that waits.
 pub fn warmup_ytdlp(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let path = match super::resolve::resolve_ytdlp_path_with_app(&app).await {

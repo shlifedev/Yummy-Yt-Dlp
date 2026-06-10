@@ -8,5 +8,6 @@
 
 # Bundled sidecar binaries fetched at build time (CI fills these; not committed)
 /binaries/yt-dlp*
+/binaries/ytdlp/
 /binaries/ffmpeg*
 /binaries/ffprobe*

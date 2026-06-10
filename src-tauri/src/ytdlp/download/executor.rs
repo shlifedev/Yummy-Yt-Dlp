@@ -475,6 +475,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         return;
     }
 
+    // Register the cancel receiver up front, before any resolution work. Binary/ffmpeg
+    // resolution can take several seconds on a cold yt-dlp start, and a cancel arriving in
+    // that window used to be dropped (no receiver registered yet) while cancel_if_active had
+    // already flipped the DB row to 'cancelled'. Registering here means send_cancel always has
+    // a live receiver; run_download_attempt also re-reads the DB before spawning as a backstop.
+    let mut cancel_rx = manager.register_cancel(task_id);
+
     let ytdlp_path = match binary::resolve_ytdlp_path_with_app(&app).await {
         Ok(p) => p,
         Err(_e) => {
@@ -490,6 +497,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 None,
             );
             emit_download_error(&app, task_id, "yt-dlp not found".to_string(), None);
+            manager.unregister_cancel(task_id);
             manager.release();
             process_next_pending(app);
             return;
@@ -525,13 +533,61 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         },
     );
 
-    // Register cancel receiver before spawning. Shared across the impersonate retry so a cancel
-    // during either attempt is honored.
-    let mut cancel_rx = manager.register_cancel(task_id);
+    // cancel_rx was registered up front (before resolution) so a cancel during the cold-start
+    // resolve window is not lost; it is shared across the impersonate retry below.
+
+    // Defense-in-depth: validate the selector/audio fields before they reach argv. A queue row
+    // could carry a tampered value (e.g. a DB poke or a future code path that skips request
+    // validation), and a leading '-' or shell metacharacter there would be argument injection.
+    let format_id = match security::sanitize_format_id(&task.format_id) {
+        Ok(f) => f,
+        Err(e) => {
+            handle_download_failure(
+                &app,
+                task_id,
+                &format!("invalid format selector: {}", e),
+                &db_state,
+                &manager,
+            );
+            return;
+        }
+    };
+    let audio_format = match &task.audio_format {
+        Some(fmt) => match security::sanitize_audio_format(fmt) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                handle_download_failure(
+                    &app,
+                    task_id,
+                    &format!("invalid audio format: {}", e),
+                    &db_state,
+                    &manager,
+                );
+                return;
+            }
+        },
+        None => None,
+    };
+    let audio_quality = match &task.audio_quality {
+        Some(q) => match security::sanitize_audio_quality(q) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                handle_download_failure(
+                    &app,
+                    task_id,
+                    &format!("invalid audio quality: {}", e),
+                    &db_state,
+                    &manager,
+                );
+                return;
+            }
+        },
+        None => None,
+    };
 
     // Build yt-dlp args in a Vec for logging before passing to Command
     let mut args: Vec<String> = Vec::new();
-    args.extend(["--format".to_string(), task.format_id.clone()]);
+    args.extend(["--format".to_string(), format_id]);
     args.extend(["--output".to_string(), task.output_path.clone()]);
     args.extend([
         "--progress-template".to_string(),
@@ -541,12 +597,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     args.push("--no-playlist".to_string());
     args.push("--no-overwrites".to_string());
 
-    // Add audio extraction flags if audio_format is specified (e.g. mp3, flac, opus, wav)
-    if let Some(audio_fmt) = &task.audio_format {
+    // Add audio extraction flags if audio_format is specified (e.g. mp3, flac, opus, wav).
+    // Both values were validated above.
+    if let Some(audio_fmt) = &audio_format {
         args.push("--extract-audio".to_string());
         args.extend(["--audio-format".to_string(), audio_fmt.clone()]);
-        if let Some(audio_quality) = &task.audio_quality {
-            args.extend(["--audio-quality".to_string(), audio_quality.clone()]);
+        if let Some(quality) = &audio_quality {
+            args.extend(["--audio-quality".to_string(), quality.clone()]);
         }
     }
 
@@ -588,10 +645,13 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     // Apply global advanced options (subtitles, SponsorBlock, embedding, codec, network, etc.)
     args.extend(super::advanced::build_advanced_args(
         &settings.advanced,
-        task.audio_format.is_some(),
+        audio_format.is_some(),
         ffmpeg_available,
     ));
 
+    // End option parsing before the positional URL so a URL starting with '-' (or any future
+    // value) can never be interpreted as a yt-dlp flag.
+    args.push("--".to_string());
     // Add video URL
     args.push(task.video_url.clone());
 
@@ -615,8 +675,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     task_id
                 ),
             );
-            args.push("--impersonate".to_string());
-            args.push(crate::ytdlp::metadata::IMPERSONATE_TARGET.to_string());
+            // Insert before the trailing `-- <url>` pair; appended after `--` these would be
+            // parsed as URLs instead of flags.
+            let sep = args.len() - 2;
+            args.insert(sep, "--impersonate".to_string());
+            args.insert(
+                sep + 1,
+                crate::ytdlp::metadata::IMPERSONATE_TARGET.to_string(),
+            );
             outcome = run_download_attempt(&app, task_id, &ytdlp_path, &args, &mut cancel_rx).await;
         }
     }

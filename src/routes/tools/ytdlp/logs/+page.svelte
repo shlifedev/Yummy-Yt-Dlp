@@ -48,7 +48,9 @@
         if (search && !entry.message.toLowerCase().includes(search.toLowerCase())) return
 
         logs = [entry, ...logs].slice(0, 200) // Keep max 200 in live mode
-        totalCount += 1
+        // Don't touch totalCount here: it mirrors the DB row count for pagination, and only
+        // filter-passing events reach this point, so bumping it would drift out of sync. Leaving
+        // live mode triggers loadLogs(), which restores the accurate count.
         loadStats() // refresh stats
       })
       unlisten = unlistenFn

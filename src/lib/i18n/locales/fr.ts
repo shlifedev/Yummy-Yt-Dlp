@@ -38,9 +38,7 @@ const fr: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "Bienvenue dans Yummy YT-DLP",
   "welcome.subtitle": "Choisissez comment gérer les dépendances (yt-dlp, ffmpeg, deno)",
-  "welcome.appManaged": "Géré par l'app",
   "welcome.appManagedTag": "Recommandé",
-  "welcome.appManagedDesc": "L'application télécharge et gère automatiquement tous les outils nécessaires. Aucune configuration manuelle requise.",
   "welcome.hybrid": "Hybride",
   "welcome.hybridDesc": "Utilise les outils disponibles sur votre système si possible, sinon l'application les télécharge et les gère automatiquement.",
   "welcome.bundled": "Intégré",
@@ -212,13 +210,11 @@ const fr: Record<string, string> = {
   "settings.update": "Mettre à jour",
   "settings.updating": "Mise à jour...",
   "settings.depMode": "Mode de dépendances",
-  "settings.depModeExternal": "Externe (géré par l'app)",
   "settings.depModeHybrid": "Hybride",
   "settings.depModeHybridDesc": "Préfère les outils sur votre PATH système, avec repli sur les copies gérées par l'application. Recommandé pour la plupart des utilisateurs.",
   "settings.depModeBundled": "Intégré",
   "settings.depModeBundledDesc": "Utilise toujours les copies intégrées de yt-dlp, ffmpeg et deno, en ignorant les installations système.",
   "settings.depModeSystem": "PATH système",
-  "settings.depModeExternalDesc": "L'application télécharge et gère automatiquement yt-dlp, ffmpeg et deno. Recommandé pour la plupart des utilisateurs.",
   "settings.depModeSystemDesc": "Utilise les binaires installés dans le PATH système. Installation manuelle requise.",
   "settings.depModeLabel": "Comment gérer les dépendances ?",
   "settings.installAll": "Installer tous les manquants",
@@ -234,6 +230,8 @@ const fr: Record<string, string> = {
   "tray.quit": "Quitter",
   "settings.minimizeToTray": "Minimiser dans la barre",
   "settings.minimizeToTrayDesc": "Minimiser dans la barre système lors de la fermeture",
+  "settings.autoUpdateDeps": "Mettre à jour les dépendances automatiquement",
+  "settings.autoUpdateDepsDesc": "Garder yt-dlp à jour au démarrage (ffmpeg et deno uniquement s'ils sont obsolètes). Désactivez pour mettre à jour manuellement depuis l'onglet Dépendances",
 
   // Update
   "update.checkUpdate": "Vérifier les mises à jour",
@@ -282,6 +280,37 @@ const fr: Record<string, string> = {
   "error.downloadCancelled": "Téléchargement annulé.",
   "error.downloadTimeout": "Le téléchargement a expiré (6 heures max).",
   "error.unknown": "Une erreur inconnue s'est produite.",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count} vidéos",
+  "download.filenamePreview": "Aperçu :",
+  "download.showSkipped": "Afficher les ignorés",
+  "download.hideSkipped": "Masquer les ignorés",
+  "download.skippedReasonQueue": "Déjà dans la file",
+  "download.skippedReasonExists": "Déjà téléchargé",
+  "download.fixWithCookies": "Définir un navigateur pour les cookies",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "Impossible d'installer les dépendances.",
+  "layout.installRetry": "Réessayer",
+  "layout.installSeeLogs": "Voir les journaux pour plus de détails",
+  "layout.installErrorDetail": "Détails de l'erreur",
+
+  // Added: debug panel strings
+  "debug.copied": "Copié !",
+  "debug.copyToClipboard": "Copier dans le presse-papiers",
+  "debug.clickRefresh": "Cliquez sur « Actualiser » pour charger l'état des dépendances",
+  "debug.deleteBinaryWarning": "Supprimer les binaires gérés par l'application nécessitera une réinstallation au prochain lancement.",
+
+  // Added: active-download close warning
+  "close.activeTitle": "Téléchargements en cours",
+  "close.activeMessage": "{count} téléchargement(s) en cours. Quitter les annulera.",
+  "close.keepDownloading": "Continuer le téléchargement",
+  "close.exitAnyway": "Quitter",
+
+  // Added: history actions
+  "history.revealInFolder": "Afficher dans le dossier",
+  "history.deleteItem": "Supprimer",
 }
 
 export default fr

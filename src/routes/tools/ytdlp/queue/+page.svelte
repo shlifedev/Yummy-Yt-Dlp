@@ -2,6 +2,8 @@
   import { commands } from "$lib/bindings"
   import type { HistoryItem } from "$lib/bindings"
   import { ask } from "@tauri-apps/plugin-dialog"
+  import { listen } from "@tauri-apps/api/event"
+  import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { onMount, onDestroy } from "svelte"
   import { t, getDateLocale } from "$lib/i18n/index.svelte"
   import { formatSize } from "$lib/utils/format"
@@ -45,6 +47,28 @@
   ])
   let activeTitleKey = $derived(activeFilters.find(f => f.key === activeFilter)?.labelKey ?? "queue.all")
 
+  // The active-queue payload only carries items still in the downloads table, so once a group's
+  // videos complete they fall out and the visible item count shrinks. We remember the largest
+  // count ever seen per group (this session) and use that as the progress denominator so the
+  // bar can't jump backwards as members finish and disappear.
+  let groupMaxCount = $state<Map<number, number>>(new Map())
+
+  function recordGroupCounts(items: any[]) {
+    const counts = new Map<number, number>()
+    for (const item of items) {
+      if (item.groupId != null) counts.set(item.groupId, (counts.get(item.groupId) ?? 0) + 1)
+    }
+    let changed = false
+    for (const [gid, n] of counts) {
+      if (n > (groupMaxCount.get(gid) ?? 0)) { groupMaxCount.set(gid, n); changed = true }
+    }
+    if (changed) groupMaxCount = new Map(groupMaxCount)
+  }
+
+  function groupDenominator(gid: number, visible: number): number {
+    return Math.max(visible, groupMaxCount.get(gid) ?? 0)
+  }
+
   function buildActiveRows(items: any[]) {
     const rows: any[] = []
     const groups = new Map<number, any>()
@@ -67,10 +91,11 @@
   function groupDone(items: any[]): number {
     return items.filter(i => i.status === "completed").length
   }
-  function groupProgress(items: any[]): number {
-    if (!items.length) return 0
+  function groupProgress(gid: number, items: any[]): number {
+    const denom = groupDenominator(gid, items.length)
+    if (!denom) return 0
     const sum = items.reduce((s, i) => s + (i.status === "completed" ? 100 : (i.progress || 0)), 0)
-    return Math.round(sum / items.length)
+    return Math.round(sum / denom)
   }
   function isActiveExpanded(gid: number): boolean {
     return !collapsedActiveGroups.has(gid)
@@ -104,6 +129,7 @@
   }
 
   let interval: ReturnType<typeof setInterval>
+  let unlistenDownload: (() => void) | null = null
   let activeLoadSeq = 0
   let historyLoadSeq = 0
   let groupLoadSeq = new Map<number, number>()
@@ -127,10 +153,34 @@
   onMount(async () => {
     await Promise.all([loadActive(), loadHistory()])
     firstLoad = false
+
+    // Drive updates off the global download-event stream: progress events patch the affected
+    // row in place (cheap), while status transitions re-pull the active queue (and history,
+    // on completion) so rows move between sections. A slow 5s poll stays as a safety net.
+    try {
+      unlistenDownload = await listen("download-event", (event: any) => {
+        const data = event.payload
+        if (data.eventType === "progress") {
+          const idx = active.findIndex(d => d.id === data.taskId)
+          if (idx !== -1) {
+            active[idx] = {
+              ...active[idx],
+              progress: data.percent ?? active[idx].progress,
+              speed: data.speed ?? active[idx].speed,
+              eta: data.eta ?? active[idx].eta,
+            }
+          }
+        } else {
+          loadActive()
+          if (data.eventType === "completed" && page === 0 && !search) loadHistory()
+        }
+      })
+    } catch (e) { console.error("Failed to listen for download events:", e) }
+
     interval = setInterval(async () => {
       await loadActive()
       if (page === 0 && !search) await loadHistory()
-    }, 2000)
+    }, 5000)
   })
 
   onDestroy(() => {
@@ -138,6 +188,7 @@
     historyLoadSeq++
     groupLoadSeq.clear()
     if (interval) clearInterval(interval)
+    if (unlistenDownload) unlistenDownload()
     clearTimeout(searchTimeout)
   })
 
@@ -146,7 +197,10 @@
     try {
       const r = await commands.getActiveQueue()
       if (requestId !== activeLoadSeq) return
-      if (r.status === "ok") active = r.data
+      if (r.status === "ok") {
+        active = r.data
+        recordGroupCounts(r.data)
+      }
     } catch (e) { console.error("Failed to load active queue:", e) }
   }
 
@@ -241,6 +295,15 @@
         if (r.status === "ok") await loadHistory()
       } catch (e) { console.error("Failed to delete history group:", e) }
     })
+  }
+
+  async function handleReveal(filePath: string | null | undefined) {
+    if (!filePath) return
+    try {
+      await revealItemInDir(filePath)
+    } catch (e) {
+      console.error("Failed to reveal file:", e)
+    }
   }
 
   function handleSearch(value: string) {
@@ -356,14 +419,27 @@
         <span>{formatDate(item.downloadedAt)}</span>
       </div>
     </div>
-    <button
-      class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-error transition-all p-1.5 rounded-md hover:bg-yt-error/10 shrink-0"
-      onclick={() => handleDeleteHistory(item.id)}
-      disabled={isBusy(`delete-history:${item.id}`)}
-      aria-label="Delete"
-    >
-      <span class="material-symbols-outlined text-[18px]">delete</span>
-    </button>
+    <div class="flex items-center gap-1 shrink-0">
+      {#if item.filePath}
+        <button
+          class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-primary transition-all p-1.5 rounded-md hover:bg-yt-primary/10"
+          onclick={() => handleReveal(item.filePath)}
+          aria-label={t("history.revealInFolder")}
+          title={t("history.revealInFolder")}
+        >
+          <span class="material-symbols-outlined text-[18px]">folder_open</span>
+        </button>
+      {/if}
+      <button
+        class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-error transition-all p-1.5 rounded-md hover:bg-yt-error/10"
+        onclick={() => handleDeleteHistory(item.id)}
+        disabled={isBusy(`delete-history:${item.id}`)}
+        aria-label={t("history.deleteItem")}
+        title={t("history.deleteItem")}
+      >
+        <span class="material-symbols-outlined text-[18px]">delete</span>
+      </button>
+    </div>
   </div>
 {/snippet}
 
@@ -423,8 +499,8 @@
             {#if row.kind === "group"}
               <GroupHeader
                 title={row.title}
-                subtitle={t("queue.groupProgress", { completed: groupDone(row.items), total: row.items.length })}
-                progress={groupProgress(row.items)}
+                subtitle={t("queue.groupProgress", { completed: groupDone(row.items), total: groupDenominator(row.groupId, row.items.length) })}
+                progress={groupProgress(row.groupId, row.items)}
                 expanded={isActiveExpanded(row.groupId)}
                 onToggle={() => toggleActiveGroup(row.groupId)}
                 onAction={() => handleCancelGroup(row.groupId)}

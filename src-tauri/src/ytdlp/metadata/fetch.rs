@@ -20,22 +20,30 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
     let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
 
     // Run yt-dlp with --dump-json
-    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
-    cmd.arg("--dump-json").arg("--no-playlist");
-    cmd.arg("--encoding").arg("UTF-8");
-    if let Some(browser) = &settings.cookie_browser {
-        if security::sanitize_cookie_browser(browser).is_ok() {
-            cmd.arg("--cookies-from-browser").arg(browser);
+    let build_cmd = |impersonate: bool| {
+        let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
+        cmd.arg("--dump-json").arg("--no-playlist");
+        cmd.arg("--encoding").arg("UTF-8");
+        if let Some(browser) = &settings.cookie_browser {
+            if security::sanitize_cookie_browser(browser).is_ok() {
+                cmd.arg("--cookies-from-browser").arg(browser);
+            }
         }
-    }
-    cmd.arg(&url);
+        if impersonate {
+            cmd.arg("--impersonate").arg(super::IMPERSONATE_TARGET);
+        }
+        // `--` ends option parsing so a URL beginning with `-` can never be read as a flag.
+        cmd.arg("--").arg(&url);
 
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd
+    };
 
-    let output = run_with_impersonate_fallback(cmd, METADATA_TIMEOUT, "error.fetchTimeout").await?;
+    let output =
+        run_with_impersonate_fallback(build_cmd, METADATA_TIMEOUT, "error.fetchTimeout").await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -137,6 +145,23 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoInfo, 
     })
 }
 
+/// 탭이 지정되지 않은 채널 URL(`@handle`, `/channel/ID`, `/c/`, `/user/`)을 `/videos` 탭으로
+/// 고정한다. 채널 홈을 그대로 넘기면 yt-dlp가 Videos/Shorts 탭을 별도 플레이리스트로 다뤄
+/// `-I` 페이지네이션이 탭마다 중복 적용되고(페이지당 2배 응답), 탭 수만큼 웹페이지를 더 받는다.
+fn normalize_bare_channel_url(url: &str) -> String {
+    static BARE_CHANNEL: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(
+            r"^https?://(?:www\.|m\.)?youtube\.com/(?:@[\w.-]+|channel/[\w-]+|c/[^/?#]+|user/[^/?#]+)/?$",
+        )
+        .expect("invalid bare-channel regex")
+    });
+    if BARE_CHANNEL.is_match(url) {
+        format!("{}/videos", url.trim_end_matches('/'))
+    } else {
+        url.to_string()
+    }
+}
+
 /// Fetch playlist metadata and entries using yt-dlp --flat-playlist
 #[tauri::command]
 #[specta::specta]
@@ -154,32 +179,47 @@ pub async fn fetch_playlist_info(
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
     let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
 
-    // Run yt-dlp with --flat-playlist --dump-json
-    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
-    cmd.arg("--flat-playlist").arg("--dump-json");
-    cmd.arg("--encoding").arg("UTF-8");
-    // Server-side pagination: yt-dlp -I START:END (1-indexed)
-    // page_size >= 99999 means "Download All", so skip -I
-    if page_size < 99999 {
-        let start = page * page_size + 1; // 1-indexed
-        let end = start + page_size - 1; // inclusive
-        cmd.arg("-I").arg(format!("{}:{}", start, end));
-    }
-    if let Some(browser) = &settings.cookie_browser {
-        if security::sanitize_cookie_browser(browser).is_ok() {
-            cmd.arg("--cookies-from-browser").arg(browser);
-        }
-    }
-    cmd.arg(&url);
+    // 탭 없는 채널 URL은 Videos/Shorts 탭을 각각 별도 플레이리스트로 받아 `-I`가 탭마다
+    // 적용된다(30개 요청 → 60개 응답, 채널 홈 + 탭별 웹페이지 추가 fetch). /videos로 고정.
+    let url = normalize_bare_channel_url(&url);
 
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+    // Run yt-dlp with --flat-playlist --dump-json
+    let build_cmd = |impersonate: bool| {
+        let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
+        cmd.arg("--flat-playlist").arg("--dump-json");
+        cmd.arg("--encoding").arg("UTF-8");
+        // Server-side pagination: yt-dlp -I START:END (1-indexed)
+        // page_size >= 99999 means "Download All", so skip -I
+        if page_size < 99999 {
+            // Clamp page_size to a sane window and use saturating math so a hostile/huge
+            // page or page_size can't overflow u32 when computing the 1-indexed range.
+            let page_size = page_size.clamp(1, 500);
+            let start = page.saturating_mul(page_size).saturating_add(1); // 1-indexed
+            let end = start.saturating_add(page_size - 1); // inclusive
+            cmd.arg("-I").arg(format!("{}:{}", start, end));
+        }
+        if let Some(browser) = &settings.cookie_browser {
+            if security::sanitize_cookie_browser(browser).is_ok() {
+                cmd.arg("--cookies-from-browser").arg(browser);
+            }
+        }
+        if impersonate {
+            cmd.arg("--impersonate").arg(super::IMPERSONATE_TARGET);
+        }
+        // `--` ends option parsing so a URL beginning with `-` can never be read as a flag.
+        cmd.arg("--").arg(&url);
+
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd
+    };
 
     // Use a longer timeout for playlists (5 minutes) since large playlists take more time
     let output =
-        run_with_impersonate_fallback(cmd, Duration::from_secs(300), "error.fetchTimeout").await?;
+        run_with_impersonate_fallback(build_cmd, Duration::from_secs(300), "error.fetchTimeout")
+            .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -415,28 +455,36 @@ pub async fn detect_url_type(app: AppHandle, url: String) -> Result<UrlType, App
     let ytdlp_path = binary::resolve_ytdlp_path_with_app(&app).await?;
     let settings = crate::ytdlp::settings::get_settings(&app).unwrap_or_default();
 
-    let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
-    cmd.arg("--dump-single-json")
-        .arg("--flat-playlist")
-        .arg("--playlist-items")
-        .arg("1")
-        .arg("--encoding")
-        .arg("UTF-8");
-    if let Some(browser) = &settings.cookie_browser {
-        if security::sanitize_cookie_browser(browser).is_ok() {
-            cmd.arg("--cookies-from-browser").arg(browser);
+    let build_cmd = |impersonate: bool| {
+        let mut cmd = binary::command_with_path_app(&ytdlp_path, &app);
+        cmd.arg("--dump-single-json")
+            .arg("--flat-playlist")
+            .arg("--playlist-items")
+            .arg("1")
+            .arg("--encoding")
+            .arg("UTF-8");
+        if let Some(browser) = &settings.cookie_browser {
+            if security::sanitize_cookie_browser(browser).is_ok() {
+                cmd.arg("--cookies-from-browser").arg(browser);
+            }
         }
-    }
-    cmd.arg(&url);
+        if impersonate {
+            cmd.arg("--impersonate").arg(super::IMPERSONATE_TARGET);
+        }
+        // `--` ends option parsing so a URL beginning with `-` can never be read as a flag.
+        cmd.arg("--").arg(&url);
 
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd
+    };
 
     // Detection only resolves one item, so a tighter timeout than full fetch is fine.
     let output =
-        run_with_impersonate_fallback(cmd, Duration::from_secs(60), "error.fetchTimeout").await?;
+        run_with_impersonate_fallback(build_cmd, Duration::from_secs(60), "error.fetchTimeout")
+            .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -464,4 +512,46 @@ pub async fn detect_url_type(app: AppHandle, url: String) -> Result<UrlType, App
         &format!("URL type detected: {:?} ({})", url_type, url),
     );
     Ok(url_type)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_bare_channel_url;
+
+    #[test]
+    fn bare_channel_urls_get_videos_tab() {
+        for (input, expected) in [
+            (
+                "https://www.youtube.com/@toothfairy_pf",
+                "https://www.youtube.com/@toothfairy_pf/videos",
+            ),
+            (
+                "https://www.youtube.com/@toothfairy_pf/",
+                "https://www.youtube.com/@toothfairy_pf/videos",
+            ),
+            (
+                "https://youtube.com/channel/UCkO6FQ8JkmYdyYKnRji8zcA",
+                "https://youtube.com/channel/UCkO6FQ8JkmYdyYKnRji8zcA/videos",
+            ),
+            (
+                "https://www.youtube.com/user/somebody",
+                "https://www.youtube.com/user/somebody/videos",
+            ),
+        ] {
+            assert_eq!(normalize_bare_channel_url(input), expected);
+        }
+    }
+
+    #[test]
+    fn non_channel_urls_pass_through() {
+        for url in [
+            "https://www.youtube.com/@toothfairy_pf/shorts",
+            "https://www.youtube.com/@toothfairy_pf/videos",
+            "https://www.youtube.com/watch?v=abc123",
+            "https://www.youtube.com/playlist?list=PL123",
+            "https://vimeo.com/12345",
+        ] {
+            assert_eq!(normalize_bare_channel_url(url), url);
+        }
+    }
 }

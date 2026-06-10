@@ -23,6 +23,10 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
         .unwrap_or(&settings.download_path);
     security::sanitize_output_path(output_dir)?;
 
+    // Re-validate the filename template here, not just in update_settings: settings.json can be
+    // edited on disk to slip a traversal/dangerous template past the UI. Validate before joining.
+    security::sanitize_filename_template(&settings.filename_template)?;
+
     // Build output template using OS-native path separators
     let output_template = std::path::Path::new(output_dir)
         .join(&settings.filename_template)
@@ -141,6 +145,9 @@ pub async fn add_to_queue_batch(
     group_kind: Option<String>,
 ) -> Result<BatchEnqueueResult, AppError> {
     let settings = settings::get_settings(&app)?;
+
+    // Defense-in-depth against a hand-edited settings.json (see add_to_queue).
+    security::sanitize_filename_template(&settings.filename_template)?;
 
     // Validate each request and build its output template (same as add_to_queue).
     let mut items = Vec::with_capacity(requests.len());

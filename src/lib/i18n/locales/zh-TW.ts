@@ -38,9 +38,7 @@ const zhTW: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "歡迎使用 Yummy YT-DLP",
   "welcome.subtitle": "選擇如何管理依賴項（yt-dlp、ffmpeg、deno）",
-  "welcome.appManaged": "應用程式管理",
   "welcome.appManagedTag": "推薦",
-  "welcome.appManagedDesc": "應用程式自動下載並管理所有必需的工具。無需手動設定。",
   "welcome.hybrid": "混合",
   "welcome.hybridDesc": "優先使用系統中已有的工具，若不可用則由應用程式自動下載並管理。",
   "welcome.bundled": "內建捆綁",
@@ -212,13 +210,11 @@ const zhTW: Record<string, string> = {
   "settings.update": "更新",
   "settings.updating": "更新中...",
   "settings.depMode": "依賴模式",
-  "settings.depModeExternal": "外部（應用管理）",
   "settings.depModeHybrid": "混合",
   "settings.depModeHybridDesc": "優先使用系統 PATH 中的工具，若不可用則回退至應用程式管理的副本。推薦大多數使用者使用。",
   "settings.depModeBundled": "內建捆綁",
   "settings.depModeBundledDesc": "始終使用應用程式自帶的 yt-dlp、ffmpeg、deno 副本，忽略系統安裝。",
   "settings.depModeSystem": "系統 PATH",
-  "settings.depModeExternalDesc": "應用自動下載和管理 yt-dlp、ffmpeg、deno。推薦大多數使用者使用。",
   "settings.depModeSystemDesc": "使用系統 PATH 中已安裝的二進位檔案。需要手動安裝。",
   "settings.depModeLabel": "如何管理依賴？",
   "settings.installAll": "安裝所有缺失項",
@@ -234,6 +230,8 @@ const zhTW: Record<string, string> = {
   "tray.quit": "退出",
   "settings.minimizeToTray": "最小化到系統匣",
   "settings.minimizeToTrayDesc": "關閉視窗時最小化到系統匣",
+  "settings.autoUpdateDeps": "自動更新依賴項",
+  "settings.autoUpdateDepsDesc": "啟動時將 yt-dlp 保持最新（ffmpeg 與 deno 僅在過時時更新）。關閉後需在依賴項分頁中手動更新",
 
   // Update
   "update.checkUpdate": "檢查更新",
@@ -282,6 +280,37 @@ const zhTW: Record<string, string> = {
   "error.downloadCancelled": "下載已取消。",
   "error.downloadTimeout": "下載逾時（最長 6 小時）。",
   "error.unknown": "發生未知錯誤。",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count} 部影片",
+  "download.filenamePreview": "預覽：",
+  "download.showSkipped": "顯示已略過",
+  "download.hideSkipped": "隱藏已略過",
+  "download.skippedReasonQueue": "已在佇列中",
+  "download.skippedReasonExists": "已下載",
+  "download.fixWithCookies": "設定 Cookie 瀏覽器",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "無法安裝依賴項。",
+  "layout.installRetry": "重試",
+  "layout.installSeeLogs": "查看日誌瞭解詳情",
+  "layout.installErrorDetail": "錯誤詳情",
+
+  // Added: debug panel strings
+  "debug.copied": "已複製！",
+  "debug.copyToClipboard": "複製到剪貼簿",
+  "debug.clickRefresh": "點擊「重新整理」載入依賴狀態",
+  "debug.deleteBinaryWarning": "刪除應用程式管理的二進位檔案後，下次啟動應用程式時需要重新安裝。",
+
+  // Added: active-download close warning
+  "close.activeTitle": "正在下載",
+  "close.activeMessage": "有 {count} 個下載正在進行中。結束將會取消它們。",
+  "close.keepDownloading": "繼續下載",
+  "close.exitAnyway": "結束",
+
+  // Added: history actions
+  "history.revealInFolder": "在資料夾中顯示",
+  "history.deleteItem": "刪除",
 }
 
 export default zhTW

@@ -49,23 +49,32 @@ impl Database {
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        // Read the highest recorded version. Older builds used DELETE+INSERT (no fixed
+        // rowid) so a row could exist at any rowid; MAX() reads it regardless and also
+        // tolerates a stray duplicate left by an interrupted write.
         let version: Option<u32> = conn
-            .query_row("SELECT version FROM _schema_version LIMIT 1", [], |row| {
+            .query_row("SELECT MAX(version) FROM _schema_version", [], |row| {
                 row.get(0)
             })
             .optional()
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .flatten();
 
         Ok(version.unwrap_or(0))
     }
 
     fn set_schema_version(conn: &Connection, version: u32) -> Result<(), AppError> {
-        conn.execute("DELETE FROM _schema_version", [])
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        conn.execute(
-            "INSERT INTO _schema_version (version) VALUES (?1)",
-            rusqlite::params![version],
-        )
+        // Replace whatever rows exist with a single pinned row in one transaction. The
+        // previous bare DELETE+INSERT left a window where _schema_version was empty; a
+        // crash there reset the version to 0 and re-ran every migration. DELETE collapses
+        // any duplicate rows older builds may have accumulated; rowid 1 keeps it canonical.
+        conn.execute_batch(&format!(
+            "BEGIN IMMEDIATE;
+             DELETE FROM _schema_version;
+             INSERT INTO _schema_version (rowid, version) VALUES (1, {});
+             COMMIT;",
+            version
+        ))
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         Ok(())
     }

@@ -38,9 +38,7 @@ const zhCN: Record<string, string> = {
   // Welcome (first-run)
   "welcome.title": "欢迎使用 Yummy YT-DLP",
   "welcome.subtitle": "选择如何管理依赖项（yt-dlp、ffmpeg、deno）",
-  "welcome.appManaged": "应用管理",
   "welcome.appManagedTag": "推荐",
-  "welcome.appManagedDesc": "应用自动下载并管理所有必需的工具。无需手动设置。",
   "welcome.hybrid": "混合",
   "welcome.hybridDesc": "优先使用系统中已有的工具，若不可用则由应用自动下载并管理。",
   "welcome.bundled": "内置捆绑",
@@ -212,13 +210,11 @@ const zhCN: Record<string, string> = {
   "settings.update": "更新",
   "settings.updating": "更新中...",
   "settings.depMode": "依赖模式",
-  "settings.depModeExternal": "外部（应用管理）",
   "settings.depModeHybrid": "混合",
   "settings.depModeHybridDesc": "优先使用系统 PATH 中的工具，若不可用则回退到应用管理的副本。推荐大多数用户使用。",
   "settings.depModeBundled": "内置捆绑",
   "settings.depModeBundledDesc": "始终使用应用自带的 yt-dlp、ffmpeg、deno 副本，忽略系统安装。",
   "settings.depModeSystem": "系统 PATH",
-  "settings.depModeExternalDesc": "应用自动下载和管理 yt-dlp、ffmpeg、deno。推荐大多数用户使用。",
   "settings.depModeSystemDesc": "使用系统 PATH 中已安装的二进制文件。需要手动安装。",
   "settings.depModeLabel": "如何管理依赖？",
   "settings.installAll": "安装所有缺失项",
@@ -234,6 +230,8 @@ const zhCN: Record<string, string> = {
   "tray.quit": "退出",
   "settings.minimizeToTray": "最小化到托盘",
   "settings.minimizeToTrayDesc": "关闭窗口时最小化到系统托盘",
+  "settings.autoUpdateDeps": "自动更新依赖项",
+  "settings.autoUpdateDepsDesc": "启动时将 yt-dlp 保持最新（ffmpeg 和 deno 仅在过时时更新）。关闭后需在依赖项选项卡中手动更新",
 
   // Update
   "update.checkUpdate": "检查更新",
@@ -282,6 +280,37 @@ const zhCN: Record<string, string> = {
   "error.downloadCancelled": "下载已取消。",
   "error.downloadTimeout": "下载超时（最长 6 小时）。",
   "error.unknown": "发生未知错误。",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count} 个视频",
+  "download.filenamePreview": "预览：",
+  "download.showSkipped": "显示已跳过",
+  "download.hideSkipped": "隐藏已跳过",
+  "download.skippedReasonQueue": "已在队列中",
+  "download.skippedReasonExists": "已下载",
+  "download.fixWithCookies": "设置 Cookie 浏览器",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "无法安装依赖项。",
+  "layout.installRetry": "重试",
+  "layout.installSeeLogs": "查看日志了解详情",
+  "layout.installErrorDetail": "错误详情",
+
+  // Added: debug panel strings
+  "debug.copied": "已复制！",
+  "debug.copyToClipboard": "复制到剪贴板",
+  "debug.clickRefresh": "点击“刷新”加载依赖状态",
+  "debug.deleteBinaryWarning": "删除应用管理的二进制文件后，下次启动应用时需要重新安装。",
+
+  // Added: active-download close warning
+  "close.activeTitle": "正在下载",
+  "close.activeMessage": "有 {count} 个下载正在进行中。退出将会取消它们。",
+  "close.keepDownloading": "继续下载",
+  "close.exitAnyway": "退出",
+
+  // Added: history actions
+  "history.revealInFolder": "在文件夹中显示",
+  "history.deleteItem": "删除",
 }
 
 export default zhCN

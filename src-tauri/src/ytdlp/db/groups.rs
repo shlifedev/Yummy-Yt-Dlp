@@ -1,7 +1,7 @@
 use super::Database;
 use crate::modules::types::AppError;
 use crate::ytdlp::types::*;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 const HISTORY_COLUMNS: &str =
     "id, video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at";
@@ -167,14 +167,35 @@ impl Database {
             }
         }; // guard dropped here
 
+        // Resolve the page's rows in two batched queries (one per row kind) instead of a
+        // per-row query that re-locked the mutex each iteration. Collect into maps, then
+        // rebuild `entries` in the original page order so sorting is preserved.
+        let group_ids: Vec<u64> = rows
+            .iter()
+            .filter(|(kind, _)| kind == "group")
+            .map(|(_, id)| *id)
+            .collect();
+        let single_ids: Vec<u64> = rows
+            .iter()
+            .filter(|(kind, _)| kind == "single")
+            .map(|(_, id)| *id)
+            .collect();
+
+        let conn = self.conn();
+        let group_headers = Self::load_group_headers(&conn, &group_ids)?;
+        let single_items = Self::load_single_items(&conn, &single_ids)?;
+        drop(conn);
+
         let mut entries = Vec::with_capacity(rows.len());
-        for (row_kind, key_id) in rows {
+        for (row_kind, key_id) in &rows {
             if row_kind == "group" {
-                if let Some(group) = self.get_history_group_header(key_id)? {
-                    entries.push(HistoryEntry::Group { group });
+                if let Some(group) = group_headers.get(key_id) {
+                    entries.push(HistoryEntry::Group {
+                        group: group.clone(),
+                    });
                 }
-            } else if let Some(item) = self.get_history_item(key_id)? {
-                entries.push(HistoryEntry::Single { item });
+            } else if let Some(item) = single_items.get(key_id) {
+                entries.push(HistoryEntry::Single { item: item.clone() });
             }
         }
 
@@ -186,43 +207,76 @@ impl Database {
         })
     }
 
-    fn get_history_group_header(
-        &self,
-        group_id: u64,
-    ) -> Result<Option<HistoryGroupHeader>, AppError> {
-        let conn = self.conn();
-        conn.query_row(
-            "SELECT g.title, g.total_count, COUNT(h.id), COALESCE(MAX(h.downloaded_at), 0)
+    /// Batch-load group headers for the given ids using a single `WHERE g.id IN (...)` query.
+    fn load_group_headers(
+        conn: &rusqlite::Connection,
+        ids: &[u64],
+    ) -> Result<std::collections::HashMap<u64, HistoryGroupHeader>, AppError> {
+        let mut map = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return Ok(map);
+        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let sql = format!(
+            "SELECT g.id, g.title, g.total_count, COUNT(h.id), COALESCE(MAX(h.downloaded_at), 0)
              FROM download_groups g
              JOIN history h ON h.group_id = g.id
-             WHERE g.id = ?1
+             WHERE g.id IN ({})
              GROUP BY g.id",
-            [group_id],
-            |row| {
-                Ok(HistoryGroupHeader {
+            placeholders
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        let params = rusqlite::params_from_iter(ids.iter());
+        let rows = stmt
+            .query_map(params, |row| {
+                let group_id: u64 = row.get(0)?;
+                Ok((
                     group_id,
-                    title: row.get(0)?,
-                    total_count: row.get(1)?,
-                    completed_count: row.get(2)?,
-                    latest_downloaded_at: row.get(3)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|e| AppError::DatabaseError(e.to_string()))
+                    HistoryGroupHeader {
+                        group_id,
+                        title: row.get(1)?,
+                        total_count: row.get(2)?,
+                        completed_count: row.get(3)?,
+                        latest_downloaded_at: row.get(4)?,
+                    },
+                ))
+            })
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        for row in rows {
+            let (id, header) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            map.insert(id, header);
+        }
+        Ok(map)
     }
 
-    fn get_history_item(&self, id: u64) -> Result<Option<HistoryItem>, AppError> {
-        let conn = self.conn();
+    /// Batch-load standalone history items for the given ids in a single `WHERE id IN (...)` query.
+    fn load_single_items(
+        conn: &rusqlite::Connection,
+        ids: &[u64],
+    ) -> Result<std::collections::HashMap<u64, HistoryItem>, AppError> {
+        let mut map = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return Ok(map);
+        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let sql = format!(
+            "SELECT {} FROM history WHERE id IN ({})",
+            HISTORY_COLUMNS, placeholders
+        );
         let mut stmt = conn
-            .prepare(&format!(
-                "SELECT {} FROM history WHERE id = ?1",
-                HISTORY_COLUMNS
-            ))
+            .prepare(&sql)
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        stmt.query_row([id], super::history::map_history_row)
-            .optional()
-            .map_err(|e| AppError::DatabaseError(e.to_string()))
+        let params = rusqlite::params_from_iter(ids.iter());
+        let rows = stmt
+            .query_map(params, super::history::map_history_row)
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        for row in rows {
+            let item = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            map.insert(item.id, item);
+        }
+        Ok(map)
     }
 
     /// Completed items of a history group, loaded lazily when the group is expanded.

@@ -119,6 +119,8 @@ jobs:
 
       # Sidecar binaries (yt-dlp, ffmpeg, ffprobe, deno) are bundled via bundle.resources.
       # URLs mirror dep_ytdlp.rs / dep_ffmpeg.rs / dep_deno.rs. ffprobe is optional (skip if absent).
+      # yt-dlp ships as a PyInstaller onedir zip (executable + _internal/); we extract the
+      # whole tree to binaries/ytdlp/ so the executable can find its bundled runtime.
       - name: Prepare bundled binaries (Windows)
         if: matrix.name == 'windows'
         shell: bash
@@ -126,7 +128,17 @@ jobs:
           set -euo pipefail
           BIN=src-tauri/binaries
           mkdir -p "$BIN"
-          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -o "$BIN/yt-dlp.exe"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip" -o /tmp/ytdlp.zip
+          rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
+          unzip -l /tmp/ytdlp.zip | head -20
+          unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
+          mkdir -p "$BIN/ytdlp"
+          cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
+          # The onedir zip already names the executable yt-dlp.exe; fail loudly if the
+          # layout ever changes so we never ship a bundle that can't resolve yt-dlp.
+          test -f "$BIN/ytdlp/yt-dlp.exe"
+          test -d "$BIN/ytdlp/_internal"
+          ls -la "$BIN/ytdlp"
           curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -o /tmp/ffmpeg.zip
           unzip -q /tmp/ffmpeg.zip -d /tmp/ffx
           cp "$(find /tmp/ffx -type f -name ffmpeg.exe | head -1)" "$BIN/ffmpeg.exe"
@@ -137,8 +149,8 @@ jobs:
           cp "$(find /tmp/denox -type f -name deno.exe | head -1)" "$BIN/deno.exe"
           ls -la "$BIN"
 
-      # macOS is a universal build: yt-dlp_macos is already universal2; ffmpeg is
-      # per-arch, so lipo arm64+x64 into a single fat binary.
+      # macOS is a universal build: the yt-dlp_macos onedir executable is already
+      # universal2; ffmpeg/deno are per-arch, so lipo arm64+x64 into fat binaries.
       - name: Prepare bundled binaries (macOS universal)
         if: matrix.name == 'macos'
         shell: bash
@@ -146,8 +158,17 @@ jobs:
           set -euo pipefail
           BIN=src-tauri/binaries
           mkdir -p "$BIN"
-          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "$BIN/yt-dlp"
-          chmod +x "$BIN/yt-dlp"
+          curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip" -o /tmp/ytdlp.zip
+          rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
+          unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
+          mkdir -p "$BIN/ytdlp"
+          cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
+          # yt-dlp_macos.zip ships the executable as yt-dlp_macos; normalize to yt-dlp.
+          mv "$BIN/ytdlp/yt-dlp_macos" "$BIN/ytdlp/yt-dlp"
+          chmod +x "$BIN/ytdlp/yt-dlp"
+          test -d "$BIN/ytdlp/_internal"
+          # The bundled executable is the universal2 build straight from upstream.
+          file "$BIN/ytdlp/yt-dlp"
           for ARCH in arm64 x64; do
             curl -fL "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${ARCH}.tar.gz" -o "/tmp/ffmpeg-${ARCH}.tar.gz"
             mkdir -p "/tmp/ff-${ARCH}" && tar -xzf "/tmp/ffmpeg-${ARCH}.tar.gz" -C "/tmp/ff-${ARCH}"
@@ -173,8 +194,7 @@ jobs:
             -output "$BIN/deno"
           chmod +x "$BIN/deno"
           lipo -info "$BIN/ffmpeg" "$BIN/deno"
-          file "$BIN/yt-dlp"
-          ls -la "$BIN"
+          ls -la "$BIN" "$BIN/ytdlp"
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

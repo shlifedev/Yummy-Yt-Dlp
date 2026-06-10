@@ -12,8 +12,8 @@ pub async fn check_dependencies() -> Result<DependencyStatus, AppError> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_ytdlp() -> Result<String, AppError> {
-    binary::update_ytdlp().await
+pub async fn update_ytdlp(app: AppHandle) -> Result<String, AppError> {
+    binary::update_ytdlp(&app).await
 }
 
 #[tauri::command]
@@ -199,10 +199,12 @@ pub async fn delete_app_managed_dep(app: AppHandle, dep_name: String) -> Result<
 
     let names_to_delete: Vec<&str> = match dep_name.as_str() {
         "yt-dlp" => {
+            // The onedir tree lives under bin/ytdlp/; the bare file is only present
+            // for legacy installs. Try both so a delete fully clears yt-dlp.
             if cfg!(target_os = "windows") {
-                vec!["yt-dlp.exe"]
+                vec!["ytdlp", "yt-dlp.exe"]
             } else {
-                vec!["yt-dlp"]
+                vec!["ytdlp", "yt-dlp"]
             }
         }
         "ffmpeg" => {
@@ -234,12 +236,18 @@ pub async fn delete_app_managed_dep(app: AppHandle, dep_name: String) -> Result<
     let mut deleted = Vec::new();
     for name in &names_to_delete {
         let path = bin_dir.join(name);
-        if path.exists() {
-            tokio::fs::remove_file(&path).await.map_err(|e| {
-                AppError::DependencyInstallError(format!("Failed to delete {}: {}", name, e))
-            })?;
-            deleted.push(name.to_string());
+        if !path.exists() {
+            continue;
         }
+        let result = if path.is_dir() {
+            tokio::fs::remove_dir_all(&path).await
+        } else {
+            tokio::fs::remove_file(&path).await
+        };
+        result.map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to delete {}: {}", name, e))
+        })?;
+        deleted.push(name.to_string());
     }
 
     binary::invalidate_dep_cache();

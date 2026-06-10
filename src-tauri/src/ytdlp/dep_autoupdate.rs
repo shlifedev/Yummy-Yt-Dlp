@@ -102,10 +102,27 @@ fn app_bin(app: &AppHandle, unix_name: &str, windows_name: &str) -> Option<PathB
     path.exists().then_some(path)
 }
 
+/// App-managed yt-dlp executable: onedir `bin/ytdlp/yt-dlp(.exe)` preferred, with
+/// the legacy single-file `bin/yt-dlp(.exe)` as a fallback (mirrors resolution).
+fn app_ytdlp_bin(app: &AppHandle) -> Option<PathBuf> {
+    let bin_dir = ensure_bin_dir(app).ok()?;
+    let exe = if cfg!(target_os = "windows") {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    };
+    let onedir = bin_dir.join("ytdlp").join(exe);
+    if onedir.exists() {
+        return Some(onedir);
+    }
+    let legacy = bin_dir.join(exe);
+    legacy.exists().then_some(legacy)
+}
+
 /// yt-dlp has a clean version string, so diff it against the latest release and
 /// re-download only when they differ — this never pulls the binary when current.
 async fn update_ytdlp_if_outdated(app: &AppHandle) {
-    let Some(path) = app_bin(app, "yt-dlp", "yt-dlp.exe") else {
+    let Some(path) = app_ytdlp_bin(app) else {
         return;
     };
     let (Some(current), Ok(latest)) = (

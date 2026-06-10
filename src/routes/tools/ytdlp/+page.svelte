@@ -11,7 +11,7 @@
   import { platform } from "@tauri-apps/plugin-os"
   import { onMount, onDestroy } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
-  import { extractError } from "$lib/utils/errors"
+  import { extractError, getErrorKey } from "$lib/utils/errors"
   import { formatSize, formatDuration } from "$lib/utils/format"
   import { buildSingleDownloadRequest } from "$lib/utils/download-request.js"
   import { getPlaylistReadyForDownload } from "$lib/utils/playlist-download.js"
@@ -23,6 +23,25 @@
   let quickInfo = $state<QuickMetadata | null>(null)
   let loadingFormats = $state(false)
   let error = $state<string | null>(null)
+  // The raw i18n key behind `error`, so the banner can offer a contextual fix (e.g. jump to the
+  // cookie-browser picker for auth-related failures).
+  let errorKey = $state<string | null>(null)
+
+  const COOKIE_ERROR_KEYS = ["error.ageRestricted", "error.cookieAccess", "error.siteBlocked"]
+  const showCookieHint = $derived(errorKey != null && COOKIE_ERROR_KEYS.includes(errorKey))
+
+  // Set the error banner from a backend AppError, remembering its key for contextual actions.
+  function setError(err: unknown) {
+    errorKey = getErrorKey(err)
+    error = extractError(err)
+  }
+
+  let cookieSelectEl = $state<HTMLSelectElement | null>(null)
+
+  function focusCookiePicker() {
+    cookieSelectEl?.scrollIntoView({ behavior: "smooth", block: "center" })
+    cookieSelectEl?.focus()
+  }
   let playlistResult = $state<PlaylistResult | null>(null)
   let playlistPage = $state(0)
   let loadingMore = $state(false)
@@ -67,7 +86,6 @@
   const isLosslessFormat = $derived(format === "flac" || format === "wav")
 
   // Filename template state
-  let filenameExpanded = $state(true)
   let useAdvancedTemplate = $state(false)
   let filenameTemplate = $state("%(title)s.%(ext)s")
   let templateUploaderFolder = $state(false)
@@ -97,6 +115,9 @@
   // Informational notice (e.g. "N skipped because already downloaded") — shown separately
   // from `error` so a successful batch isn't presented as a failure.
   let notice = $state<string | null>(null)
+  // Titles of videos skipped during a batch, grouped by reason, for the expandable detail list.
+  let skippedDetails = $state<{ queue: string[]; exists: string[] }>({ queue: [], exists: [] })
+  let skippedExpanded = $state(false)
 
   // Analyze elapsed time
   let analyzeStartTime = $state<number | null>(null)
@@ -182,9 +203,19 @@
   let browsers = $state<string[]>([])
   let currentPlatform = $state<string>("")
 
+  // Remember the URL the duplicate dialog was raised for, so editing the URL afterwards
+  // dismisses a now-stale warning before the debounced re-analyze even fires.
+  let duplicateUrl = $state("")
+
   $effect(() => {
     const currentUrl = url // Only tracked dependency
     clearAnalyzeDebounce()
+    // A duplicate warning belongs to a specific URL; once the user edits the field it no longer
+    // matches what's on screen, so drop it (and its captured request) right away.
+    if (duplicateCheck && currentUrl.trim() !== duplicateUrl) {
+      duplicateCheck = null
+      pendingRequest = null
+    }
     if (looksLikeVideoUrl(currentUrl)) {
       analyzeTimeoutId = setTimeout(() => {
         // Don't gate on `analyzing`: if a previous fetch is still in flight, handleAnalyze bumps
@@ -381,6 +412,7 @@
   async function runAnalyze(requestedUrl: string) {
     analyzing = true
     error = null
+    errorKey = null
     notice = null
     videoInfo = null
     quickInfo = null
@@ -404,7 +436,7 @@
       const valResult = await commands.validateUrl(requestedUrl)
       if (currentGeneration !== analyzeGeneration) return
       if (valResult.status === "error") {
-        error = extractError(valResult.error)
+        setError(valResult.error)
         return
       }
       if (!valResult.data.valid) {
@@ -421,7 +453,7 @@
         const probe = await commands.detectUrlType(normalized)
         if (currentGeneration !== analyzeGeneration) return
         if (probe.status === "error") {
-          error = extractError(probe.error)
+          setError(probe.error)
           return
         }
         resolvedType = probe.data
@@ -456,7 +488,7 @@
         const infoResult = await fullPromise
         if (currentGeneration !== analyzeGeneration) return
         if (infoResult.status === "error") {
-          error = extractError(infoResult.error)
+          setError(infoResult.error)
           return
         }
         videoInfo = infoResult.data
@@ -466,7 +498,7 @@
         const plResult = await commands.fetchPlaylistInfo(normalized, 0, PLAYLIST_PAGE_SIZE)
         if (currentGeneration !== analyzeGeneration) return
         if (plResult.status === "error") {
-          error = extractError(plResult.error)
+          setError(plResult.error)
           return
         }
         playlistResult = plResult.data
@@ -480,6 +512,7 @@
       }
     } catch (e: any) {
       if (currentGeneration !== analyzeGeneration) return
+      errorKey = null
       error = e.message || String(e)
     } finally {
       if (currentGeneration === analyzeGeneration) {
@@ -513,6 +546,7 @@
       }
     } catch (e: any) {
       if (requestId !== loadMoreSeq) return
+      errorKey = null
       error = e.message || String(e)
     } finally {
       if (requestId === loadMoreSeq) loadingMore = false
@@ -541,7 +575,7 @@
         const result = await commands.fetchPlaylistInfo(playlistResult.url, nextPage, PLAYLIST_PAGE_SIZE)
         if (generation !== analyzeGeneration || !playlistResult) return
         if (result.status === "error") {
-          error = extractError(result.error)
+          setError(result.error)
           return
         }
         const batch = result.data.entries
@@ -559,7 +593,7 @@
         }
       }
     } catch (e: any) {
-      if (generation === analyzeGeneration) error = e.message || String(e)
+      if (generation === analyzeGeneration) { errorKey = null; error = e.message || String(e) }
     } finally {
       if (generation === analyzeGeneration) autoLoading = false
     }
@@ -569,18 +603,20 @@
     const currentGeneration = ++analyzeGeneration
     analyzing = true
     error = null
+    errorKey = null
     quickInfo = null
     loadingFormats = true
     try {
       const infoResult = await commands.fetchVideoInfo(entry.url)
       if (currentGeneration !== analyzeGeneration) return
       if (infoResult.status === "error") {
-        error = extractError(infoResult.error)
+        setError(infoResult.error)
         return
       }
       videoInfo = infoResult.data
     } catch (e: any) {
       if (currentGeneration !== analyzeGeneration) return
+      errorKey = null
       error = e.message || String(e)
     } finally {
       if (currentGeneration === analyzeGeneration) {
@@ -622,6 +658,7 @@
     if (preparingDownload) return
     preparingDownload = true
     error = null
+    errorKey = null
     notice = null
     duplicateCheck = null
     pendingRequest = null
@@ -657,6 +694,7 @@
             if (dupResult.data.inHistory && dupResult.data.fileExists) {
               duplicateCheck = dupResult.data
               pendingRequest = request
+              duplicateUrl = url.trim()
               return
             }
           }
@@ -674,6 +712,7 @@
   async function executeDownload(request: any) {
     downloading = true
     error = null
+    errorKey = null
     duplicateCheck = null
     pendingRequest = null
 
@@ -681,7 +720,7 @@
       const result = await commands.addToQueue(request)
       if (result.status === "error") {
         downloading = false
-        error = extractError(result.error)
+        setError(result.error)
       } else {
         window.dispatchEvent(new CustomEvent("queue-added", { detail: { count: 1 } }))
         downloading = false
@@ -691,6 +730,7 @@
       }
     } catch (e: any) {
       downloading = false
+      errorKey = null
       error = e.message || String(e)
     }
   }
@@ -705,6 +745,9 @@
     duplicateCheck = null
     pendingRequest = null
     if (!request) return
+    // The video on screen may have changed since the warning appeared (URL edited, another
+    // entry analyzed). Only proceed if the captured request still matches the current video.
+    if (videoInfo && videoInfo.videoId && request.videoId !== videoInfo.videoId) return
     await executeDownload(request)
   }
 
@@ -743,19 +786,22 @@
       }
     }))
 
-    let skippedQueue = 0
-    let skippedExists = 0
+    const skippedQueueTitles: string[] = []
+    const skippedExistsTitles: string[] = []
     const survivors: typeof entries = []
     for (const { entry, dup } of checks) {
-      if (dup?.inQueue) { skippedQueue++; continue }
-      if (dup?.inHistory && dup.fileExists) { skippedExists++; continue }
+      const title = entry.title || `Video ${entry.videoId}`
+      if (dup?.inQueue) { skippedQueueTitles.push(title); continue }
+      if (dup?.inHistory && dup.fileExists) { skippedExistsTitles.push(title); continue }
       survivors.push(entry)
     }
     batchProgress = { current: totalCount - survivors.length, total: totalCount }
 
+    skippedDetails = { queue: skippedQueueTitles, exists: skippedExistsTitles }
+    skippedExpanded = false
     const messages: string[] = []
-    if (skippedQueue > 0) messages.push(t("download.skippedQueue", { count: skippedQueue }))
-    if (skippedExists > 0) messages.push(t("download.skippedExists", { count: skippedExists }))
+    if (skippedQueueTitles.length > 0) messages.push(t("download.skippedQueue", { count: skippedQueueTitles.length }))
+    if (skippedExistsTitles.length > 0) messages.push(t("download.skippedExists", { count: skippedExistsTitles.length }))
     if (messages.length) notice = messages.join(" ")
 
     if (survivors.length === 0) return
@@ -788,6 +834,7 @@
     if (!playlistResult || downloadingAll || selectedEntries.size === 0) return
     downloadingAll = true
     error = null
+    errorKey = null
     notice = null
 
     try {
@@ -798,6 +845,7 @@
       playlistResult = null
       selectedEntries = new Set()
     } catch (e: any) {
+      errorKey = null
       error = e.message || String(e)
     } finally {
       downloadingAll = false
@@ -810,6 +858,7 @@
     const downloadGeneration = analyzeGeneration
     downloadingAll = true
     error = null
+    errorKey = null
     notice = null
 
     try {
@@ -846,6 +895,7 @@
       videoInfo = null
       playlistResult = null
     } catch (e: any) {
+      errorKey = null
       error = e.message || String(e)
     } finally {
       downloadingAll = false
@@ -869,8 +919,18 @@
           <div class="flex-1 min-w-0">
              <p class="text-sm text-yt-text font-medium">{t("download.error")}</p>
              <p class="text-xs text-yt-text-secondary mt-0.5">{error}</p>
+             {#if showCookieHint}
+               <button
+                 type="button"
+                 class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-yt-error/15 hover:bg-yt-error/25 text-yt-error text-[11px] font-medium transition-colors"
+                 onclick={focusCookiePicker}
+               >
+                 <span class="material-symbols-outlined text-[14px]">cookie</span>
+                 <span>{t("download.fixWithCookies")}</span>
+               </button>
+             {/if}
           </div>
-          <button class="text-yt-text-secondary hover:text-yt-text" aria-label="Close error" onclick={() => error = null}>
+          <button class="text-yt-text-secondary hover:text-yt-text" aria-label={t("download.close")} onclick={() => { error = null; errorKey = null }}>
             <span class="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
@@ -879,8 +939,44 @@
       {#if notice}
         <div class="bg-yt-primary/10 border border-yt-primary/20 rounded-lg px-4 py-3 flex items-start gap-3">
           <span class="material-symbols-outlined text-yt-primary text-[20px] shrink-0 mt-0.5">info</span>
-          <p class="flex-1 min-w-0 text-xs text-yt-text-secondary mt-0.5">{notice}</p>
-          <button class="text-yt-text-secondary hover:text-yt-text" aria-label="Close notice" onclick={() => notice = null}>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-yt-text-secondary mt-0.5">{notice}</p>
+            {#if skippedDetails.queue.length + skippedDetails.exists.length > 0}
+              <button
+                type="button"
+                class="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-yt-primary hover:underline"
+                onclick={() => (skippedExpanded = !skippedExpanded)}
+              >
+                <span class="material-symbols-outlined text-[14px]">{skippedExpanded ? "expand_less" : "expand_more"}</span>
+                <span>{skippedExpanded ? t("download.hideSkipped") : t("download.showSkipped")}</span>
+              </button>
+              {#if skippedExpanded}
+                <div class="mt-2 space-y-2">
+                  {#if skippedDetails.queue.length > 0}
+                    <div>
+                      <p class="text-[11px] font-semibold text-yt-text-secondary">{t("download.skippedReasonQueue")}</p>
+                      <ul class="mt-0.5 space-y-0.5">
+                        {#each skippedDetails.queue as title}
+                          <li class="text-[11px] text-yt-text-muted truncate" title={title}>{title}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                  {#if skippedDetails.exists.length > 0}
+                    <div>
+                      <p class="text-[11px] font-semibold text-yt-text-secondary">{t("download.skippedReasonExists")}</p>
+                      <ul class="mt-0.5 space-y-0.5">
+                        {#each skippedDetails.exists as title}
+                          <li class="text-[11px] text-yt-text-muted truncate" title={title}>{title}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
+          </div>
+          <button class="text-yt-text-secondary hover:text-yt-text" aria-label={t("download.close")} onclick={() => { notice = null; skippedDetails = { queue: [], exists: [] } }}>
             <span class="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
@@ -1029,6 +1125,10 @@
                 <input type="checkbox" bind:checked={templateVideoId} onchange={saveTemplateSettings} class="rounded border-yt-border text-yt-primary focus:ring-0 w-3.5 h-3.5 cursor-default" />
                 <span>{t("download.videoId")}</span>
              </label>
+             <span class="ml-auto min-w-0 flex items-center gap-1.5 text-[11px] text-yt-text-muted truncate" title={getTemplatePreview()}>
+                <span class="opacity-70 shrink-0">{t("download.filenamePreview")}</span>
+                <span class="font-mono text-yt-text-secondary truncate">{getTemplatePreview()}</span>
+             </span>
           </div>
 
           <!-- Cookie Browser & Concurrent Downloads -->
@@ -1043,6 +1143,7 @@
                   onmouseleave={hideTooltip}
                 >{t("download.cookie")}</span>
                 <select
+                  bind:this={cookieSelectEl}
                   class="bg-transparent border-none p-0 text-xs text-yt-text font-medium focus:ring-0 cursor-default"
                   bind:value={cookieBrowser}
                   onchange={() => autoSaveSettings({ cookieBrowser })}
@@ -1176,7 +1277,7 @@
                     <div class="min-w-0">
                        <h3 class="text-sm font-semibold text-yt-text truncate">{playlistResult.title}</h3>
                        <p data-testid="playlist-count" class="text-xs text-yt-text-secondary flex items-center gap-1.5">
-                          <span>{playlistResult.videoCount ?? playlistResult.entries.length} videos</span>
+                          <span>{t("download.videosCount", { count: playlistResult.videoCount ?? playlistResult.entries.length })}</span>
                           {#if autoLoading}
                             <span
                               data-testid="playlist-auto-loading"

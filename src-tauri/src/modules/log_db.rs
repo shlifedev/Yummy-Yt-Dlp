@@ -1,6 +1,6 @@
 use crate::modules::types::AppError;
 use crate::ytdlp::types::{LogEntry, LogQueryResult, LogStats};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -178,40 +178,34 @@ impl LogDatabase {
     pub fn get_log_stats(&self) -> Result<LogStats, AppError> {
         let conn = self.conn();
 
-        let total_count: u64 = conn
-            .query_row("SELECT COUNT(*) FROM logs", [], |row| row.get(0))
+        // One grouped scan instead of four COUNT(*) passes over the table.
+        let mut stmt = conn
+            .prepare("SELECT level, COUNT(*) FROM logs GROUP BY level")
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        let error_count: u64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM logs WHERE level = 'ERROR'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        let mut stats = LogStats {
+            total_count: 0,
+            error_count: 0,
+            warn_count: 0,
+            info_count: 0,
+        };
+        for row in rows {
+            let (level, count) = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+            stats.total_count += count;
+            match level.as_str() {
+                "ERROR" => stats.error_count = count,
+                "WARN" => stats.warn_count = count,
+                "INFO" => stats.info_count = count,
+                _ => {}
+            }
+        }
 
-        let warn_count: u64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM logs WHERE level = 'WARN'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let info_count: u64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM logs WHERE level = 'INFO'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        Ok(LogStats {
-            total_count,
-            error_count,
-            warn_count,
-            info_count,
-        })
+        Ok(stats)
     }
 
     pub fn clear_logs(&self, before_timestamp: Option<i64>) -> Result<u64, AppError> {
@@ -257,13 +251,30 @@ impl LogDatabase {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         if count > max_entries {
-            let deleted = conn
-                .execute(
-                    "DELETE FROM logs WHERE id NOT IN (SELECT id FROM logs ORDER BY timestamp DESC, id DESC LIMIT ?1)",
-                    params![max_entries],
+            // Find the boundary row: the oldest of the newest `max_entries` rows, ordered the
+            // same way (timestamp DESC, id DESC). Everything strictly older than it is deleted.
+            // This replaces the O(n) `id NOT IN (SELECT ... LIMIT n)` anti-join with two indexed
+            // lookups while keeping exactly `max_entries` newest rows.
+            let boundary: Option<(i64, i64)> = conn
+                .query_row(
+                    "SELECT timestamp, id FROM logs ORDER BY timestamp DESC, id DESC LIMIT 1 OFFSET ?1",
+                    params![max_entries - 1],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
+                .optional()
                 .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-            total_deleted += deleted as u64;
+
+            if let Some((ts, id)) = boundary {
+                // Tuple comparison: a row is "older" than the boundary if its timestamp is
+                // smaller, or equal timestamp with a smaller id (matches the DESC, DESC order).
+                let deleted = conn
+                    .execute(
+                        "DELETE FROM logs WHERE timestamp < ?1 OR (timestamp = ?1 AND id < ?2)",
+                        params![ts, id],
+                    )
+                    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+                total_deleted += deleted as u64;
+            }
         }
 
         Ok(total_deleted)

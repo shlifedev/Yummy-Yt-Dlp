@@ -275,17 +275,47 @@ pub fn clamp_max_concurrent(n: u32) -> u32 {
 }
 
 /// Sanitize error messages before sending to the frontend.
-/// Removes potentially sensitive system paths.
+/// Removes potentially sensitive data: the user's home directory, credential-like URL
+/// query parameters, and OS temp paths that leak the local username or layout.
 pub fn sanitize_error_message(msg: &str) -> String {
     let mut sanitized = msg.to_string();
 
     // Replace common home directory patterns
     if let Ok(home) = std::env::var("HOME") {
-        sanitized = sanitized.replace(&home, "~");
+        if !home.is_empty() {
+            sanitized = sanitized.replace(&home, "~");
+        }
     }
     if let Ok(profile) = std::env::var("USERPROFILE") {
-        sanitized = sanitized.replace(&profile, "~");
+        if !profile.is_empty() {
+            sanitized = sanitized.replace(&profile, "~");
+        }
     }
+
+    // Mask token-like query parameters (sig, signature, token, key, auth, password, secret,
+    // access_token, ...). yt-dlp errors routinely echo the full media URL, which on many sites
+    // carries short-lived signed credentials we must not surface or log to the UI.
+    static TOKEN_PARAM_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i)([?&](?:[a-z0-9_]*(?:sig|signature|token|secret|password|passwd|auth|key|access|session)[a-z0-9_]*)=)[^&\s\x22']+",
+        )
+        .unwrap()
+    });
+    sanitized = TOKEN_PARAM_RE
+        .replace_all(&sanitized, "${1}[redacted]")
+        .into_owned();
+
+    // Generalize OS temp paths so the local username / random temp dir isn't leaked.
+    // macOS per-user temp: /var/folders/ab/xxxx/T/...; Unix /tmp; Windows %TEMP% style.
+    // The regex crate has no lookbehind, so `/tmp` is matched with an optional `/private`
+    // prefix rather than a negative-lookbehind word boundary.
+    static TEMP_PATH_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i)(?:/private)?/var/folders/[^\s\x22']*|(?:/private)?/tmp/[^\s\x22']*|[A-Za-z]:\\[^\s\x22']*\\Temp\\[^\s\x22']*",
+        )
+        .unwrap()
+    });
+    sanitized = TEMP_PATH_RE.replace_all(&sanitized, "<tmp>").into_owned();
 
     sanitized
 }
@@ -339,6 +369,85 @@ pub fn sanitize_download_sections(sections: &str) -> Result<String, AppError> {
         ));
     }
     Ok(sections.to_string())
+}
+
+/// Validate a yt-dlp format selector (`--format`). yt-dlp's selector grammar uses only a
+/// restricted set of characters (ids, `bestvideo+bestaudio`, `[height<=1080]`, ranges, etc.),
+/// so anything outside that set — or a leading `-`, which argv would read as a flag — is
+/// rejected. This blocks argument injection through a tampered queue row or request.
+pub fn sanitize_format_id(format_id: &str) -> Result<String, AppError> {
+    let format_id = format_id.trim();
+    if format_id.is_empty() || format_id.len() > 200 {
+        return Err(AppError::InvalidUrl(
+            "Format selector must be 1-200 characters".to_string(),
+        ));
+    }
+    // argv treats a leading '-' as a flag even after validation, so forbid it outright.
+    if format_id.starts_with('-') {
+        return Err(AppError::InvalidUrl(
+            "Format selector must not start with '-'".to_string(),
+        ));
+    }
+    // Allowed: alphanumerics, the selector operators/brackets, separators, and spaces.
+    let re = regex::Regex::new(r"^[A-Za-z0-9+/\[\]<>=.:_*,\- ]+$").unwrap();
+    if !re.is_match(format_id) {
+        return Err(AppError::InvalidUrl(
+            "Format selector contains unsupported characters".to_string(),
+        ));
+    }
+    Ok(format_id.to_string())
+}
+
+/// Allowed yt-dlp audio extraction formats for `--audio-format`.
+const VALID_AUDIO_FORMATS: &[&str] = &[
+    "mp3", "m4a", "opus", "flac", "wav", "aac", "vorbis", "alac", "best",
+];
+
+/// Validate a yt-dlp `--audio-format` value against the supported allowlist.
+pub fn sanitize_audio_format(audio_format: &str) -> Result<String, AppError> {
+    let audio_format = audio_format.trim().to_lowercase();
+    if !VALID_AUDIO_FORMATS.contains(&audio_format.as_str()) {
+        return Err(AppError::InvalidUrl(format!(
+            "Unsupported audio format: '{}'. Supported: {}",
+            audio_format,
+            VALID_AUDIO_FORMATS.join(", ")
+        )));
+    }
+    Ok(audio_format)
+}
+
+/// Validate a yt-dlp `--audio-quality` value: either a VBR index 0-10, or a fixed bitrate
+/// like `64K`..`320K`. Anything else (shell metachars, flags, etc.) is rejected.
+pub fn sanitize_audio_quality(audio_quality: &str) -> Result<String, AppError> {
+    let audio_quality = audio_quality.trim();
+    if audio_quality.is_empty() {
+        return Err(AppError::InvalidUrl(
+            "Audio quality cannot be empty".to_string(),
+        ));
+    }
+    // VBR index 0-10.
+    if let Ok(n) = audio_quality.parse::<u32>() {
+        if n <= 10 {
+            return Ok(audio_quality.to_string());
+        }
+        return Err(AppError::InvalidUrl(
+            "Audio quality index must be between 0 and 10".to_string(),
+        ));
+    }
+    // Fixed bitrate NNNK in the 64-320 kbps range.
+    if let Some(num) = audio_quality
+        .strip_suffix('K')
+        .or_else(|| audio_quality.strip_suffix('k'))
+    {
+        if let Ok(kbps) = num.parse::<u32>() {
+            if (64..=320).contains(&kbps) {
+                return Ok(audio_quality.to_string());
+            }
+        }
+    }
+    Err(AppError::InvalidUrl(
+        "Audio quality must be a number 0-10 or a bitrate like 128K (64K-320K)".to_string(),
+    ))
 }
 
 /// Validate a proxy URL for yt-dlp's --proxy. Unlike `sanitize_url`, this intentionally ALLOWS
@@ -540,6 +649,92 @@ mod tests {
         assert!(sanitize_download_sections("1:30,2:45").is_err());
         assert!(sanitize_download_sections("1:99-2:00").is_err());
         assert!(sanitize_download_sections("1:30-2:99").is_err());
+    }
+
+    // === Format / audio argument validators ===
+
+    #[test]
+    fn test_format_id() {
+        assert!(sanitize_format_id("bestvideo+bestaudio").is_ok());
+        assert!(sanitize_format_id("137+140").is_ok());
+        assert!(sanitize_format_id("bestvideo[height<=1080]+bestaudio/best").is_ok());
+        assert!(sanitize_format_id("best").is_ok());
+        // leading '-' would be read as a flag
+        assert!(sanitize_format_id("-f").is_err());
+        assert!(sanitize_format_id("--exec").is_err());
+        // shell metacharacters / injection attempts
+        assert!(sanitize_format_id("best; rm -rf /").is_err());
+        assert!(sanitize_format_id("best`whoami`").is_err());
+        assert!(sanitize_format_id("best|cat").is_err());
+        assert!(sanitize_format_id("").is_err());
+        assert!(sanitize_format_id(&"a".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn test_audio_format() {
+        assert!(sanitize_audio_format("mp3").is_ok());
+        assert!(sanitize_audio_format("flac").is_ok());
+        assert!(sanitize_audio_format("opus").is_ok());
+        assert!(sanitize_audio_format("WAV").is_ok()); // case-insensitive
+        assert!(sanitize_audio_format("best").is_ok());
+        assert!(sanitize_audio_format("mp3 --exec echo").is_err());
+        assert!(sanitize_audio_format("exe").is_err());
+        assert!(sanitize_audio_format("").is_err());
+    }
+
+    #[test]
+    fn test_audio_quality() {
+        assert!(sanitize_audio_quality("0").is_ok());
+        assert!(sanitize_audio_quality("5").is_ok());
+        assert!(sanitize_audio_quality("10").is_ok());
+        assert!(sanitize_audio_quality("128K").is_ok());
+        assert!(sanitize_audio_quality("320k").is_ok());
+        assert!(sanitize_audio_quality("64K").is_ok());
+        assert!(sanitize_audio_quality("11").is_err());
+        assert!(sanitize_audio_quality("63K").is_err());
+        assert!(sanitize_audio_quality("321K").is_err());
+        assert!(sanitize_audio_quality("128K; rm").is_err());
+        assert!(sanitize_audio_quality("--flag").is_err());
+        assert!(sanitize_audio_quality("").is_err());
+    }
+
+    // === Error message sanitization tests ===
+
+    #[test]
+    fn test_sanitize_error_masks_token_params() {
+        let masked = sanitize_error_message(
+            "ERROR: unable to download https://cdn.example.com/v.mp4?sig=ABCD1234&id=5",
+        );
+        assert!(masked.contains("sig=[redacted]"), "got: {}", masked);
+        // non-sensitive params are preserved
+        assert!(masked.contains("id=5"), "got: {}", masked);
+        assert!(!masked.contains("ABCD1234"), "got: {}", masked);
+
+        let masked2 = sanitize_error_message("url?token=secretvalue&access_token=foo");
+        assert!(masked2.contains("token=[redacted]"));
+        assert!(!masked2.contains("secretvalue"));
+        assert!(!masked2.contains("foo"));
+    }
+
+    #[test]
+    fn test_sanitize_error_generalizes_temp_paths() {
+        let m1 =
+            sanitize_error_message("Failed to open /var/folders/ab/cd1234/T/yt-dlp-xyz/file.part");
+        assert!(m1.contains("<tmp>"), "got: {}", m1);
+        assert!(!m1.contains("cd1234"), "got: {}", m1);
+
+        let m2 = sanitize_error_message("write error at /tmp/abc/def.mp4 occurred");
+        assert!(m2.contains("<tmp>"), "got: {}", m2);
+        assert!(!m2.contains("/tmp/abc"), "got: {}", m2);
+    }
+
+    #[test]
+    fn test_sanitize_error_plain_message_unchanged() {
+        // A message with no secrets/paths must pass through untouched.
+        assert_eq!(
+            sanitize_error_message("error.downloadFailed"),
+            "error.downloadFailed"
+        );
     }
 
     #[test]

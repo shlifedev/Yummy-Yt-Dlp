@@ -71,6 +71,14 @@ pub async fn download_file(
 
     let mut downloaded: u64 = 0;
     let mut last_emit_percent: f32 = -1.0;
+    // When the server sends no Content-Length we can't compute a percentage, so emit on a
+    // byte threshold instead — otherwise the UI would only ever see the single initial 0%
+    // tick and look frozen for the whole download.
+    let mut last_emit_bytes: u64 = 0;
+    const EMIT_BYTE_STEP: u64 = 2 * 1024 * 1024; // 2 MiB
+                                                 // Hard cap on how much we'll pull for a single dependency. Guards against a malicious or
+                                                 // misconfigured endpoint streaming unbounded data and filling the disk.
+    const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024; // 1 GiB
 
     use tokio::io::AsyncWriteExt;
 
@@ -78,21 +86,35 @@ pub async fn download_file(
         let chunk = chunk.map_err(|e| {
             AppError::DependencyInstallError(format!("Download stream error: {}", e))
         })?;
+
+        downloaded += chunk.len() as u64;
+        if downloaded > MAX_DOWNLOAD_BYTES {
+            drop(file);
+            let _ = tokio::fs::remove_file(&dest_path).await;
+            return Err(AppError::DependencyInstallError(format!(
+                "Download exceeded the {} byte size limit; aborting",
+                MAX_DOWNLOAD_BYTES
+            )));
+        }
+
         file.write_all(&chunk)
             .await
             .map_err(|e| AppError::DependencyInstallError(format!("Write error: {}", e)))?;
 
-        downloaded += chunk.len() as u64;
-
-        let percent = if let Some(total) = total_size {
-            (downloaded as f32 / total as f32 * 100.0).min(100.0)
-        } else {
-            0.0
+        let (percent, should_emit) = match total_size {
+            Some(total) if total > 0 => {
+                let pct = (downloaded as f32 / total as f32 * 100.0).min(100.0);
+                let emit = (pct - last_emit_percent).abs() >= 2.0 || downloaded >= total;
+                (pct, emit)
+            }
+            // Unknown total: keep percent at 0.0 (the type's contract), but still emit so the
+            // frontend can show byte progress and know the download is alive.
+            _ => (0.0, downloaded - last_emit_bytes >= EMIT_BYTE_STEP),
         };
 
-        // Emit progress every 2% or at completion
-        if (percent - last_emit_percent).abs() >= 2.0 || downloaded == total_size.unwrap_or(0) {
+        if should_emit {
             last_emit_percent = percent;
+            last_emit_bytes = downloaded;
             let _ = app.emit(
                 "dep-install-event",
                 DepInstallEvent {
@@ -165,6 +187,38 @@ pub async fn fetch_ytdlp_checksums() -> Result<Vec<(String, String)>, AppError> 
     Ok(results)
 }
 
+/// Fetch a combined `<hash>  <filename>` checksum manifest (e.g. BtbN's `checksums.sha256`)
+/// and return the lowercase hex hash for `filename`. Returns Ok(None) when the manifest was
+/// fetched but lists no entry for the file (caller decides how strict to be).
+pub async fn fetch_checksum_for(
+    manifest_url: &str,
+    filename: &str,
+) -> Result<Option<String>, AppError> {
+    let text = reqwest::get(manifest_url)
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to fetch checksum manifest: {}", e)))?
+        .error_for_status()
+        .map_err(|e| AppError::ChecksumError(format!("checksum manifest unavailable: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| AppError::ChecksumError(format!("failed to read checksum manifest: {}", e)))?;
+
+    for line in text.lines() {
+        let mut parts = line.splitn(2, |c: char| c.is_whitespace());
+        let (Some(hash), Some(name)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let name = name.trim().trim_start_matches('*');
+        if name == filename {
+            let hash = hash.trim().to_lowercase();
+            if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Ok(Some(hash));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Fetch a sibling `<asset>.sha256sum` file and return the lowercase hex hash.
 /// The file format is `<sha256>  <filename>`, so the leading token is the hash.
 pub async fn fetch_sha256sum(url: &str) -> Result<String, AppError> {
@@ -232,6 +286,77 @@ pub async fn extract_zip(
     })
     .await
     .map_err(|e| AppError::DependencyInstallError(format!("Extract task failed: {}", e)))?
+}
+
+/// Extract every entry of a zip archive into `dest_dir`, preserving the internal
+/// directory structure (unlike `extract_zip`, which flattens to file names).
+///
+/// Used for PyInstaller `--onedir` builds, where the executable lives next to an
+/// `_internal/` directory and the layout must be kept intact. Each entry path is
+/// validated to stay within `dest_dir` so a crafted archive can't write outside it
+/// (zip-slip). Directory entries are created; file entries get their Unix mode
+/// applied so the executable bit survives.
+pub async fn extract_zip_tree(archive_path: &Path, dest_dir: &Path) -> Result<(), AppError> {
+    let archive = archive_path.to_path_buf();
+    let dest = dest_dir.to_path_buf();
+
+    tokio::task::spawn_blocking(move || extract_zip_tree_blocking(&archive, &dest))
+        .await
+        .map_err(|e| AppError::DependencyInstallError(format!("Extract task failed: {}", e)))?
+}
+
+fn extract_zip_tree_blocking(archive: &Path, dest: &Path) -> Result<(), AppError> {
+    let file = std::fs::File::open(archive)
+        .map_err(|e| AppError::DependencyInstallError(format!("Failed to open zip: {}", e)))?;
+    let mut zip = zip::ZipArchive::new(file)
+        .map_err(|e| AppError::DependencyInstallError(format!("Failed to read zip: {}", e)))?;
+
+    std::fs::create_dir_all(dest).map_err(|e| {
+        AppError::DependencyInstallError(format!("Failed to create extract dir: {}", e))
+    })?;
+
+    for i in 0..zip.len() {
+        let mut entry = zip
+            .by_index(i)
+            .map_err(|e| AppError::DependencyInstallError(format!("Zip entry error: {}", e)))?;
+
+        // `enclosed_name` returns None for absolute paths or any `..` component
+        // that would escape the destination — exactly the zip-slip cases we reject.
+        let rel = entry.enclosed_name().ok_or_else(|| {
+            AppError::DependencyInstallError(format!(
+                "Refusing unsafe zip entry path: {}",
+                entry.name()
+            ))
+        })?;
+        let out_path = dest.join(&rel);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out_path).map_err(|e| {
+                AppError::DependencyInstallError(format!("Failed to create dir: {}", e))
+            })?;
+            continue;
+        }
+
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::DependencyInstallError(format!("Failed to create parent dir: {}", e))
+            })?;
+        }
+        let mut out_file = std::fs::File::create(&out_path).map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to create extracted file: {}", e))
+        })?;
+        std::io::copy(&mut entry, &mut out_file).map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to extract file: {}", e))
+        })?;
+
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(mode));
+        }
+    }
+
+    Ok(())
 }
 
 /// Extract a tar.gz archive, finding the specified binaries inside.
@@ -377,22 +502,94 @@ pub fn remove_quarantine(_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Atomically move a temporary file to its final path.
-pub fn finalize_binary(temp_path: &Path, final_path: &Path) -> Result<(), AppError> {
-    // Prefer a single atomic rename: on Unix it replaces the destination in one
-    // step, so there is never a window where the binary is missing and a process
-    // already running the old copy keeps its inode. Windows `rename` refuses to
-    // overwrite an existing file, so fall back to remove-then-rename there.
-    if std::fs::rename(temp_path, final_path).is_ok() {
-        return Ok(());
-    }
-    if final_path.exists() {
-        std::fs::remove_file(final_path).map_err(|e| {
-            AppError::DependencyInstallError(format!("Failed to remove old binary: {}", e))
+/// Strip the macOS quarantine attribute recursively from a directory tree.
+///
+/// onedir yt-dlp ships ~20 files under `_internal/`; each one inherits the bundle's
+/// quarantine, and Gatekeeper re-checks any quarantined dylib the executable loads.
+/// `xattr -r` clears the whole tree in one call.
+#[cfg(target_os = "macos")]
+pub fn remove_quarantine_recursive(dir: &Path) -> Result<(), AppError> {
+    let _ = std::process::Command::new("xattr")
+        .args(["-r", "-d", "com.apple.quarantine"])
+        .arg(dir)
+        .output();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn remove_quarantine_recursive(_dir: &Path) -> Result<(), AppError> {
+    Ok(())
+}
+
+/// Recursively copy `src` directory into `dest` (creating `dest`), preserving Unix
+/// permissions so an executable bit on the inner binary survives the copy.
+pub fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), AppError> {
+    std::fs::create_dir_all(dest).map_err(|e| {
+        AppError::DependencyInstallError(format!("Failed to create dir {}: {}", dest.display(), e))
+    })?;
+    for entry in std::fs::read_dir(src).map_err(|e| {
+        AppError::DependencyInstallError(format!("Failed to read dir {}: {}", src.display(), e))
+    })? {
+        let entry = entry.map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to read dir entry: {}", e))
         })?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to stat dir entry: {}", e))
+        })?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to).map_err(|e| {
+                AppError::DependencyInstallError(format!(
+                    "Failed to copy {}: {}",
+                    from.display(),
+                    e
+                ))
+            })?;
+        }
     }
-    std::fs::rename(temp_path, final_path)
-        .map_err(|e| AppError::DependencyInstallError(format!("Failed to finalize binary: {}", e)))
+    Ok(())
+}
+
+/// Atomically replace the directory at `final_dir` with `staging_dir`.
+///
+/// Renames the old directory aside first so an in-flight process keeps its files,
+/// then moves the freshly staged tree into place. On failure the old copy is
+/// restored; on success the old copy is removed best-effort.
+pub fn finalize_dir(staging_dir: &Path, final_dir: &Path) -> Result<(), AppError> {
+    if !final_dir.exists() {
+        if let Some(parent) = final_dir.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::DependencyInstallError(format!("Failed to create parent dir: {}", e))
+            })?;
+        }
+        return std::fs::rename(staging_dir, final_dir).map_err(|e| {
+            AppError::DependencyInstallError(format!("Failed to install dir: {}", e))
+        });
+    }
+
+    let backup = final_dir.with_extension("old");
+    let _ = std::fs::remove_dir_all(&backup);
+    std::fs::rename(final_dir, &backup).map_err(|e| {
+        AppError::DependencyInstallError(format!("Failed to move aside old dir: {}", e))
+    })?;
+
+    match std::fs::rename(staging_dir, final_dir) {
+        Ok(()) => {
+            let _ = std::fs::remove_dir_all(&backup);
+            Ok(())
+        }
+        Err(e) => {
+            // Put the old copy back so the install isn't left empty.
+            let _ = std::fs::rename(&backup, final_dir);
+            Err(AppError::DependencyInstallError(format!(
+                "Failed to swap in new dir: {}",
+                e
+            )))
+        }
+    }
 }
 
 /// Get the version string from a binary by running it with a version flag.
@@ -405,7 +602,10 @@ pub async fn get_binary_version(binary_path: &Path, version_flag: &str) -> Optio
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let output = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output())
+    // yt-dlp's onedir build does a one-time PyInstaller bootstrap on its first run
+    // (the post-install verification call), measured around 9s on macOS — keep the
+    // timeout well above that so a slow cold start isn't misread as a failed install.
+    let output = tokio::time::timeout(std::time::Duration::from_secs(25), cmd.output())
         .await
         .ok()?
         .ok()?;
@@ -433,4 +633,110 @@ pub fn emit_stage(app: &AppHandle, dep_name: &str, stage: DepInstallStage, messa
             message: message.map(|s| s.to_string()),
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    fn unique_dir(tag: &str) -> PathBuf {
+        let nanos = SystemTimeExt::nanos();
+        std::env::temp_dir().join(format!(
+            "dep_dl_test_{}_{}_{}",
+            tag,
+            std::process::id(),
+            nanos
+        ))
+    }
+
+    // Tiny monotonic-ish suffix so parallel tests don't collide on the temp dir.
+    struct SystemTimeExt;
+    impl SystemTimeExt {
+        fn nanos() -> u128 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        }
+    }
+
+    fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        for (name, data) in entries {
+            zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn extract_zip_tree_preserves_structure() {
+        let work = unique_dir("ok");
+        std::fs::create_dir_all(&work).unwrap();
+        let archive = work.join("a.zip");
+        write_zip(
+            &archive,
+            &[
+                ("yt-dlp_macos", b"#!bin"),
+                ("_internal/base_library.zip", b"lib"),
+                ("_internal/sub/mod.so", b"so"),
+            ],
+        );
+
+        let dest = work.join("out");
+        extract_zip_tree_blocking(&archive, &dest).unwrap();
+
+        assert!(dest.join("yt-dlp_macos").is_file());
+        assert!(dest.join("_internal/base_library.zip").is_file());
+        assert!(dest.join("_internal/sub/mod.so").is_file());
+
+        let _ = std::fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn extract_zip_tree_rejects_zip_slip() {
+        let work = unique_dir("slip");
+        std::fs::create_dir_all(&work).unwrap();
+        let archive = work.join("evil.zip");
+        // A traversal entry that would land outside the destination dir.
+        write_zip(&archive, &[("../../escape.txt", b"pwned")]);
+
+        let dest = work.join("out");
+        let result = extract_zip_tree_blocking(&archive, &dest);
+        assert!(result.is_err(), "zip-slip entry must be rejected");
+
+        // The escape target must not have been written.
+        assert!(!work.join("escape.txt").exists());
+        assert!(!dest.join("escape.txt").exists());
+
+        let _ = std::fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn finalize_dir_replaces_existing_tree() {
+        let work = unique_dir("finalize");
+        std::fs::create_dir_all(&work).unwrap();
+
+        let final_dir = work.join("ytdlp");
+        std::fs::create_dir_all(&final_dir).unwrap();
+        std::fs::write(final_dir.join("old.txt"), b"old").unwrap();
+
+        let staging = work.join("staging");
+        std::fs::create_dir_all(staging.join("_internal")).unwrap();
+        std::fs::write(staging.join("yt-dlp"), b"new").unwrap();
+
+        finalize_dir(&staging, &final_dir).unwrap();
+
+        assert!(final_dir.join("yt-dlp").is_file());
+        assert!(final_dir.join("_internal").is_dir());
+        // Old contents are gone after the swap.
+        assert!(!final_dir.join("old.txt").exists());
+        // Staging was consumed by the rename.
+        assert!(!staging.exists());
+
+        let _ = std::fs::remove_dir_all(&work);
+    }
 }

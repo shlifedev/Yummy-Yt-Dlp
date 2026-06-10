@@ -230,6 +230,8 @@ const ja: Record<string, string> = {
   "tray.quit": "終了",
   "settings.minimizeToTray": "トレイに最小化",
   "settings.minimizeToTrayDesc": "ウィンドウを閉じる時にシステムトレイに最小化",
+  "settings.autoUpdateDeps": "依存関係を自動更新",
+  "settings.autoUpdateDepsDesc": "起動時に yt-dlp を最新に保ちます（ffmpeg と deno は古い場合のみ）。オフにすると依存関係タブから手動で更新します",
 
   // Update
   "update.checkUpdate": "アップデートを確認",
@@ -278,6 +280,37 @@ const ja: Record<string, string> = {
   "error.downloadCancelled": "ダウンロードをキャンセルしました。",
   "error.downloadTimeout": "ダウンロードがタイムアウトしました（最大6時間）。",
   "error.unknown": "不明なエラーが発生しました。",
+
+  // Added: playlist count, filename preview, batch skip detail, cookie fix
+  "download.videosCount": "{count}本の動画",
+  "download.filenamePreview": "プレビュー:",
+  "download.showSkipped": "スキップした項目を表示",
+  "download.hideSkipped": "スキップした項目を隠す",
+  "download.skippedReasonQueue": "すでにキューにあります",
+  "download.skippedReasonExists": "すでにダウンロード済み",
+  "download.fixWithCookies": "Cookieブラウザを設定",
+
+  // Added: install failure UX
+  "layout.installFailedSummary": "依存関係をインストールできませんでした。",
+  "layout.installRetry": "再試行",
+  "layout.installSeeLogs": "詳細はログを確認",
+  "layout.installErrorDetail": "エラーの詳細",
+
+  // Added: debug panel strings
+  "debug.copied": "コピーしました！",
+  "debug.copyToClipboard": "クリップボードにコピー",
+  "debug.clickRefresh": "「更新」をクリックして依存関係の状態を読み込みます",
+  "debug.deleteBinaryWarning": "アプリ管理のバイナリを削除すると、次回起動時に再インストールが必要になります。",
+
+  // Added: active-download close warning
+  "close.activeTitle": "ダウンロード中",
+  "close.activeMessage": "{count}件のダウンロードが進行中です。終了するとキャンセルされます。",
+  "close.keepDownloading": "ダウンロードを続ける",
+  "close.exitAnyway": "終了",
+
+  // Added: history actions
+  "history.revealInFolder": "フォルダで表示",
+  "history.deleteItem": "削除",
 }
 
 export default ja
