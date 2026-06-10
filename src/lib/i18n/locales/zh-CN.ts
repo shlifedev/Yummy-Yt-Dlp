@@ -322,6 +322,15 @@ const zhCN: Record<string, string> = {
   "error.appClosedDuringDownload": "下载进行时应用被关闭。",
   "error.downloadPathUnavailable": "下载文件夹不可用（驱动器已断开或无法创建文件夹）。请在设置中检查下载路径后重试。",
   "settings.cookieBrowserMissing": "{browser}（未检测到）",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "下载失败：{title}",
+  "layout.failedCount": "{count} 个下载失败",
+  "queue.actionFailed": "操作失败",
+  "update.failed": "更新失败",
+  "update.restartNow": "立即重启",
+  "update.restartManually": "更新已安装，但自动重启失败。请手动重启应用。",
+  "update.hide": "隐藏",
 }
 
 export default zhCN

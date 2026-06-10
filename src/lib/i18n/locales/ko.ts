@@ -322,6 +322,15 @@ const ko: Record<string, string> = {
   "error.appClosedDuringDownload": "다운로드 진행 중에 앱이 종료되었습니다.",
   "error.downloadPathUnavailable": "다운로드 폴더를 사용할 수 없습니다(드라이브 분리 또는 폴더 생성 실패). 설정에서 다운로드 경로를 확인한 후 다시 시도하세요.",
   "settings.cookieBrowserMissing": "{browser} (감지되지 않음)",
+
+  // Added: failure visibility (download toast, queue badge, queue actions, updater)
+  "layout.downloadFailedToast": "다운로드 실패: {title}",
+  "layout.failedCount": "{count}개 다운로드 실패",
+  "queue.actionFailed": "작업을 처리하지 못했습니다",
+  "update.failed": "업데이트 실패",
+  "update.restartNow": "지금 재시작",
+  "update.restartManually": "업데이트는 설치되었지만 자동 재시작에 실패했습니다. 앱을 직접 재시작해 주세요.",
+  "update.hide": "숨기기",
 }
 
 export default ko
