@@ -1,4 +1,4 @@
-use super::executor::{execute_download, process_next_pending};
+use super::executor::{execute_download, finalize_panicked_download, process_next_pending};
 use super::manager::DownloadManager;
 use crate::modules::logger;
 use crate::modules::types::AppError;
@@ -42,9 +42,12 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
     // Try to acquire a download slot
     let manager = app.state::<Arc<DownloadManager>>();
     if manager.try_acquire() {
-        // Immediately start download - ensure release() on DB update failure
-        match db_state.update_download_status(task_id, &DownloadStatus::Downloading, None, None) {
-            Ok(()) => {
+        // Atomically claim the freshly inserted row (pending -> downloading). In the window
+        // since the insert, a concurrent process_next_pending — kicked by any finishing
+        // download — can claim this same row, and a cancel can flip it to 'cancelled'; an
+        // unconditional status write here would double-dispatch the task or resurrect it.
+        match db_state.claim_specific_pending(task_id) {
+            Ok(true) => {
                 let app_clone = app.clone();
                 let app_panic_guard = app.clone();
                 tokio::spawn(async move {
@@ -57,21 +60,37 @@ pub async fn add_to_queue(app: AppHandle, request: DownloadRequest) -> Result<u6
                             "download",
                             &format!("[download:{}] task panicked: {:?}", task_id, e),
                         );
-                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                        manager.release();
-                        process_next_pending(app_panic_guard);
+                        finalize_panicked_download(
+                            app_panic_guard,
+                            task_id,
+                            format!("internal panic: {:?}", e),
+                        )
+                        .await;
                     }
+                });
+            }
+            Ok(false) => {
+                // Another scheduler already owns the row (or it was cancelled): give the slot
+                // back and keep the queue draining in case other pending rows are waiting.
+                manager.release();
+                let app_clone = app.clone();
+                tokio::spawn(async move {
+                    process_next_pending(app_clone);
                 });
             }
             Err(e) => {
                 logger::error_cat(
                     "download",
-                    &format!(
-                        "[download:{}] failed to update status to downloading: {}",
-                        task_id, e
-                    ),
+                    &format!("[download:{}] failed to claim queued row: {}", task_id, e),
                 );
                 manager.release();
+                // Re-kick the scheduler so the still-pending row is re-attempted through the
+                // atomic claim path once the DB recovers, instead of sitting 'pending' with no
+                // dispatch trigger until unrelated queue activity.
+                let app_clone = app.clone();
+                tokio::spawn(async move {
+                    process_next_pending(app_clone);
+                });
             }
         }
     } else {

@@ -64,17 +64,55 @@ fn emit_download_error(app: &AppHandle, task_id: u64, message: String, detail: O
     );
 }
 
-/// Helper: handle a fatal download error by logging, updating DB, emitting event,
-/// and releasing the slot. `error_msg` must be a stable i18n key (the queue UI runs it
-/// through t()); the dynamic cause goes in `detail`, which is sanitized before persisting
-/// because the queue page renders error_detail verbatim, without translation.
-fn handle_download_failure(
+/// Record a terminal status for an attempt, but only while the row is still 'downloading'
+/// (see `Database::finalize_if_downloading`): a stale executor or late panic guard must not
+/// clobber a row another path already finalized. DB errors are logged and retried once instead
+/// of being silently swallowed — the most common failure cause (full disk) tends to fail this
+/// very write, leaving the row stuck 'downloading' with Retry refusing it. Returns true when
+/// this call flipped the row, or when its state is unknown after a persistent DB failure, so
+/// callers still report the failure instead of staying silent.
+async fn set_terminal_status(
+    db: &crate::DbState,
+    task_id: u64,
+    status: &DownloadStatus,
+    error_msg: Option<&str>,
+    error_detail: Option<&str>,
+) -> bool {
+    for attempt in 0..2u8 {
+        match db.finalize_if_downloading(task_id, status, error_msg, error_detail) {
+            Ok(flipped) => return flipped,
+            Err(e) => {
+                logger::error_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] failed to record terminal status '{}' (attempt {}): {}",
+                        task_id,
+                        status,
+                        attempt + 1,
+                        e
+                    ),
+                );
+                if attempt == 0 {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Helper: handle a fatal download error by logging, updating DB (only while the row is still
+/// 'downloading'), emitting the event when the row flipped, and releasing the slot.
+/// `error_msg` must be a stable i18n key; the dynamic cause goes in `detail`, which is
+/// sanitized before persisting because the queue page renders error_detail verbatim.
+async fn handle_download_failure(
     app: &AppHandle,
     task_id: u64,
     error_msg: &str,
     detail: Option<&str>,
     db: &crate::DbState,
     manager: &Arc<DownloadManager>,
+    cancel_generation: u64,
 ) {
     let log_line = match detail {
         Some(d) => format!("[download:{}] {}: {}", task_id, error_msg, d),
@@ -82,16 +120,45 @@ fn handle_download_failure(
     };
     logger::error_cat("download", &log_line);
     let detail = detail.map(security::sanitize_error_message);
-    let _ = db.update_download_status(
+    if set_terminal_status(
+        db,
         task_id,
         &DownloadStatus::Failed,
         Some(error_msg),
         detail.as_deref(),
-    );
-    emit_download_error(app, task_id, error_msg.to_string(), detail);
-    manager.unregister_cancel(task_id);
+    )
+    .await
+    {
+        emit_download_error(app, task_id, error_msg.to_string(), detail);
+    }
+    manager.unregister_cancel(task_id, cancel_generation);
     manager.release();
     process_next_pending(app.clone());
+}
+
+/// Finalize a download whose executor task panicked: conditionally flip the row to 'failed'
+/// (a late panic must not clobber a row already completed/cancelled/re-queued), emit the error
+/// event when it flipped, drop the leaked cancel sender, then release the slot and dispatch
+/// the next pending item. Without this the row stays 'downloading' for the session with Retry
+/// silently refusing it. Public because the panic guard in commands/queue.rs cannot reach the
+/// private helpers (same pattern as `process_next_pending_public`).
+pub async fn finalize_panicked_download(app: AppHandle, task_id: u64, detail: String) {
+    let db_state = app.state::<crate::DbState>();
+    let manager = app.state::<Arc<DownloadManager>>();
+    if set_terminal_status(
+        &db_state,
+        task_id,
+        &DownloadStatus::Failed,
+        Some("error.downloadFailed"),
+        Some(&detail),
+    )
+    .await
+    {
+        emit_download_error(&app, task_id, "error.downloadFailed".to_string(), None);
+    }
+    manager.force_unregister_cancel(task_id);
+    manager.release();
+    process_next_pending(app);
 }
 
 pub(crate) fn append_limited(buffer: &mut String, line: &str, max_bytes: usize) {
@@ -163,6 +230,22 @@ pub(super) fn static_template_prefix(output_path: &str) -> std::path::PathBuf {
         prefix.push(component);
     }
     path.parent().map(|p| p.to_path_buf()).unwrap_or_default()
+}
+
+/// Nearest concrete ancestor directory of the output template, skipping path components that
+/// are themselves templated (`%(uploader)s/%(title)s.%(ext)s` is a valid filename template).
+/// Used as the history file_path when yt-dlp never announced a destination: the directory
+/// exists on disk for a successful download, so duplicate detection's file stat keeps working,
+/// while the raw template would never match anything.
+pub(super) fn template_output_dir(output_path: &str) -> String {
+    let mut dir = std::path::Path::new(output_path).parent();
+    while let Some(d) = dir {
+        if !d.to_string_lossy().contains("%(") {
+            return d.to_string_lossy().to_string();
+        }
+        dir = d.parent();
+    }
+    String::new()
 }
 
 /// Map a finished yt-dlp process's exit code + stderr to a stable i18n error key.
@@ -548,7 +631,8 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
     // that window used to be dropped (no receiver registered yet) while cancel_if_active had
     // already flipped the DB row to 'cancelled'. Registering here means send_cancel always has
     // a live receiver; run_download_attempt also re-reads the DB before spawning as a backstop.
-    let mut cancel_rx = manager.register_cancel(task_id);
+    // The generation tags this attempt so a stale attempt can never unregister a newer one.
+    let (cancel_generation, mut cancel_rx) = manager.register_cancel(task_id);
 
     let ytdlp_path = match binary::resolve_ytdlp_path_with_app(&app).await {
         Ok(p) => p,
@@ -560,14 +644,18 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 &format!("[download:{}] yt-dlp not found: {}", task_id, e),
             );
             let detail = security::sanitize_error_message(&e.to_string());
-            let _ = db_state.update_download_status(
+            if set_terminal_status(
+                &db_state,
                 task_id,
                 &DownloadStatus::Failed,
                 Some(error_msg),
                 Some(&detail),
-            );
-            emit_download_error(&app, task_id, error_msg.to_string(), Some(detail));
-            manager.unregister_cancel(task_id);
+            )
+            .await
+            {
+                emit_download_error(&app, task_id, error_msg.to_string(), Some(detail));
+            }
+            manager.unregister_cancel(task_id, cancel_generation);
             manager.release();
             process_next_pending(app);
             return;
@@ -585,7 +673,9 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 Some(&detail),
                 &db_state,
                 &manager,
-            );
+                cancel_generation,
+            )
+            .await;
             return;
         }
     };
@@ -622,7 +712,9 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 Some(&format!("invalid format selector: {}", e)),
                 &db_state,
                 &manager,
-            );
+                cancel_generation,
+            )
+            .await;
             return;
         }
     };
@@ -637,7 +729,9 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     Some(&format!("invalid audio format: {}", e)),
                     &db_state,
                     &manager,
-                );
+                    cancel_generation,
+                )
+                .await;
                 return;
             }
         },
@@ -654,7 +748,9 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     Some(&format!("invalid audio quality: {}", e)),
                     &db_state,
                     &manager,
-                );
+                    cancel_generation,
+                )
+                .await;
                 return;
             }
         },
@@ -674,7 +770,9 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 Some(&format!("{}: {}", static_dir.display(), e)),
                 &db_state,
                 &manager,
-            );
+                cancel_generation,
+            )
+            .await;
             return;
         }
     }
@@ -816,18 +914,30 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             file_path,
             already_existed,
         } => {
-            // Trust the path yt-dlp actually reported; only fall back to the (still-templated)
-            // output path for the completion event. A templated path must never reach history —
-            // duplicate detection stats the file on disk and "%(title)s.%(ext)s" can't be found.
+            // Trust the path yt-dlp actually reported. When no Destination/Merger line was
+            // parsed from stdout (yt-dlp wording drift, --quiet via a user config), fall back
+            // to the template's parent directory — never the raw template: a templated path
+            // must not reach history (duplicate detection stats the file on disk and
+            // "%(title)s.%(ext)s" can't be found), while the directory genuinely exists for a
+            // successful download. file_size stays unknown (None) instead of a bogus 0.
             let resolved_path = file_path;
-            let event_path = resolved_path
-                .clone()
-                .unwrap_or_else(|| task.output_path.clone());
-            let file_size = tokio::fs::metadata(&event_path)
-                .await
-                .ok()
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let path_is_resolved = is_resolved_path(resolved_path.as_deref());
+            let (event_path, file_size) = match &resolved_path {
+                Some(p) if path_is_resolved => {
+                    let size = tokio::fs::metadata(p).await.ok().map(|m| m.len());
+                    (p.clone(), size)
+                }
+                _ => {
+                    logger::warn_cat(
+                        "download",
+                        &format!(
+                            "[download:{}] no destination line parsed from yt-dlp stdout; recording output directory instead",
+                            task_id
+                        ),
+                    );
+                    (template_output_dir(&task.output_path), None)
+                }
+            };
 
             let completed_at = chrono::Utc::now().timestamp();
 
@@ -837,8 +947,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
             // getting re-queued and re-spawned forever. So when the file already existed, still
             // record it if history has no row for this video and we know the real on-disk path.
             let record_history = if already_existed {
-                is_resolved_path(resolved_path.as_deref())
-                    && matches!(db_state.check_duplicate(&task.video_id), Ok(None))
+                path_is_resolved && matches!(db_state.check_duplicate(&task.video_id), Ok(None))
             } else {
                 true
             };
@@ -852,7 +961,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     quality_label: task.quality_label.clone(),
                     format: task.format_id.clone(),
                     file_path: event_path.clone(),
-                    file_size: Some(file_size),
+                    file_size,
                     downloaded_at: completed_at,
                 };
 
@@ -867,8 +976,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     // Fallback: mark completed and best-effort insert the history row separately so
                     // the download still shows in History and duplicate detection keeps recognizing
                     // it (otherwise the queue says 'completed' but the video looks never-downloaded).
+                    // Prefer the group-preserving insert (a plain insert drops group_id and the
+                    // batch header undercounts forever); if it hits the same failure as
+                    // complete_and_record, fall back to the plain insert so the row is never lost.
                     let _ = db_state.mark_completed(task_id, completed_at);
-                    if let Err(e2) = db_state.insert_history(&history_item) {
+                    if let Err(e2) = db_state
+                        .insert_history_with_group(&history_item, task_id)
+                        .or_else(|_| db_state.insert_history(&history_item))
+                    {
                         logger::error_cat(
                             "download",
                             &format!(
@@ -882,7 +997,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 logger::info_cat(
                     "download",
                     &format!(
-                        "[download:{}] completed successfully ({}), file_size={}",
+                        "[download:{}] completed successfully ({}), file_size={:?}",
                         task_id,
                         if already_existed {
                             "existing file recorded"
@@ -914,7 +1029,7 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     speed: None,
                     eta: None,
                     file_path: Some(event_path),
-                    file_size: Some(file_size),
+                    file_size,
                     message: None,
                     detail: None,
                 },
@@ -933,17 +1048,23 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 &format!("[download:{}] failed: {}", task_id, error_message),
             );
             let sanitized_error = security::sanitize_error_message(&error_message);
-            let _ = db_state.update_download_status(
+            if set_terminal_status(
+                &db_state,
                 task_id,
                 &DownloadStatus::Failed,
                 Some(&sanitized_error),
                 error_detail.as_deref(),
-            );
-            emit_download_error(&app, task_id, sanitized_error, error_detail);
+            )
+            .await
+            {
+                emit_download_error(&app, task_id, sanitized_error, error_detail);
+            }
         }
         AttemptOutcome::Cancelled => {
-            let _ =
-                db_state.update_download_status(task_id, &DownloadStatus::Cancelled, None, None);
+            // Conditional on purpose: in a plain cancel the row is already 'cancelled'
+            // (no-op), and a retry re-queued as 'pending' in the kill window must not be
+            // stomped back to 'cancelled' by this stale attempt.
+            set_terminal_status(&db_state, task_id, &DownloadStatus::Cancelled, None, None).await;
             let _ = app.emit(
                 "download-event",
                 GlobalDownloadEvent {
@@ -961,13 +1082,17 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
         }
         AttemptOutcome::TimedOut => {
             let error_msg = "error.downloadTimeout";
-            let _ = db_state.update_download_status(
+            if set_terminal_status(
+                &db_state,
                 task_id,
                 &DownloadStatus::Failed,
                 Some(error_msg),
                 None,
-            );
-            emit_download_error(&app, task_id, error_msg.to_string(), None);
+            )
+            .await
+            {
+                emit_download_error(&app, task_id, error_msg.to_string(), None);
+            }
         }
         AttemptOutcome::Fatal { msg } => {
             // handle_download_failure already releases the slot and dispatches the next task.
@@ -978,13 +1103,15 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 Some(&msg),
                 &db_state,
                 &manager,
-            );
+                cancel_generation,
+            )
+            .await;
             return;
         }
     }
 
     // Release the download slot and process next pending
-    manager.unregister_cancel(task_id);
+    manager.unregister_cancel(task_id, cancel_generation);
     manager.release();
     process_next_pending(app);
 }
@@ -1016,17 +1143,50 @@ pub(super) fn process_next_pending(app: AppHandle) {
                             "download",
                             &format!("[download:{}] task panicked: {:?}", task_id, e),
                         );
-                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                        manager.release();
-                        process_next_pending(app_panic_guard);
+                        finalize_panicked_download(
+                            app_panic_guard,
+                            task_id,
+                            format!("internal panic: {:?}", e),
+                        )
+                        .await;
                     }
                 });
             }
-            _ => {
+            Ok(None) => {
                 // No more pending tasks, release the slot
                 manager.release();
                 break;
             }
+            Err(e) => {
+                // A transient DB error here would otherwise stall the queue silently: nothing
+                // re-kicks the scheduler until unrelated queue activity or an app restart.
+                logger::error_cat(
+                    "download",
+                    &format!("failed to claim next pending download: {}", e),
+                );
+                manager.release();
+                break;
+            }
+        }
+    }
+
+    // Opportunistic self-heal: when no execution slot is held, any row still 'downloading' is
+    // provably stuck (its terminal-status write failed, e.g. on a full disk). Retry refuses
+    // such rows, so without this only an app restart would repair them.
+    if manager.active_count() == 0 {
+        match db_state.fail_stuck_downloads("error.processTerminated") {
+            Ok(0) => {}
+            Ok(n) => logger::warn_cat(
+                "download",
+                &format!(
+                    "reset {} stuck 'downloading' row(s) with no live executor",
+                    n
+                ),
+            ),
+            Err(e) => logger::error_cat(
+                "download",
+                &format!("failed to reset stuck downloads: {}", e),
+            ),
         }
     }
 }
@@ -1087,6 +1247,22 @@ mod tests {
     fn parse_ignores_unrelated_lines() {
         assert_eq!(parse_output_destination("[download]  12.3% of 5MiB"), None);
         assert_eq!(parse_output_destination("[info] Writing thumbnail"), None);
+    }
+
+    #[test]
+    fn template_output_dir_returns_parent() {
+        assert_eq!(
+            template_output_dir("/Users/x/Downloads/%(title)s.%(ext)s"),
+            "/Users/x/Downloads"
+        );
+    }
+
+    #[test]
+    fn template_output_dir_skips_templated_components() {
+        assert_eq!(
+            template_output_dir("/Users/x/Downloads/%(uploader)s/%(title)s.%(ext)s"),
+            "/Users/x/Downloads"
+        );
     }
 
     #[test]
