@@ -8,6 +8,7 @@ use tauri::AppHandle;
 pub(super) async fn try_get_version(binary_path: &Path) -> Result<String, String> {
     let mut cmd = command_with_path(binary_path.to_str().unwrap_or("yt-dlp"));
     cmd.arg("--version");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -70,6 +71,7 @@ pub(super) async fn which_first(name: &str) -> Option<String> {
     };
     let mut cmd = command_with_path(which_cmd);
     cmd.arg(name);
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -137,6 +139,7 @@ pub async fn check_ytdlp() -> (Option<String>, Vec<String>) {
 pub async fn check_ffmpeg() -> Option<String> {
     let mut cmd = command_with_path("ffmpeg");
     cmd.arg("-version");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -162,6 +165,7 @@ pub async fn check_ffmpeg() -> Option<String> {
 pub async fn resolve_ffmpeg_path() -> Option<String> {
     let mut cmd = command_with_path("ffmpeg");
     cmd.arg("-version");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -182,6 +186,7 @@ pub async fn resolve_ffmpeg_path() -> Option<String> {
         };
         let mut which = command_with_path(which_cmd);
         which.arg("ffmpeg");
+        which.kill_on_drop(true);
 
         #[cfg(target_os = "windows")]
         {
@@ -300,8 +305,16 @@ pub async fn resolve_ytdlp_path_with_app(app: &AppHandle) -> Result<String, AppE
 
 /// Resolve the ffmpeg directory (for `--ffmpeg-location`) per the effective source order.
 pub async fn resolve_ffmpeg_path_with_app(app: &AppHandle) -> Option<String> {
-    let app_dir = app_managed_binary(app, "ffmpeg", "ffmpeg.exe")
-        .and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()));
+    // Skip an app-managed copy the last dependency check found broken — passing a
+    // dead ffmpeg via --ffmpeg-location would fail every merge even when a working
+    // system copy exists. The marker resets on invalidate_dep_cache() (run after
+    // every install/update/delete), so a fresh install is picked up immediately.
+    let app_dir = if super::dep_check::app_ffmpeg_probe_broken() {
+        None
+    } else {
+        app_managed_binary(app, "ffmpeg", "ffmpeg.exe")
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()))
+    };
     let system_dir = resolve_ffmpeg_path().await;
 
     for src in source_order(app, "ffmpeg") {
@@ -344,6 +357,7 @@ pub(super) async fn deno_on_system_path() -> Option<PathBuf> {
     };
     let mut cmd = command_with_path(which_cmd);
     cmd.arg("deno");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -371,6 +385,7 @@ pub(super) async fn deno_on_system_path() -> Option<PathBuf> {
 pub async fn check_deno_version(deno_path: &Path) -> Option<String> {
     let mut cmd = super::path::command_with_path(deno_path.to_str().unwrap_or("deno"));
     cmd.arg("--version");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -407,15 +422,23 @@ pub async fn update_ytdlp(app: &AppHandle) -> Result<String, AppError> {
 
     let mut cmd = command_with_path(&ytdlp_path);
     cmd.arg("--update");
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let output = cmd
-        .output()
+    // `--update` downloads a full binary, so allow generous time — but never hang
+    // forever: an unbounded stall here would leave the update UI spinning until
+    // the app is restarted.
+    let output = tokio::time::timeout(Duration::from_secs(300), cmd.output())
         .await
+        .map_err(|_| {
+            AppError::DependencyInstallError(
+                "yt-dlp --update timed out after 5 minutes".to_string(),
+            )
+        })?
         .map_err(|e| AppError::Custom(format!("Failed to update yt-dlp: {}", e)))?;
 
     if output.status.success() {

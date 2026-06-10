@@ -1,10 +1,12 @@
 use super::types::{DepInstallEvent, DepInstallStage};
+use crate::modules::logger;
 use crate::modules::types::AppError;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
@@ -30,6 +32,113 @@ pub async fn lock_dependency(dep: &str) -> OwnedMutexGuard<()> {
     lock.lock_owned().await
 }
 
+/// Shared HTTP client for large archive downloads. `connect_timeout` bounds the
+/// handshake and `read_timeout` bounds idle-between-bytes, so a stalled TCP
+/// connection errors out instead of holding the per-dependency lock forever.
+/// Deliberately no overall deadline: the archives are tens of MB and a slow but
+/// progressing download must not be aborted.
+static DOWNLOAD_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(20))
+        .read_timeout(Duration::from_secs(60))
+        .build()
+        .unwrap_or_default()
+});
+
+/// Shared HTTP client for small checksum/version fetches, with a short overall
+/// deadline — these responses are a few KB, so 30s covers any healthy network.
+static SHORT_HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_default()
+});
+
+/// Client for small dependency HTTP calls (checksums, GitHub `releases/latest`).
+pub(crate) fn short_http_client() -> &'static reqwest::Client {
+    &SHORT_HTTP_CLIENT
+}
+
+/// Shared marker message for "install/update refused because downloads are active".
+/// `dep_autoupdate` matches on it (via `is_downloads_busy_error`) to rewind its
+/// throttle stamp so the next launch retries instead of waiting a full day.
+pub(crate) const DOWNLOADS_BUSY_MSG: &str =
+    "cannot install or update while downloads are running; retry once the queue is idle";
+
+pub fn downloads_busy_error() -> AppError {
+    AppError::DependencyInstallError(DOWNLOADS_BUSY_MSG.to_string())
+}
+
+/// Whether an install error is the downloads-busy refusal (vs a real failure).
+pub(crate) fn is_downloads_busy_error(e: &AppError) -> bool {
+    matches!(e, AppError::DependencyInstallError(msg) if msg == DOWNLOADS_BUSY_MSG)
+}
+
+/// True when any download is running or still queued. Binary mutation (swapping
+/// yt-dlp/ffmpeg/deno) must not race a running or about-to-start download, and
+/// the 300ms-delayed startup resume means `active_count` alone is not enough —
+/// pending queue rows count as busy too.
+pub fn downloads_busy(app: &AppHandle) -> bool {
+    if let Some(manager) = app.try_state::<crate::DownloadManagerState>() {
+        if manager.active_count() > 0 {
+            return true;
+        }
+    }
+    if let Some(db) = app.try_state::<crate::DbState>() {
+        return db
+            .get_cancellable_ids()
+            .map(|ids| !ids.is_empty())
+            .unwrap_or(false);
+    }
+    false
+}
+
+/// Remove leftover install artifacts from `bin/`: partial archive downloads,
+/// staging trees from interrupted installs, and stale `.old` backups.
+///
+/// Must run once at app startup, before any install can begin. It must NOT run
+/// inside the install path (e.g. `ensure_bin_dir`): installs for different
+/// dependencies run concurrently under per-dependency locks, so a sweep there
+/// could delete another dependency's in-flight temp download.
+pub fn sweep_install_leftovers(app: &AppHandle) {
+    let Ok(bin_dir) = ensure_bin_dir(app) else {
+        return;
+    };
+    const LEFTOVERS: &[&str] = &[
+        "yt-dlp-onedir.zip.tmp",
+        "ffmpeg_archive.zip",
+        "ffmpeg_archive.tar.gz",
+        "ffmpeg_archive.tar.xz",
+        "deno_archive.zip",
+        "ytdlp.staging",
+        "ytdlp.old",
+        "ffmpeg.staging",
+        "deno.staging",
+    ];
+    for name in LEFTOVERS {
+        let path = bin_dir.join(name);
+        if !path.exists() {
+            continue;
+        }
+        let result = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        match result {
+            Ok(()) => logger::info_cat(
+                "dependency",
+                &format!("Removed leftover install artifact {}", name),
+            ),
+            Err(e) => logger::warn_cat(
+                "dependency",
+                &format!("Failed to remove leftover install artifact {}: {}", name, e),
+            ),
+        }
+    }
+}
+
 /// Ensure the `app_data_dir/bin/` directory exists and return its path.
 pub fn ensure_bin_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     let app_data = app.path().app_data_dir().map_err(|e| {
@@ -52,9 +161,10 @@ pub async fn download_file(
 ) -> Result<PathBuf, AppError> {
     let dest_path = dest_dir.join(temp_name);
 
-    let response = reqwest::get(url)
-        .await
-        .map_err(|e| AppError::DependencyInstallError(format!("Download request failed: {}", e)))?;
+    let response =
+        DOWNLOAD_CLIENT.get(url).send().await.map_err(|e| {
+            AppError::DependencyInstallError(format!("Download request failed: {}", e))
+        })?;
 
     if !response.status().is_success() {
         return Err(AppError::DependencyInstallError(format!(
@@ -83,9 +193,19 @@ pub async fn download_file(
     use tokio::io::AsyncWriteExt;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| {
-            AppError::DependencyInstallError(format!("Download stream error: {}", e))
-        })?;
+        // On every abort path, drop the handle before deleting the partial file:
+        // Windows refuses to remove a file with an open handle.
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&dest_path).await;
+                return Err(AppError::DependencyInstallError(format!(
+                    "Download stream error: {}",
+                    e
+                )));
+            }
+        };
 
         downloaded += chunk.len() as u64;
         if downloaded > MAX_DOWNLOAD_BYTES {
@@ -97,9 +217,14 @@ pub async fn download_file(
             )));
         }
 
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| AppError::DependencyInstallError(format!("Write error: {}", e)))?;
+        if let Err(e) = file.write_all(&chunk).await {
+            drop(file);
+            let _ = tokio::fs::remove_file(&dest_path).await;
+            return Err(AppError::DependencyInstallError(format!(
+                "Write error: {}",
+                e
+            )));
+        }
 
         let (percent, should_emit) = match total_size {
             Some(total) if total > 0 => {
@@ -129,9 +254,14 @@ pub async fn download_file(
         }
     }
 
-    file.flush()
-        .await
-        .map_err(|e| AppError::DependencyInstallError(format!("Flush error: {}", e)))?;
+    if let Err(e) = file.flush().await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&dest_path).await;
+        return Err(AppError::DependencyInstallError(format!(
+            "Flush error: {}",
+            e
+        )));
+    }
 
     Ok(dest_path)
 }
@@ -166,7 +296,9 @@ pub async fn verify_sha256(file_path: &Path, expected_hash: &str) -> Result<(), 
 /// Fetch and parse the SHA2-256SUMS file from yt-dlp releases.
 pub async fn fetch_ytdlp_checksums() -> Result<Vec<(String, String)>, AppError> {
     let url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
-    let text = reqwest::get(url)
+    let text = short_http_client()
+        .get(url)
+        .send()
         .await
         .map_err(|e| AppError::DependencyInstallError(format!("Failed to fetch checksums: {}", e)))?
         .text()
@@ -194,7 +326,9 @@ pub async fn fetch_checksum_for(
     manifest_url: &str,
     filename: &str,
 ) -> Result<Option<String>, AppError> {
-    let text = reqwest::get(manifest_url)
+    let text = short_http_client()
+        .get(manifest_url)
+        .send()
         .await
         .map_err(|e| AppError::ChecksumError(format!("failed to fetch checksum manifest: {}", e)))?
         .error_for_status()
@@ -222,7 +356,9 @@ pub async fn fetch_checksum_for(
 /// Fetch a sibling `<asset>.sha256sum` file and return the lowercase hex hash.
 /// The file format is `<sha256>  <filename>`, so the leading token is the hash.
 pub async fn fetch_sha256sum(url: &str) -> Result<String, AppError> {
-    let text = reqwest::get(url)
+    let text = short_http_client()
+        .get(url)
+        .send()
         .await
         .map_err(|e| AppError::ChecksumError(format!("failed to fetch checksum: {}", e)))?
         .error_for_status()
@@ -592,32 +728,95 @@ pub fn finalize_dir(staging_dir: &Path, final_dir: &Path) -> Result<(), AppError
     }
 }
 
-/// Get the version string from a binary by running it with a version flag.
-pub async fn get_binary_version(binary_path: &Path, version_flag: &str) -> Option<String> {
+/// Why a binary version probe failed — lets callers distinguish a slow cold
+/// start (timeout) from a binary that cannot run at all (spawn error, non-zero
+/// exit, empty output).
+#[derive(Debug)]
+pub enum VersionProbeError {
+    Timeout(u64),
+    Spawn(String),
+    Exit { status: String, stderr: String },
+    EmptyOutput,
+}
+
+impl std::fmt::Display for VersionProbeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timeout(secs) => write!(f, "timed out after {}s", secs),
+            Self::Spawn(e) => write!(f, "failed to start: {}", e),
+            Self::Exit { status, stderr } => {
+                write!(f, "exited with {}; stderr: {}", status, stderr)
+            }
+            Self::EmptyOutput => write!(f, "produced no version output"),
+        }
+    }
+}
+
+/// Run a binary with its version flag and return the first output line.
+pub async fn probe_binary_version(
+    binary_path: &Path,
+    version_flag: &str,
+    timeout: Duration,
+) -> Result<String, VersionProbeError> {
     let mut cmd = tokio::process::Command::new(binary_path);
     cmd.arg(version_flag);
+    // A probe that outlives its timeout must not linger as an orphan.
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
+    let output = tokio::time::timeout(timeout, cmd.output())
+        .await
+        .map_err(|_| VersionProbeError::Timeout(timeout.as_secs()))?
+        .map_err(|e| VersionProbeError::Spawn(format!("{} ({})", e, e.kind())))?;
+
+    if !output.status.success() {
+        return Err(VersionProbeError::Exit {
+            status: output.status.to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or(VersionProbeError::EmptyOutput)
+}
+
+/// Get the version string from a binary by running it with a version flag.
+pub async fn get_binary_version(binary_path: &Path, version_flag: &str) -> Option<String> {
     // yt-dlp's onedir build does a one-time PyInstaller bootstrap on its first run
     // (the post-install verification call), measured around 9s on macOS — keep the
     // timeout well above that so a slow cold start isn't misread as a failed install.
-    let output = tokio::time::timeout(std::time::Duration::from_secs(25), cmd.output())
+    probe_binary_version(binary_path, version_flag, Duration::from_secs(25))
         .await
-        .ok()?
-        .ok()?;
+        .ok()
+}
 
-    if output.status.success() {
-        String::from_utf8(output.stdout)
-            .ok()
-            .map(|s| s.lines().next().unwrap_or("").trim().to_string())
-            .filter(|s| !s.is_empty())
-    } else {
-        None
+/// Verify a freshly staged binary before swapping it into place. Retries once on
+/// timeout (cold or loaded machines), but treats spawn errors, non-zero exits,
+/// persistent timeouts, and empty output as a hard failure — an unverifiable
+/// staged copy must never replace a working one.
+pub async fn verify_staged_binary(path: &Path, version_flag: &str) -> Result<String, AppError> {
+    let mut probe = probe_binary_version(path, version_flag, Duration::from_secs(20)).await;
+    if matches!(probe, Err(VersionProbeError::Timeout(_))) {
+        probe = probe_binary_version(path, version_flag, Duration::from_secs(40)).await;
     }
+    probe.map_err(|e| {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.display().to_string());
+        AppError::DependencyInstallError(format!(
+            "{} installed but failed to run ({}): {}; the download may be corrupt or incompatible",
+            name, version_flag, e
+        ))
+    })
 }
 
 /// Emit a stage event for dependency installation progress.

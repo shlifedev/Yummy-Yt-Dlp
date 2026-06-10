@@ -9,7 +9,9 @@
 
 use crate::modules::logger;
 use crate::ytdlp::binary::invalidate_dep_cache;
-use crate::ytdlp::dep_download::{ensure_bin_dir, get_binary_version};
+use crate::ytdlp::dep_download::{
+    downloads_busy, ensure_bin_dir, get_binary_version, is_downloads_busy_error,
+};
 use crate::ytdlp::{dep_deno, dep_ffmpeg, dep_ytdlp};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -46,6 +48,19 @@ pub fn auto_update_bundled_deps(app: &AppHandle) {
         record_check_time(&app);
         logger::info_cat("dependency", "Startup dependency auto-update check");
 
+        // Never mutate binaries while downloads are running or queued: the startup
+        // queue resume kicks in ~300ms after launch, so pending rows count as busy
+        // even before active_count moves. Skip and rewind the throttle stamp so the
+        // next launch retries instead of silently deferring a full day.
+        if downloads_busy(&app) {
+            logger::info_cat(
+                "dependency",
+                "Skipping dependency auto-update: downloads are active or queued",
+            );
+            clear_check_time(&app);
+            return;
+        }
+
         update_ytdlp_if_outdated(&app).await;
         refresh_if_aged(&app, "deno", "deno.exe").await;
         refresh_if_aged(&app, "ffmpeg", "ffmpeg.exe").await;
@@ -79,6 +94,15 @@ fn throttled(app: &AppHandle) -> bool {
 fn record_check_time(app: &AppHandle) {
     if let Ok(store) = app.store(STORE_FILE) {
         store.set(THROTTLE_KEY, serde_json::json!(now_secs()));
+        let _ = store.save();
+    }
+}
+
+/// Rewind the throttle stamp after a busy-skip so the next launch retries
+/// immediately instead of waiting out the full 24h window.
+fn clear_check_time(app: &AppHandle) {
+    if let Ok(store) = app.store(STORE_FILE) {
+        store.delete(THROTTLE_KEY);
         let _ = store.save();
     }
 }
@@ -141,7 +165,13 @@ async fn update_ytdlp_if_outdated(app: &AppHandle) {
     );
     match dep_ytdlp::install_ytdlp(app).await {
         Ok(v) => logger::info_cat("dependency", &format!("yt-dlp auto-updated to {v}")),
-        Err(e) => logger::warn_cat("dependency", &format!("yt-dlp auto-update failed: {e}")),
+        Err(e) => {
+            // A download that started mid-install is a deferral, not a failure.
+            if is_downloads_busy_error(&e) {
+                clear_check_time(app);
+            }
+            logger::warn_cat("dependency", &format!("yt-dlp auto-update failed: {e}"));
+        }
     }
 }
 
@@ -166,6 +196,10 @@ async fn refresh_if_aged(app: &AppHandle, unix_name: &str, windows_name: &str) {
         _ => return,
     };
     if let Err(e) = result {
+        // A download that started mid-install is a deferral, not a failure.
+        if is_downloads_busy_error(&e) {
+            clear_check_time(app);
+        }
         logger::warn_cat(
             "dependency",
             &format!("{unix_name} auto-update failed: {e}"),

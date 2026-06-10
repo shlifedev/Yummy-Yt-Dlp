@@ -167,7 +167,9 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
         return Err(e);
     }
 
-    // Extract
+    // Extract into a staging directory, never directly over the live binaries:
+    // File::create would truncate a working ffmpeg first, so an interrupted
+    // extraction (crash, disk full) must land in a disposable location.
     emit_stage(
         app,
         "ffmpeg",
@@ -175,59 +177,105 @@ pub async fn install_ffmpeg(app: &AppHandle) -> Result<String, AppError> {
         Some("Extracting ffmpeg..."),
     );
 
-    let extracted = match info.format {
-        ArchiveFormat::Zip => extract_zip(&archive_path, &bin_dir, binary_names).await?,
-        ArchiveFormat::TarGz => extract_tar_gz(&archive_path, &bin_dir, binary_names).await?,
-        ArchiveFormat::TarXz => extract_tar_xz(&archive_path, &bin_dir, binary_names).await?,
+    let staging = bin_dir.join("ffmpeg.staging");
+    let _ = std::fs::remove_dir_all(&staging);
+    if let Err(e) = std::fs::create_dir_all(&staging) {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return Err(AppError::DependencyInstallError(format!(
+            "Failed to create staging dir: {}",
+            e
+        )));
+    }
+
+    let extract_result = match info.format {
+        ArchiveFormat::Zip => extract_zip(&archive_path, &staging, binary_names).await,
+        ArchiveFormat::TarGz => extract_tar_gz(&archive_path, &staging, binary_names).await,
+        ArchiveFormat::TarXz => extract_tar_xz(&archive_path, &staging, binary_names).await,
+    };
+    // The archive is no longer needed whether or not extraction worked.
+    let _ = tokio::fs::remove_file(&archive_path).await;
+    let extracted = match extract_result {
+        Ok(files) => files,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
     };
 
-    if extracted.is_empty() {
-        // Clean up archive
-        let _ = tokio::fs::remove_file(&archive_path).await;
-        return Err(AppError::DependencyInstallError(
-            "ffmpeg binary not found in archive".to_string(),
-        ));
-    }
-
-    // Set executable + remove quarantine for each extracted binary
-    for path in &extracted {
-        set_executable(path)?;
-        remove_quarantine(path)?;
-    }
-
-    // Clean up archive
-    let _ = tokio::fs::remove_file(&archive_path).await;
-
-    // Verify installation
-    emit_stage(
-        app,
-        "ffmpeg",
-        DepInstallStage::Completing,
-        Some("Verifying installation..."),
-    );
     let ffmpeg_bin = if cfg!(target_os = "windows") {
         "ffmpeg.exe"
     } else {
         "ffmpeg"
     };
-    let ffmpeg_path = bin_dir.join(ffmpeg_bin);
-    // The archive checksum was verified above when one was available. A successful
-    // `ffmpeg -version` is the final sanity gate (and the only integrity check when the
-    // checksum couldn't be fetched). If the extracted binary does not run, treat the
-    // install as failed and remove the broken binaries so a later dependency check does
-    // not report them as installed.
-    let version = match get_binary_version(&ffmpeg_path, "-version").await {
-        Some(v) => v,
-        None => {
-            for path in &extracted {
-                let _ = tokio::fs::remove_file(path).await;
-            }
-            return Err(AppError::DependencyInstallError(
-                "ffmpeg installed but failed to run (-version); the download may be corrupt"
-                    .to_string(),
-            ));
+    let staged_ffmpeg = staging.join(ffmpeg_bin);
+    if !staged_ffmpeg.exists() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(AppError::DependencyInstallError(
+            "ffmpeg binary not found in archive".to_string(),
+        ));
+    }
+
+    // Executable bit + quarantine strip happen on the STAGED files, before the
+    // version probe (which needs to run them) and the swap.
+    for path in &extracted {
+        if let Err(e) = set_executable(path) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
         }
+        let _ = remove_quarantine(path);
+    }
+
+    // The archive checksum was verified above when one was available. A successful
+    // `-version` run of every staged binary is the final sanity gate (and the only
+    // integrity check when the checksum couldn't be fetched). Both ffmpeg and
+    // ffprobe must pass BEFORE anything is swapped in, so a half-working pair can
+    // never replace a fully working one.
+    emit_stage(
+        app,
+        "ffmpeg",
+        DepInstallStage::Verifying,
+        Some("Verifying installation..."),
+    );
+    let fail_verify = |e: AppError| {
+        let _ = std::fs::remove_dir_all(&staging);
+        emit_stage(app, "ffmpeg", DepInstallStage::Failed, Some(&e.to_string()));
+        e
     };
+    let version = verify_staged_binary(&staged_ffmpeg, "-version")
+        .await
+        .map_err(&fail_verify)?;
+    for path in extracted.iter().filter(|p| **p != staged_ffmpeg) {
+        verify_staged_binary(path, "-version")
+            .await
+            .map_err(&fail_verify)?;
+    }
+
+    // Last-moment gate under the dependency lock: never swap binaries while a
+    // download could be mid-merge with the old ffmpeg.
+    if downloads_busy(app) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(downloads_busy_error());
+    }
+
+    // Swap all binaries back-to-back, only after every probe passed, keeping the
+    // window for a version-mismatched ffmpeg/ffprobe pair as small as possible.
+    // `std::fs::rename` replaces an existing destination (MOVEFILE_REPLACE_EXISTING
+    // on Windows); if the target is locked by a running process the rename fails
+    // and the old, working binary is left untouched.
+    for path in &extracted {
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        if let Err(e) = std::fs::rename(path, bin_dir.join(name)) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(AppError::DependencyInstallError(format!(
+                "Failed to install {}: {}",
+                name.to_string_lossy(),
+                e
+            )));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&staging);
 
     emit_stage(
         app,
@@ -244,8 +292,7 @@ pub async fn get_latest_version() -> Result<String, AppError> {
     // BtbN builds use rolling "latest" tag, so we just return a placeholder.
     // For vanloctech/ffmpeg-macos, check the latest release.
     if cfg!(target_os = "macos") {
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = short_http_client()
             .get("https://api.github.com/repos/vanloctech/ffmpeg-macos/releases/latest")
             .header("User-Agent", "yummy-yt-dlp")
             .send()

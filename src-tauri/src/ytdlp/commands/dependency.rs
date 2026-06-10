@@ -197,28 +197,56 @@ pub async fn update_dependency(app: AppHandle, dep_name: String) -> Result<Strin
 pub async fn delete_app_managed_dep(app: AppHandle, dep_name: String) -> Result<String, AppError> {
     let bin_dir = crate::ytdlp::dep_download::ensure_bin_dir(&app)?;
 
+    // Each list also covers install leftovers (staging trees, stale backups,
+    // partial archives) so "Delete Binary" really clears everything on disk.
     let names_to_delete: Vec<&str> = match dep_name.as_str() {
         "yt-dlp" => {
             // The onedir tree lives under bin/ytdlp/; the bare file is only present
             // for legacy installs. Try both so a delete fully clears yt-dlp.
             if cfg!(target_os = "windows") {
-                vec!["ytdlp", "yt-dlp.exe"]
+                vec![
+                    "ytdlp",
+                    "ytdlp.old",
+                    "ytdlp.staging",
+                    "yt-dlp-onedir.zip.tmp",
+                    "yt-dlp.exe",
+                ]
             } else {
-                vec!["ytdlp", "yt-dlp"]
+                vec![
+                    "ytdlp",
+                    "ytdlp.old",
+                    "ytdlp.staging",
+                    "yt-dlp-onedir.zip.tmp",
+                    "yt-dlp",
+                ]
             }
         }
         "ffmpeg" => {
             if cfg!(target_os = "windows") {
-                vec!["ffmpeg.exe", "ffprobe.exe"]
+                vec![
+                    "ffmpeg.exe",
+                    "ffprobe.exe",
+                    "ffmpeg.staging",
+                    "ffmpeg_archive.zip",
+                    "ffmpeg_archive.tar.gz",
+                    "ffmpeg_archive.tar.xz",
+                ]
             } else {
-                vec!["ffmpeg", "ffprobe"]
+                vec![
+                    "ffmpeg",
+                    "ffprobe",
+                    "ffmpeg.staging",
+                    "ffmpeg_archive.zip",
+                    "ffmpeg_archive.tar.gz",
+                    "ffmpeg_archive.tar.xz",
+                ]
             }
         }
         "deno" => {
             if cfg!(target_os = "windows") {
-                vec!["deno.exe"]
+                vec!["deno.exe", "deno.staging", "deno_archive.zip"]
             } else {
-                vec!["deno"]
+                vec!["deno", "deno.staging", "deno_archive.zip"]
             }
         }
         _ => {

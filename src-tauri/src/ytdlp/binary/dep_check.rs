@@ -3,7 +3,9 @@ use super::resolve::{
     app_managed_binary, app_managed_ytdlp_binary, check_deno_version, check_ffmpeg, check_ytdlp,
     deno_home_path, deno_on_system_path, try_get_version, which_first,
 };
+use crate::ytdlp::dep_download::{probe_binary_version, VersionProbeError};
 use crate::ytdlp::types::{DepInfo, DepSource, FullDependencyStatus};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -18,12 +20,28 @@ struct DepStatusCache {
 static DEP_CACHE: std::sync::LazyLock<RwLock<Option<DepStatusCache>>> =
     std::sync::LazyLock::new(|| RwLock::new(None));
 
+/// Result of the last app-managed ffmpeg probe, consulted by the resolver so a
+/// known-broken app copy is never passed to yt-dlp via `--ffmpeg-location`.
+/// Reset to unknown by `invalidate_dep_cache` (which runs after every
+/// install/update/delete), so a fresh install is picked up immediately.
+const FFMPEG_PROBE_UNKNOWN: u8 = 0;
+const FFMPEG_PROBE_OK: u8 = 1;
+const FFMPEG_PROBE_BROKEN: u8 = 2;
+static APP_FFMPEG_PROBE: AtomicU8 = AtomicU8::new(FFMPEG_PROBE_UNKNOWN);
+
+/// True when the last dependency check found the app-managed ffmpeg broken
+/// (hard probe failure — not a mere timeout).
+pub(super) fn app_ffmpeg_probe_broken() -> bool {
+    APP_FFMPEG_PROBE.load(Ordering::Relaxed) == FFMPEG_PROBE_BROKEN
+}
+
 /// Invalidate the dependency status cache.
 /// Called after install/delete/update operations or dep_mode changes.
 pub fn invalidate_dep_cache() {
     if let Ok(mut guard) = DEP_CACHE.write() {
         *guard = None;
     }
+    APP_FFMPEG_PROBE.store(FFMPEG_PROBE_UNKNOWN, Ordering::Relaxed);
 }
 
 /// Quick check if a binary exists on the augmented PATH using which/where.
@@ -36,6 +54,7 @@ async fn quick_binary_exists(name: &str) -> bool {
     };
     let mut cmd = command_with_path(which_cmd);
     cmd.arg(name);
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -73,19 +92,22 @@ fn choose_dep(
 
     let mut active: Option<DepInfo> = None;
     for src in source_order(app, dep) {
-        match src {
-            DepSourcePref::AppManaged => {
-                if let Some(info) = &app_info {
-                    active = Some(info.clone());
-                    break;
-                }
-            }
-            DepSourcePref::SystemPath => {
-                if let Some(info) = &system_info {
-                    active = Some(info.clone());
-                    break;
-                }
-            }
+        let candidate = match src {
+            DepSourcePref::AppManaged => app_info.as_ref(),
+            DepSourcePref::SystemPath => system_info.as_ref(),
+        };
+        let Some(info) = candidate else {
+            continue;
+        };
+        // A broken (not-installed) candidate never wins over a working one later
+        // in the order, but is still surfaced when nothing works so the UI can
+        // show the broken copy and offer a reinstall.
+        if info.installed {
+            active = Some(info.clone());
+            break;
+        }
+        if active.is_none() {
+            active = Some(info.clone());
         }
     }
 
@@ -135,29 +157,32 @@ async fn check_dep_ytdlp(app: &AppHandle) -> DepInfo {
 }
 
 /// app-managed ffmpeg, if the binary exists in the app bin dir.
+///
+/// A hard probe failure (spawn error, non-zero exit, no output) means the
+/// on-disk copy is broken — report it as NOT installed, keeping path and
+/// app_available so the UI can show the broken copy and offer a reinstall. A
+/// timeout stays lenient (installed, no version): a cold or loaded machine must
+/// not re-trigger the first-run install gate via the persisted dep cache.
 async fn app_managed_ffmpeg(app: &AppHandle) -> Option<DepInfo> {
     let app_binary = app_managed_binary(app, "ffmpeg", "ffmpeg.exe")?;
 
-    let mut version: Option<String> = None;
-    let mut cmd = tokio::process::Command::new(&app_binary);
-    cmd.arg("-version");
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000);
-    }
-    if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
-        if output.status.success() {
-            version = Some(
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .to_string(),
-            );
-        }
-    }
+    let (installed, version) =
+        match probe_binary_version(&app_binary, "-version", Duration::from_secs(5)).await {
+            Ok(v) => {
+                APP_FFMPEG_PROBE.store(FFMPEG_PROBE_OK, Ordering::Relaxed);
+                (true, Some(v))
+            }
+            Err(VersionProbeError::Timeout(_)) => {
+                APP_FFMPEG_PROBE.store(FFMPEG_PROBE_UNKNOWN, Ordering::Relaxed);
+                (true, None)
+            }
+            Err(_) => {
+                APP_FFMPEG_PROBE.store(FFMPEG_PROBE_BROKEN, Ordering::Relaxed);
+                (false, None)
+            }
+        };
     Some(DepInfo {
-        installed: true,
+        installed,
         version,
         source: DepSource::AppManaged,
         path: Some(app_binary.to_string_lossy().to_string()),
@@ -185,11 +210,19 @@ async fn check_dep_ffmpeg(app: &AppHandle) -> DepInfo {
 }
 
 /// app-managed deno, if the binary exists in the app bin dir.
+///
+/// Mirrors `app_managed_ffmpeg`: only a hard probe failure flips installed to
+/// false; a timeout stays lenient.
 async fn app_managed_deno(app: &AppHandle) -> Option<DepInfo> {
     let app_binary = app_managed_binary(app, "deno", "deno.exe")?;
-    let version = check_deno_version(&app_binary).await;
+    let (installed, version) =
+        match probe_binary_version(&app_binary, "--version", Duration::from_secs(10)).await {
+            Ok(v) => (true, Some(v)),
+            Err(VersionProbeError::Timeout(_)) => (true, None),
+            Err(_) => (false, None),
+        };
     Some(DepInfo {
-        installed: true,
+        installed,
         version,
         source: DepSource::AppManaged,
         path: Some(app_binary.to_string_lossy().to_string()),
@@ -289,6 +322,7 @@ pub fn warmup_ytdlp(app: AppHandle) {
         };
         let mut cmd = super::path::command_with_path_app(&path, &app);
         cmd.arg("--version");
+        cmd.kill_on_drop(true);
 
         #[cfg(target_os = "windows")]
         {
