@@ -1,7 +1,9 @@
 use super::dep_download::*;
 use super::types::DepInstallStage;
+use crate::modules::logger;
 use crate::modules::types::AppError;
 use std::path::Path;
+use std::time::Duration;
 use tauri::AppHandle;
 
 /// yt-dlp ships as a PyInstaller `--onedir` zip per platform: the executable plus
@@ -146,6 +148,51 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
     }
     let _ = remove_quarantine_recursive(&staging);
 
+    // Verify the STAGED binary before swapping it in: a failed update must never
+    // destroy the last working tree. Only spawn errors, non-zero exits, and empty
+    // output are fatal — a slow PyInstaller cold start (timeout) gets one retry
+    // with a longer window and then installs with a warning rather than discarding
+    // a build that may simply be slow to bootstrap.
+    emit_stage(
+        app,
+        "yt-dlp",
+        DepInstallStage::Verifying,
+        Some("Verifying installation..."),
+    );
+    let staged_exe = staging.join(get_binary_name());
+    let mut probe = probe_binary_version(&staged_exe, "--version", Duration::from_secs(25)).await;
+    if matches!(probe, Err(VersionProbeError::Timeout(_))) {
+        probe = probe_binary_version(&staged_exe, "--version", Duration::from_secs(60)).await;
+    }
+    let version = match probe {
+        Ok(v) => v,
+        Err(VersionProbeError::Timeout(_)) => {
+            logger::warn_cat(
+                "dependency",
+                "yt-dlp version probe timed out twice; keeping the install (cold start can exceed the probe window)",
+            );
+            "unknown".to_string()
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            let msg = format!(
+                "yt-dlp installed but failed to run (--version): {}; the download may be corrupt or incompatible",
+                e
+            );
+            emit_stage(app, "yt-dlp", DepInstallStage::Failed, Some(&msg));
+            return Err(AppError::DependencyInstallError(msg));
+        }
+    };
+
+    // Last-moment gate under the dependency lock: never swap the tree while a
+    // download could be running the old yt-dlp. A download started between this
+    // check and the rename can still race (TOCTOU), but this closes the realistic
+    // startup auto-update vs queue-resume collision.
+    if downloads_busy(app) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(downloads_busy_error());
+    }
+
     let final_dir = ytdlp_dir(&bin_dir);
     if let Err(e) = finalize_dir(&staging, &final_dir) {
         let _ = std::fs::remove_dir_all(&staging);
@@ -153,18 +200,6 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
     }
 
     remove_legacy_binary(&bin_dir);
-
-    // Verify installation
-    emit_stage(
-        app,
-        "yt-dlp",
-        DepInstallStage::Completing,
-        Some("Verifying installation..."),
-    );
-    let final_exe = final_dir.join(get_binary_name());
-    let version = get_binary_version(&final_exe, "--version")
-        .await
-        .unwrap_or_else(|| "unknown".to_string());
 
     emit_stage(
         app,
@@ -178,8 +213,7 @@ pub async fn install_ytdlp(app: &AppHandle) -> Result<String, AppError> {
 
 /// Get the latest yt-dlp version from GitHub API.
 pub async fn get_latest_version() -> Result<String, AppError> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = short_http_client()
         .get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
         .header("User-Agent", "yummy-yt-dlp")
         .send()

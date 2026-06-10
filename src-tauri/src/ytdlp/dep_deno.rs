@@ -64,42 +64,85 @@ pub async fn install_deno(app: &AppHandle) -> Result<String, AppError> {
         return Err(e);
     }
 
-    // Extract (deno binary is at zip root)
+    // Extract into a staging directory (deno binary is at the zip root), never
+    // directly over the live binary: File::create would truncate a working deno,
+    // so an interrupted extraction must land in a disposable location.
     emit_stage(
         app,
         "deno",
         DepInstallStage::Extracting,
         Some("Extracting deno..."),
     );
-    let extracted = extract_zip(&archive_path, &bin_dir, &[binary_name]).await?;
-
-    if extracted.is_empty() {
+    let staging = bin_dir.join("deno.staging");
+    let _ = std::fs::remove_dir_all(&staging);
+    if let Err(e) = std::fs::create_dir_all(&staging) {
         let _ = tokio::fs::remove_file(&archive_path).await;
+        return Err(AppError::DependencyInstallError(format!(
+            "Failed to create staging dir: {}",
+            e
+        )));
+    }
+    let extract_result = extract_zip(&archive_path, &staging, &[binary_name]).await;
+    // The archive is no longer needed whether or not extraction worked.
+    let _ = tokio::fs::remove_file(&archive_path).await;
+    let extracted = match extract_result {
+        Ok(files) => files,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
+    };
+
+    let staged_deno = staging.join(binary_name);
+    if extracted.is_empty() || !staged_deno.exists() {
+        let _ = std::fs::remove_dir_all(&staging);
         return Err(AppError::DependencyInstallError(
             "deno binary not found in archive".to_string(),
         ));
     }
 
-    // Set executable + remove quarantine
-    for path in &extracted {
-        set_executable(path)?;
-        remove_quarantine(path)?;
+    // Executable bit + quarantine strip happen on the STAGED file, before the
+    // version probe (which needs to run it) and the swap.
+    if let Err(e) = set_executable(&staged_deno) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(e);
     }
+    let _ = remove_quarantine(&staged_deno);
 
-    // Clean up archive
-    let _ = tokio::fs::remove_file(&archive_path).await;
-
-    // Verify installation
+    // Verify the STAGED binary before swapping: a binary that cannot run must
+    // never report a successful install (or replace a working copy).
     emit_stage(
         app,
         "deno",
-        DepInstallStage::Completing,
+        DepInstallStage::Verifying,
         Some("Verifying installation..."),
     );
-    let deno_path = bin_dir.join(binary_name);
-    let version = get_binary_version(&deno_path, "--version")
-        .await
-        .unwrap_or_else(|| "unknown".to_string());
+    let version = match verify_staged_binary(&staged_deno, "--version").await {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            emit_stage(app, "deno", DepInstallStage::Failed, Some(&e.to_string()));
+            return Err(e);
+        }
+    };
+
+    // Last-moment gate under the dependency lock: never swap the binary while a
+    // download could be running it (yt-dlp spawns deno for some extractors).
+    if downloads_busy(app) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(downloads_busy_error());
+    }
+
+    // `std::fs::rename` replaces an existing destination; if the target is locked
+    // by a running process the rename fails and the old binary is left untouched.
+    if let Err(e) = std::fs::rename(&staged_deno, bin_dir.join(binary_name)) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(AppError::DependencyInstallError(format!(
+            "Failed to install deno: {}",
+            e
+        )));
+    }
+    let _ = std::fs::remove_dir_all(&staging);
 
     emit_stage(
         app,
@@ -113,8 +156,7 @@ pub async fn install_deno(app: &AppHandle) -> Result<String, AppError> {
 
 /// Get the latest deno version from GitHub API.
 pub async fn get_latest_version() -> Result<String, AppError> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = short_http_client()
         .get("https://api.github.com/repos/denoland/deno/releases/latest")
         .header("User-Agent", "yummy-yt-dlp")
         .send()

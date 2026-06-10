@@ -153,6 +153,12 @@ pub fn run() {
                 );
             }
 
+            // Sweep leftover install artifacts (partial archives, staging trees, stale
+            // backups) before anything can start a new install. This must run here —
+            // not inside the install path — because installs for different dependencies
+            // run concurrently and a sweep there could delete an in-flight temp file.
+            ytdlp::dep_download::sweep_install_leftovers(app.handle());
+
             // Seed bundled yt-dlp/ffmpeg into app_data_dir/bin before warmup/dep checks.
             // Runs from a writable copy so `yt-dlp --update` keeps working; deno stays dynamic.
             ytdlp::dep_seed::seed_bundled_binaries(app.handle());
