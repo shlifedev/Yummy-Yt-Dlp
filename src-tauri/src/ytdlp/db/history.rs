@@ -39,6 +39,45 @@ impl Database {
         Ok(conn.last_insert_rowid() as u64)
     }
 
+    /// Insert a history row copying the originating download's group_id via INSERT...SELECT
+    /// (same pattern as `complete_and_record`), so a batch item recorded through the executor's
+    /// fallback path keeps its playlist/channel grouping. The in-memory task's group_id cannot
+    /// be used: `map_download_row` hardcodes it to None.
+    pub fn insert_history_with_group(
+        &self,
+        item: &HistoryItem,
+        task_id: u64,
+    ) -> Result<u64, AppError> {
+        let conn = self.conn();
+
+        let rows = conn.execute(
+            "INSERT INTO history (video_url, video_id, title, quality_label, format, file_path, file_size, downloaded_at, group_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, group_id FROM downloads WHERE id = ?9",
+            params![
+                item.video_url,
+                item.video_id,
+                item.title,
+                item.quality_label,
+                item.format,
+                item.file_path,
+                item.file_size,
+                item.downloaded_at,
+                task_id,
+            ],
+        ).map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+        // INSERT...SELECT inserts nothing when the downloads row is gone; surface that so the
+        // caller's plain-insert fallback still records the history row.
+        if rows == 0 {
+            return Err(AppError::DatabaseError(format!(
+                "no downloads row with id {} to copy group_id from",
+                task_id
+            )));
+        }
+
+        Ok(conn.last_insert_rowid() as u64)
+    }
+
     pub fn check_duplicate_in_queue(&self, video_id: &str) -> Result<bool, AppError> {
         let conn = self.conn();
         let count: i64 = conn

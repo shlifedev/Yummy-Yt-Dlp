@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Notify};
@@ -9,7 +9,12 @@ use crate::ytdlp::security;
 pub struct DownloadManager {
     active_count: AtomicU32,
     max_concurrent: AtomicU32,
-    cancel_senders: Mutex<HashMap<u64, watch::Sender<bool>>>,
+    /// task_id -> (attempt generation, cancel sender). The generation tags which executor
+    /// attempt owns the entry: a stale attempt terminating late (cancel kill + stream draining
+    /// can take seconds) must never drop a newer attempt's sender — the receiver side treats a
+    /// sender drop as a cancel signal.
+    cancel_senders: Mutex<HashMap<u64, (u64, watch::Sender<bool>)>>,
+    cancel_generation: AtomicU64,
     idle_notify: Notify,
     shutting_down: AtomicBool,
 }
@@ -20,6 +25,7 @@ impl DownloadManager {
             active_count: AtomicU32::new(0),
             max_concurrent: AtomicU32::new(security::clamp_max_concurrent(max_concurrent)),
             cancel_senders: Mutex::new(HashMap::new()),
+            cancel_generation: AtomicU64::new(0),
             idle_notify: Notify::new(),
             shutting_down: AtomicBool::new(false),
         }
@@ -117,27 +123,63 @@ impl DownloadManager {
     }
 
     // Cancel support methods
-    pub(super) fn register_cancel(&self, task_id: u64) -> watch::Receiver<bool> {
+
+    /// Register a cancel channel for a new executor attempt. Returns the attempt generation
+    /// alongside the receiver; the executor must pass the same generation back to
+    /// `unregister_cancel` so a stale attempt cannot remove a newer attempt's entry.
+    /// An insert here can only overwrite an existing entry if two executors are ever live for
+    /// the same task — the atomic claim paths prevent that; the overwritten sender's drop would
+    /// read as a cancel on the older attempt, which is the safe direction.
+    pub(super) fn register_cancel(&self, task_id: u64) -> (u64, watch::Receiver<bool>) {
+        let generation = self.cancel_generation.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = watch::channel(false);
         let mut senders = self
             .cancel_senders
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        senders.insert(task_id, tx);
-        rx
+        senders.insert(task_id, (generation, tx));
+        (generation, rx)
     }
 
+    /// Signal cancellation WITHOUT removing the sender: a registered entry marks the executor
+    /// as still in flight (see `is_executing`), which retry_download uses to avoid racing an
+    /// executor that is winding down. Cleanup happens via the generation-checked
+    /// `unregister_cancel` when the attempt terminates.
     pub fn send_cancel(&self, task_id: u64) {
-        let mut senders = self
+        let senders = self
             .cancel_senders
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        if let Some(tx) = senders.remove(&task_id) {
+        if let Some((_, tx)) = senders.get(&task_id) {
             let _ = tx.send(true);
         }
     }
 
-    pub(super) fn unregister_cancel(&self, task_id: u64) {
+    /// Whether an executor attempt for this task still holds its cancel channel — i.e. it is
+    /// running, or winding down after a cancel (kill + stream draining can take seconds after
+    /// the DB row already reads 'cancelled').
+    pub fn is_executing(&self, task_id: u64) -> bool {
+        let senders = self
+            .cancel_senders
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        senders.contains_key(&task_id)
+    }
+
+    pub(super) fn unregister_cancel(&self, task_id: u64, generation: u64) {
+        let mut senders = self
+            .cancel_senders
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if matches!(senders.get(&task_id), Some((g, _)) if *g == generation) {
+            senders.remove(&task_id);
+        }
+    }
+
+    /// Remove a task's cancel sender regardless of generation. Only for the panic finalizer,
+    /// where the panicked attempt's generation is unknowable; leaving the entry behind would
+    /// make `is_executing` report the task as in flight for the rest of the session.
+    pub(super) fn force_unregister_cancel(&self, task_id: u64) {
         let mut senders = self
             .cancel_senders
             .lock()
@@ -146,12 +188,14 @@ impl DownloadManager {
     }
 
     /// 앱 종료 시 모든 활성 다운로드 취소. 동기적으로 cancel signal만 전송.
+    /// Senders stay registered (same semantics as `send_cancel`); each executor removes its
+    /// own entry via the generation-checked `unregister_cancel` as it terminates.
     pub fn cancel_all(&self) {
-        let mut senders = self
+        let senders = self
             .cancel_senders
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        for (_task_id, tx) in senders.drain() {
+        for (_generation, tx) in senders.values() {
             let _ = tx.send(true);
         }
     }

@@ -36,6 +36,34 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
         .ok_or_else(|| AppError::Custom("Download task not found".to_string()))?;
 
     let manager = app.state::<Arc<DownloadManager>>();
+
+    // An executor for this task is still in flight — typically winding down after a cancel
+    // (the kill + stream draining run for seconds after the row already reads 'cancelled').
+    // Spawning a second executor now would race the stale one, so re-queue as 'pending'
+    // instead: the old attempt's terminal path unregisters its cancel sender, releases its
+    // slot, and kicks process_next_pending, which then claims this row cleanly.
+    if manager.is_executing(task_id) {
+        if db.queue_for_retry(task_id)? {
+            if !manager.is_executing(task_id) {
+                // The old executor finished between the check above and the re-queue, so its
+                // scheduler kick may have run too early to see this row — kick again.
+                let app_clone = app.clone();
+                tokio::spawn(async move {
+                    crate::ytdlp::download::process_next_pending_public(app_clone);
+                });
+            }
+        } else {
+            crate::modules::logger::warn_cat(
+                "download",
+                &format!(
+                    "[download:{}] retry ignored: task not in a retryable state",
+                    task_id
+                ),
+            );
+        }
+        return Ok(());
+    }
+
     if manager.try_acquire() {
         // Atomically flip this task to 'downloading' only if it is still retryable. This both
         // pairs the acquired slot with a release on every failure path and prevents a concurrent
@@ -54,14 +82,26 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
                             "download",
                             &format!("[download:{}] task panicked: {:?}", task_id, e),
                         );
-                        let manager = app_panic_guard.state::<Arc<DownloadManager>>();
-                        manager.release();
-                        crate::ytdlp::download::process_next_pending_public(app_panic_guard);
+                        crate::ytdlp::download::finalize_panicked_download(
+                            app_panic_guard,
+                            task_id,
+                            format!("internal panic: {:?}", e),
+                        )
+                        .await;
                     }
                 });
             }
             // Not in a retryable state (e.g. already running/completed): give the slot back.
-            Ok(false) => manager.release(),
+            Ok(false) => {
+                crate::modules::logger::warn_cat(
+                    "download",
+                    &format!(
+                        "[download:{}] retry ignored: task not in a retryable state",
+                        task_id
+                    ),
+                );
+                manager.release();
+            }
             Err(e) => {
                 manager.release();
                 return Err(e);
@@ -75,6 +115,14 @@ pub async fn retry_download(app: AppHandle, task_id: u64) -> Result<(), AppError
             tokio::spawn(async move {
                 crate::ytdlp::download::process_next_pending_public(app_clone);
             });
+        } else {
+            crate::modules::logger::warn_cat(
+                "download",
+                &format!(
+                    "[download:{}] retry ignored: task not in a retryable state",
+                    task_id
+                ),
+            );
         }
     }
 

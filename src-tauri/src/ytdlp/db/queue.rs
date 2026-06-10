@@ -244,27 +244,37 @@ impl Database {
     /// Atomically claim the next pending download by setting its status to 'downloading'
     /// in a single SQL statement. Returns the claimed task or None if no pending tasks exist.
     /// This prevents the race condition where two concurrent callers could claim the same task.
+    /// The task is built directly from the UPDATE's RETURNING row: a follow-up SELECT could
+    /// fail after the row was already flipped, orphaning a claimed row no executor will run.
     pub fn claim_next_pending(&self) -> Result<Option<DownloadTaskInfo>, AppError> {
-        // Scope the MutexGuard so it is dropped before calling get_download(),
-        // which also acquires the same Mutex. std::sync::Mutex is non-reentrant,
-        // so holding the guard while calling get_download() would deadlock.
-        let claimed_id: Option<u64> = {
-            let conn = self.conn();
-            conn.query_row(
+        let conn = self.conn();
+        conn.query_row(
+            &format!(
                 "UPDATE downloads SET status = 'downloading'
                  WHERE id = (SELECT id FROM downloads WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1)
-                 RETURNING id",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        }; // MutexGuard dropped here
+                 RETURNING {}",
+                DOWNLOAD_COLUMNS
+            ),
+            [],
+            map_download_row,
+        )
+        .optional()
+        .map_err(|e| AppError::DatabaseError(e.to_string()))
+    }
 
-        match claimed_id {
-            Some(id) => self.get_download(id),
-            None => Ok(None),
-        }
+    /// Atomically claim a specific freshly enqueued task (pending -> downloading). Mirrors
+    /// `claim_for_retry`: returns true only if this call performed the transition, so
+    /// add_to_queue can neither double-dispatch a row a concurrent process_next_pending already
+    /// claimed nor resurrect one cancelled in the insert -> claim window.
+    pub fn claim_specific_pending(&self, id: u64) -> Result<bool, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads SET status = 'downloading' WHERE id = ?1 AND status = 'pending'",
+                params![id],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows > 0)
     }
 
     /// Atomically claim a specific task for retry by flipping it to 'downloading' only if it is
@@ -471,6 +481,42 @@ impl Database {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(tasks)
+    }
+
+    /// Conditionally write a terminal status only while the row is still 'downloading'.
+    /// Mirrors `cancel_if_active`: a stale executor winding down after a cancel, or a late
+    /// panic guard, must never clobber a row another path already finalized (completed,
+    /// cancelled, or re-queued as pending by a retry). Returns true if the row was updated.
+    pub fn finalize_if_downloading(
+        &self,
+        id: u64,
+        status: &DownloadStatus,
+        error_msg: Option<&str>,
+        error_detail: Option<&str>,
+    ) -> Result<bool, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads SET status = ?1, error_message = ?2, error_detail = ?3 WHERE id = ?4 AND status = 'downloading'",
+                params![status.to_string(), error_msg, error_detail, id],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows > 0)
+    }
+
+    /// In-session analog of `reset_stale_downloads`: recover rows stuck in 'downloading' when
+    /// no executor is running. A failed terminal-status write (disk full, transient SQLite
+    /// error) leaves a finished attempt's row 'downloading', where Retry refuses to touch it.
+    /// Callers must verify no execution slot is held before invoking this.
+    pub fn fail_stuck_downloads(&self, error_msg: &str) -> Result<u32, AppError> {
+        let conn = self.conn();
+        let rows = conn
+            .execute(
+                "UPDATE downloads SET status = 'failed', error_message = ?1 WHERE status = 'downloading'",
+                params![error_msg],
+            )
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        Ok(rows as u32)
     }
 }
 
