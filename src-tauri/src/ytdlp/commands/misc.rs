@@ -25,6 +25,9 @@ pub fn set_minimize_to_tray(
         }
     } else {
         let manager = app.state::<Arc<DownloadManager>>();
+        // shutdown() stops process_next_pending from claiming the next pending row
+        // (and spawning a fresh yt-dlp) while we drain below — this path always exits.
+        manager.shutdown();
         manager.cancel_all();
         // Wait briefly for cancel signals to propagate and yt-dlp processes to terminate
         let manager_clone = manager.inner().clone();

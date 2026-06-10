@@ -125,6 +125,12 @@
 
   async function handleCloseBlockedExit() {
     showCloseBlockedDialog = false
+    // Cancel active downloads first so their rows persist as "cancelled" instead of
+    // being mislabeled "failed" on next launch. The backend RunEvent::Exit handler
+    // then waits (bounded) for the yt-dlp processes to actually be killed.
+    try {
+      await commands.cancelAllDownloads()
+    } catch (e) { console.error("Failed to cancel downloads:", e) }
     try {
       await exit(0)
     } catch (e) { console.error("Failed to exit:", e) }

@@ -87,7 +87,25 @@ pub fn run() {
 
     let invoke_handler = builder.invoke_handler();
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut tauri_builder = tauri::Builder::default();
+
+    // Single-instance must be the FIRST plugin so a second launch exits before its
+    // setup() runs reset_stale_downloads() against the first instance's live queue.
+    // The callback unhides the (possibly tray-hidden) window of the running instance.
+    #[cfg(desktop)]
+    {
+        tauri_builder =
+            tauri_builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }));
+    }
+
+    tauri_builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -243,8 +261,22 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 let manager = app_handle.state::<DownloadManagerState>();
+                let scan_manager = app_handle.state::<ScanManagerState>();
+                // Stop new work from being claimed while draining, then signal every
+                // in-flight download/scan and give their executor tasks a bounded
+                // window to run kill_process_tree (they run on tokio workers, which
+                // keep being polled while the main thread blocks here). Without the
+                // wait, the process exits before any kill runs and yt-dlp/ffmpeg
+                // survive as orphans.
+                manager.shutdown();
                 manager.cancel_all();
-                app_handle.state::<ScanManagerState>().cancel_current();
+                scan_manager.cancel_current();
+                tauri::async_runtime::block_on(async {
+                    let _ = tokio::join!(
+                        manager.wait_until_idle(std::time::Duration::from_secs(3)),
+                        scan_manager.wait_until_idle(std::time::Duration::from_secs(3)),
+                    );
+                });
             }
         });
 }
