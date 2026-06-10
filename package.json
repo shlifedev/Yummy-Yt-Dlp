@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "fetch-binaries": "bun scripts/fetch-binaries.mjs",
     "tauri": "tauri",
     "prepare": "husky"
   },

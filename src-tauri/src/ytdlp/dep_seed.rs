@@ -76,17 +76,24 @@ fn seed_ytdlp_onedir(app: &AppHandle, bin_dir: &std::path::Path) {
     };
     let dest_dir = bin_dir.join("ytdlp");
     let legacy_dest = bin_dir.join(exe);
-    // Never clobber an existing app-managed copy (onedir or legacy).
-    if dest_dir.exists() || legacy_dest.exists() {
+    // Never clobber an existing app-managed copy (onedir or legacy). Judge by the
+    // executable, not the directory: an empty `bin/ytdlp/` left by a seed that ran
+    // against a binary-less resource dir (e.g. dev) must not block future seeding.
+    if dest_dir.join(exe).exists() || legacy_dest.exists() {
         return;
+    }
+    if dest_dir.exists() {
+        let _ = std::fs::remove_dir_all(&dest_dir);
     }
 
     if let Ok(src_dir) = app
         .path()
         .resolve("binaries/ytdlp", BaseDirectory::Resource)
     {
-        if src_dir.is_dir() {
-            if copy_dir_recursive(&src_dir, &dest_dir).is_ok() {
+        // Require the executable in the source tree — in dev the resource dir
+        // exists but holds only a .gitkeep placeholder.
+        if src_dir.join(exe).exists() {
+            if copy_dir_recursive(&src_dir, &dest_dir).is_ok() && dest_dir.join(exe).exists() {
                 let _ = set_executable(&dest_dir.join(exe));
                 let _ = remove_quarantine_recursive(&dest_dir);
                 crate::modules::logger::info_cat("dependency", "Seeded bundled yt-dlp (onedir)");

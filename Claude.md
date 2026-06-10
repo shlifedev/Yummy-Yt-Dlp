@@ -12,6 +12,10 @@ Tauri 2.0 desktop application: a yt-dlp GUI for downloading YouTube videos. Svel
 # Development (runs both frontend + backend)
 bun run tauri dev
 
+# Fetch sidecar binaries (yt-dlp/ffmpeg/ffprobe/deno) into src-tauri/binaries/
+# Runs automatically via beforeDevCommand; skips anything already present
+bun run fetch-binaries
+
 # Frontend only
 bun run dev               # Vite dev server
 bun run check             # Svelte/TypeScript type check
