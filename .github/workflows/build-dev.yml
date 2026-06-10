@@ -99,7 +99,8 @@ jobs:
           mkdir -p "$BIN"
           curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip" -o /tmp/ytdlp.zip
           rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
-          unzip -l /tmp/ytdlp.zip | head -20
+          unzip -l /tmp/ytdlp.zip > /tmp/ytdlp-list.txt
+          head -20 /tmp/ytdlp-list.txt
           unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
           mkdir -p "$BIN/ytdlp"
           cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
@@ -165,15 +166,15 @@ jobs:
           lipo -info "$BIN/ffmpeg" "$BIN/deno"
           ls -la "$BIN" "$BIN/ytdlp"
 
-      # No TAURI_SIGNING_* env here: dev builds are unsigned for the updater since they
-      # never feed the R2 updater manifest. (App code signing, if any, is separate.)
+      # No TAURI_SIGNING_* env here: dev builds deliberately skip updater artifacts
+      # because they never feed the R2 updater manifest.
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json
 
       - name: Rename portable exe
         if: matrix.name == 'windows'

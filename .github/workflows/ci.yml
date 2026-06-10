@@ -82,4 +82,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --no-bundle

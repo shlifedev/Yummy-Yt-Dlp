@@ -130,7 +130,8 @@ jobs:
           mkdir -p "$BIN"
           curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip" -o /tmp/ytdlp.zip
           rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
-          unzip -l /tmp/ytdlp.zip | head -20
+          unzip -l /tmp/ytdlp.zip > /tmp/ytdlp-list.txt
+          head -20 /tmp/ytdlp-list.txt
           unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
           mkdir -p "$BIN/ytdlp"
           cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
