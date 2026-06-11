@@ -218,13 +218,13 @@ pub fn sanitize_output_path(path: &str) -> Result<String, AppError> {
             // Reserved device names only break things on Windows; on Unix a
             // directory literally named "aux" is legal and must stay usable.
             #[cfg(target_os = "windows")]
-            std::path::Component::Normal(seg) => {
-                if seg.to_str().is_some_and(|s| is_windows_reserved_name(s)) {
-                    return Err(AppError::FileError(format!(
-                        "Download path contains a Windows reserved name: '{}'",
-                        seg.to_string_lossy()
-                    )));
-                }
+            std::path::Component::Normal(seg)
+                if seg.to_str().is_some_and(is_windows_reserved_name) =>
+            {
+                return Err(AppError::FileError(format!(
+                    "Download path contains a Windows reserved name: '{}'",
+                    seg.to_string_lossy()
+                )));
             }
             _ => {}
         }
