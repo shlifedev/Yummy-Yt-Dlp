@@ -1,6 +1,31 @@
 # Changelog
 
 
+## v1.1.48 (2026-06-11)
+
+### Features
+- stream playlist/channel scans instead of 50-entry pagination
+- fetch sidecar binaries automatically before tauri dev
+
+### Bug Fixes
+- eliminate download queue races, stuck 'downloading' rows, and bad history records
+- stop duplicate-warning self-destruct and silent scan/batch state loss
+- surface download, queue-action, and updater failures in the UI
+- skip undownloadable id-only entries and invalid batch items instead of failing the whole enqueue
+- surface settings save failures and stop stale-snapshot overwrites
+- recover corrupt settings.json, clamp sleep interval, detect per-user browsers
+- atomic dependency installs, network timeouts, verified binaries, and download-aware updates
+- classify yt-dlp failures correctly and localize stored error messages
+- kill yt-dlp on exit and timeouts, add single-instance guard, stop process leaks
+- survive corrupt databases and interrupted migrations, bound queue growth
+- keep binaries/ytdlp dir for build-time resource validation
+
+### Other Changes
+- retry binary downloads and add BtbN autobuild fallback for ffmpeg
+- fix action build failures
+- add dev-only build workflow publishing a rolling dev pre-release
+- remove release deployment internals and roadmap from READMEs
+
 ## v1.1.47 (2026-06-07)
 
 ## v1.1.46 (2026-06-07)
