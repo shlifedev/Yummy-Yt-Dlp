@@ -317,6 +317,7 @@ const de: Record<string, string> = {
   "history.revealInFolder": "Im Ordner anzeigen",
   "history.openFile": "Datei öffnen",
   "history.openFileFailed": "Datei konnte nicht geöffnet werden. Sie wurde möglicherweise verschoben oder gelöscht.",
+  "history.revealFailed": "Datei konnte nicht im Ordner angezeigt werden. Sie wurde möglicherweise verschoben oder gelöscht.",
   "history.deleteItem": "Löschen",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const de: Record<string, string> = {
   "layout.downloadFailedToast": "Download fehlgeschlagen: {title}",
   "layout.failedCount": "{count} Download(s) fehlgeschlagen",
   "queue.actionFailed": "Aktion fehlgeschlagen",
+  "queue.pollFailed": "Download-Liste konnte nicht aktualisiert werden. Es wird weiter versucht.",
   "update.failed": "Update fehlgeschlagen",
   "update.restartNow": "Jetzt neu starten",
   "update.restartManually": "Das Update wurde installiert, aber der automatische Neustart ist fehlgeschlagen. Bitte starte die App manuell neu.",

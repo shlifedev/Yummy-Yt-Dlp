@@ -317,6 +317,7 @@ const zhTW: Record<string, string> = {
   "history.revealInFolder": "在資料夾中顯示",
   "history.openFile": "開啟檔案",
   "history.openFileFailed": "無法開啟檔案。檔案可能已被移動或刪除。",
+  "history.revealFailed": "無法在資料夾中顯示檔案。檔案可能已被移動或刪除。",
   "history.deleteItem": "刪除",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const zhTW: Record<string, string> = {
   "layout.downloadFailedToast": "下載失敗：{title}",
   "layout.failedCount": "{count} 個下載失敗",
   "queue.actionFailed": "操作失敗",
+  "queue.pollFailed": "無法重新整理下載清單。將持續自動重試。",
   "update.failed": "更新失敗",
   "update.restartNow": "立即重新啟動",
   "update.restartManually": "更新已安裝，但自動重新啟動失敗。請手動重新啟動應用程式。",

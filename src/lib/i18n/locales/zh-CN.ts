@@ -317,6 +317,7 @@ const zhCN: Record<string, string> = {
   "history.revealInFolder": "在文件夹中显示",
   "history.openFile": "打开文件",
   "history.openFileFailed": "无法打开文件。文件可能已被移动或删除。",
+  "history.revealFailed": "无法在文件夹中显示文件。文件可能已被移动或删除。",
   "history.deleteItem": "删除",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const zhCN: Record<string, string> = {
   "layout.downloadFailedToast": "下载失败：{title}",
   "layout.failedCount": "{count} 个下载失败",
   "queue.actionFailed": "操作失败",
+  "queue.pollFailed": "无法刷新下载列表。将继续自动重试。",
   "update.failed": "更新失败",
   "update.restartNow": "立即重启",
   "update.restartManually": "更新已安装，但自动重启失败。请手动重启应用。",

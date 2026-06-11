@@ -317,6 +317,7 @@ const ko: Record<string, string> = {
   "history.revealInFolder": "폴더에서 보기",
   "history.openFile": "파일 열기",
   "history.openFileFailed": "파일을 열 수 없습니다. 이동되었거나 삭제되었을 수 있습니다.",
+  "history.revealFailed": "폴더에서 파일을 표시할 수 없습니다. 이동되었거나 삭제되었을 수 있습니다.",
   "history.deleteItem": "삭제",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const ko: Record<string, string> = {
   "layout.downloadFailedToast": "다운로드 실패: {title}",
   "layout.failedCount": "{count}개 다운로드 실패",
   "queue.actionFailed": "작업을 처리하지 못했습니다",
+  "queue.pollFailed": "다운로드 목록을 갱신하지 못했습니다. 자동으로 재시도합니다.",
   "update.failed": "업데이트 실패",
   "update.restartNow": "지금 재시작",
   "update.restartManually": "업데이트는 설치되었지만 자동 재시작에 실패했습니다. 앱을 직접 재시작해 주세요.",

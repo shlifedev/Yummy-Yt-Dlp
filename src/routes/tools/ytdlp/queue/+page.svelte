@@ -27,6 +27,23 @@
   // Last queue/history action failure (retry/cancel/clear/delete), shown as a dismissible banner.
   let actionError = $state<string | null>(null)
 
+  // The 5s poll fails silently on transient errors, but several failures in a
+  // row mean the list on screen is stale — surface that as its own banner
+  // (separate from actionError so dismissing one doesn't hide the other).
+  const POLL_FAIL_THRESHOLD = 3
+  let pollFailCount = 0
+  let pollError = $state(false)
+
+  function recordPollResult(ok: boolean) {
+    if (ok) {
+      pollFailCount = 0
+      pollError = false
+    } else {
+      pollFailCount++
+      if (pollFailCount >= POLL_FAIL_THRESHOLD) pollError = true
+    }
+  }
+
   // Batch-group fold-out state. Active groups default expanded (you're watching them
   // download); history groups default collapsed. Both survive the 2s poll since they
   // live in their own $state.
@@ -204,8 +221,15 @@
       if (r.status === "ok") {
         active = r.data
         recordGroupCounts(r.data)
+        recordPollResult(true)
+      } else {
+        console.error("Failed to load active queue:", r.error)
+        recordPollResult(false)
       }
-    } catch (e) { console.error("Failed to load active queue:", e) }
+    } catch (e) {
+      console.error("Failed to load active queue:", e)
+      recordPollResult(false)
+    }
   }
 
   async function loadHistory() {
@@ -218,6 +242,7 @@
       if (r.status === "ok") {
         history = r.data.items
         historyTotal = r.data.totalCount
+        recordPollResult(true)
         if (history.length === 0 && page > 0 && historyTotal > 0) {
           page = Math.max(0, Math.ceil(historyTotal / pageSize) - 1)
           return loadHistory()
@@ -228,8 +253,14 @@
             loadHistoryGroupItems(entry.group.groupId)
           }
         }
+      } else {
+        console.error("Failed to load history:", r.error)
+        recordPollResult(false)
       }
-    } catch (e) { console.error("Failed to load history:", e) }
+    } catch (e) {
+      console.error("Failed to load history:", e)
+      recordPollResult(false)
+    }
   }
 
   async function handleCancel(id: number) {
@@ -355,6 +386,7 @@
       await revealItemInDir(filePath)
     } catch (e) {
       console.error("Failed to reveal file:", e)
+      actionError = t("history.revealFailed")
     }
   }
 
@@ -550,6 +582,18 @@
         <p class="text-xs text-yt-text-secondary mt-0.5">{actionError}</p>
       </div>
       <button class="text-yt-text-secondary hover:text-yt-text" aria-label={t("download.close")} onclick={() => actionError = null}>
+        <span class="material-symbols-outlined text-[18px]">close</span>
+      </button>
+    </div>
+  {/if}
+
+  {#if pollError}
+    <div class="mx-6 mt-4 bg-yt-error/10 border border-yt-error/20 rounded-lg px-4 py-3 flex items-start gap-3">
+      <span class="material-symbols-outlined text-yt-error text-[20px] shrink-0 mt-0.5">sync_problem</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-yt-text font-medium">{t("queue.pollFailed")}</p>
+      </div>
+      <button class="text-yt-text-secondary hover:text-yt-text" aria-label={t("download.close")} onclick={() => pollError = false}>
         <span class="material-symbols-outlined text-[18px]">close</span>
       </button>
     </div>

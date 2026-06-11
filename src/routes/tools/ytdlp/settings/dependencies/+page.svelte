@@ -2,7 +2,7 @@
   import { commands } from "$lib/bindings"
   import type { FullDependencyStatus, DepInstallEvent, AppSettings } from "$lib/bindings"
   import { defaultAdvancedOptions } from "$lib/advanced"
-  import { onMount } from "svelte"
+  import { onMount, onDestroy } from "svelte"
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir } from "@tauri-apps/plugin-opener"
   import { t } from "$lib/i18n/index.svelte"
@@ -56,6 +56,16 @@
   // In-flight loadDepStatus count: only stop the spinner when the last call resolves.
   let depLoadCount = $state(0)
 
+  // Install handlers unlisten in their finally blocks, but an install can outlive
+  // this page — navigating away mid-install would leave the listener mutating a
+  // destroyed component's state. Track every live unlisten so onDestroy can drop them.
+  const activeUnlistens = new Set<() => void>()
+
+  onDestroy(() => {
+    for (const fn of activeUnlistens) fn()
+    activeUnlistens.clear()
+  })
+
   function setResult(dep: string, success: boolean, message: string) {
     depActionResults = { ...depActionResults, [dep]: { success, message } }
   }
@@ -103,6 +113,7 @@
           }
         }
       })
+      activeUnlistens.add(unlistenFn)
     } catch (e) {
       console.error("Failed to listen for dep install events:", e)
     }
@@ -118,7 +129,10 @@
       setResult(depName, false, e?.message || String(e))
     } finally {
       installingDeps = { ...installingDeps, [depName]: false }
-      if (unlistenFn) unlistenFn()
+      if (unlistenFn) {
+        unlistenFn()
+        activeUnlistens.delete(unlistenFn)
+      }
       await loadDepStatus(true)
     }
   }
@@ -152,6 +166,7 @@
           }
         }
       })
+      activeUnlistens.add(unlistenFn)
     } catch (e) {
       console.error("Failed to listen for dep install events:", e)
     }
@@ -172,7 +187,10 @@
       setResult("all", false, e?.message || String(e))
     } finally {
       installingAll = false
-      if (unlistenFn) unlistenFn()
+      if (unlistenFn) {
+        unlistenFn()
+        activeUnlistens.delete(unlistenFn)
+      }
       installProgress = {}
       await loadDepStatus(true)
     }
