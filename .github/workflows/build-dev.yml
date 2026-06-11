@@ -272,7 +272,10 @@ jobs:
           NO_STRIP: true
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json
+          # Linux dev builds skip rpm (its xz pass over the big sidecar payload
+          # adds ~30 min and dev testers use deb/AppImage) and run verbose so
+          # bundler failures like linuxdeploy's actually show their output.
+          args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json ${{ matrix.name == 'linux' && '--bundles deb,appimage --verbose' || '' }}
 
       - name: Rename portable exe
         if: matrix.name == 'windows'
