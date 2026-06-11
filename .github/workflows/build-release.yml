@@ -297,6 +297,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # linuxdeploy strips every deployed binary and chokes on the yt-dlp
+          # PyInstaller _internal libs ("failed to run linuxdeploy"). Skip
+          # stripping — only the Linux AppImage bundler reads this.
+          NO_STRIP: true
         with:
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }}

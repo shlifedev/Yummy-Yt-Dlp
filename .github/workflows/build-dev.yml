@@ -266,6 +266,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # linuxdeploy strips every deployed binary and chokes on the yt-dlp
+          # PyInstaller _internal libs ("failed to run linuxdeploy"). Skip
+          # stripping — only the Linux AppImage bundler reads this.
+          NO_STRIP: true
         with:
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json
