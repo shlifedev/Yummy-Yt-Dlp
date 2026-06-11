@@ -248,6 +248,20 @@ jobs:
           mv "$BIN/ytdlp/yt-dlp_linux" "$BIN/ytdlp/yt-dlp"
           chmod +x "$BIN/ytdlp/yt-dlp"
           test -d "$BIN/ytdlp/_internal"
+          # linuxdeploy resolves every bundled ELF's DT_NEEDED against system
+          # lib paths only, so sonames that exist solely inside _internal
+          # (libreadline.so.6, libffi.so.6, libpython3.14, ...) abort the
+          # AppImage build. Expose the missing ones to the resolver via
+          # /usr/local/lib symlinks — linuxdeploy then deploys yt-dlp's own
+          # copies into the AppDir.
+          for lib in "$BIN"/ytdlp/_internal/lib*.so*; do
+            name="$(basename "$lib")"
+            if ! ldconfig -p | grep -qF "	${name} ("; then
+              echo "exposing bundled soname to linuxdeploy: ${name}"
+              sudo ln -sf "$(realpath "$lib")" "/usr/local/lib/${name}"
+            fi
+          done
+          sudo ldconfig
           fetch_btbn_ffmpeg "linux64-gpl.tar.xz" /tmp/ffmpeg.tar.xz
           mkdir -p /tmp/ffx && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffx
           cp "$(find /tmp/ffx -type f -name ffmpeg | head -1)" "$BIN/ffmpeg"
