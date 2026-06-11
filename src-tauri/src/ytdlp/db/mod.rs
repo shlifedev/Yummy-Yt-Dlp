@@ -240,8 +240,11 @@ impl Database {
     /// Uses the live connection instead of deleting DB files to avoid stale state.
     pub fn clear_all_data(&self) -> Result<(), AppError> {
         let conn = self.conn();
+        // One transaction so a mid-batch failure can't leave a half-cleared DB
         conn.execute_batch(
-            "DELETE FROM downloads; DELETE FROM history; DELETE FROM download_groups;",
+            "BEGIN IMMEDIATE;
+             DELETE FROM downloads; DELETE FROM history; DELETE FROM download_groups;
+             COMMIT;",
         )
         .map_err(|e| AppError::DatabaseError(format!("Failed to clear database: {}", e)))?;
         // Reclaim disk space

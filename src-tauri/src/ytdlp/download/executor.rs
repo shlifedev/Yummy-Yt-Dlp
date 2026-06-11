@@ -495,12 +495,17 @@ async fn run_download_attempt(
                 if now.duration_since(last_db_progress_update) >= Duration::from_secs(5)
                     || progress_info.percent >= 100.0
                 {
-                    let _ = db_state_clone.update_download_progress(
+                    if let Err(e) = db_state_clone.update_download_progress(
                         task_id,
                         progress_info.percent,
                         Some(&speed),
                         Some(&eta),
-                    );
+                    ) {
+                        logger::warn_cat(
+                            "download",
+                            &format!("[download:{}] failed to persist progress: {}", task_id, e),
+                        );
+                    }
                     last_db_progress_update = now;
                 }
 
@@ -979,7 +984,15 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                     // Prefer the group-preserving insert (a plain insert drops group_id and the
                     // batch header undercounts forever); if it hits the same failure as
                     // complete_and_record, fall back to the plain insert so the row is never lost.
-                    let _ = db_state.mark_completed(task_id, completed_at);
+                    if let Err(e2) = db_state.mark_completed(task_id, completed_at) {
+                        logger::error_cat(
+                            "download",
+                            &format!(
+                                "[download:{}] fallback mark_completed also failed: {}",
+                                task_id, e2
+                            ),
+                        );
+                    }
                     if let Err(e2) = db_state
                         .insert_history_with_group(&history_item, task_id)
                         .or_else(|_| db_state.insert_history(&history_item))
@@ -1009,8 +1022,14 @@ pub(super) async fn execute_download(app: AppHandle, task_id: u64) {
                 );
             } else {
                 // File already on disk and either already in history or its path is unknown:
-                // just finalize the queue row, no history change.
-                let _ = db_state.mark_completed(task_id, completed_at);
+                // just finalize the queue row, no history change. A failure here leaves the
+                // row stuck in 'downloading', so it must be visible in the logs.
+                if let Err(e) = db_state.mark_completed(task_id, completed_at) {
+                    logger::error_cat(
+                        "download",
+                        &format!("[download:{}] failed to mark_completed: {}", task_id, e),
+                    );
+                }
                 logger::info_cat(
                     "download",
                     &format!(
