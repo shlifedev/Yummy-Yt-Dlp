@@ -82,7 +82,10 @@ jobs:
         if: matrix.name == 'linux'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev libfuse2
+          # libtinfo5: yt-dlp's PyInstaller _internal/libreadline.so.6 links
+          # against it; linuxdeploy refuses to build the AppImage when the
+          # dependency can't be resolved on the build machine.
+          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev libfuse2 libtinfo5
           version: 1.0
 
       - name: Setup Rust
