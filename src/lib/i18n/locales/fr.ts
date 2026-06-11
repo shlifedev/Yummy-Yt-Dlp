@@ -16,6 +16,7 @@ const fr: Record<string, string> = {
   "layout.downloadComplete": "Téléchargement de {title} terminé.",
   "layout.downloading": "{count} en téléchargement...",
   "layout.idle": "Inactif",
+  "layout.queuedCount": "{count} en file d'attente",
   "layout.recentActivity": "Activité récente",
   "layout.stopAll": "Tout arrêter",
   "layout.recentlyCompleted": "Récemment terminés",
@@ -75,6 +76,8 @@ const fr: Record<string, string> = {
   "download.skippedQueue": "{count} vidéo(s) ignorée(s) (déjà dans la file d'attente).",
   "download.skippedExists": "{count} vidéo(s) ignorée(s) (déjà téléchargée(s)).",
   "download.cancel": "Annuler",
+  "download.pasteFromClipboard": "Coller depuis le presse-papiers",
+  "download.clearInput": "Effacer",
   "download.close": "Fermer",
   "download.downloadAnyway": "Télécharger quand même",
   "download.alreadyDownloaded": "« {title} » a déjà été téléchargée.",
@@ -312,6 +315,8 @@ const fr: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "Afficher dans le dossier",
+  "history.openFile": "Ouvrir le fichier",
+  "history.openFileFailed": "Impossible d'ouvrir le fichier. Il a peut-être été déplacé ou supprimé.",
   "history.deleteItem": "Supprimer",
 
   // Added: error classification & i18n fixes

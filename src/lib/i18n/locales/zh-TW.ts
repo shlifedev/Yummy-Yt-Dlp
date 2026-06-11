@@ -16,6 +16,7 @@ const zhTW: Record<string, string> = {
   "layout.downloadComplete": "{title}下載完成。",
   "layout.downloading": "{count}個下載中...",
   "layout.idle": "閒置",
+  "layout.queuedCount": "{count}個排隊中",
   "layout.recentActivity": "最近活動",
   "layout.stopAll": "全部停止",
   "layout.recentlyCompleted": "最近完成",
@@ -75,6 +76,8 @@ const zhTW: Record<string, string> = {
   "download.skippedQueue": "{count}部影片已略過（已在佇列中）。",
   "download.skippedExists": "{count}部影片已略過（已下載）。",
   "download.cancel": "取消",
+  "download.pasteFromClipboard": "從剪貼簿貼上",
+  "download.clearInput": "清除",
   "download.close": "關閉",
   "download.downloadAnyway": "仍然下載",
   "download.alreadyDownloaded": "「{title}」已經下載過。",
@@ -312,6 +315,8 @@ const zhTW: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "在資料夾中顯示",
+  "history.openFile": "開啟檔案",
+  "history.openFileFailed": "無法開啟檔案。檔案可能已被移動或刪除。",
   "history.deleteItem": "刪除",
 
   // Added: error classification & i18n fixes

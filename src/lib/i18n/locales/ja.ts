@@ -16,6 +16,7 @@ const ja: Record<string, string> = {
   "layout.downloadComplete": "{title}のダウンロードが完了しました。",
   "layout.downloading": "{count}件ダウンロード中...",
   "layout.idle": "待機中",
+  "layout.queuedCount": "{count}件待機中",
   "layout.recentActivity": "最近のアクティビティ",
   "layout.stopAll": "すべて停止",
   "layout.recentlyCompleted": "最近完了",
@@ -75,6 +76,8 @@ const ja: Record<string, string> = {
   "download.skippedQueue": "{count}件の動画がスキップされました（すでにキューにあります）。",
   "download.skippedExists": "{count}件の動画がスキップされました（すでにダウンロード済み）。",
   "download.cancel": "キャンセル",
+  "download.pasteFromClipboard": "クリップボードから貼り付け",
+  "download.clearInput": "クリア",
   "download.close": "閉じる",
   "download.downloadAnyway": "それでもダウンロード",
   "download.alreadyDownloaded": "「{title}」はすでにダウンロード済みです。",
@@ -312,6 +315,8 @@ const ja: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "フォルダで表示",
+  "history.openFile": "ファイルを開く",
+  "history.openFileFailed": "ファイルを開けませんでした。移動または削除された可能性があります。",
   "history.deleteItem": "削除",
 
   // Added: error classification & i18n fixes

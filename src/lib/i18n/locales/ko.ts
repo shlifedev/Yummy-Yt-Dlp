@@ -16,6 +16,7 @@ const ko: Record<string, string> = {
   "layout.downloadComplete": "{title}의 다운로드가 완료되었습니다.",
   "layout.downloading": "{count}개 다운로드 중...",
   "layout.idle": "대기 중",
+  "layout.queuedCount": "{count}개 대기 중",
   "layout.recentActivity": "최근 활동",
   "layout.stopAll": "모두 중지",
   "layout.recentlyCompleted": "최근 완료",
@@ -75,6 +76,8 @@ const ko: Record<string, string> = {
   "download.skippedQueue": "{count}개 영상이 이미 큐에 있어 건너뛰었습니다.",
   "download.skippedExists": "{count}개 영상이 이미 다운로드되어 건너뛰었습니다.",
   "download.cancel": "취소",
+  "download.pasteFromClipboard": "클립보드에서 붙여넣기",
+  "download.clearInput": "지우기",
   "download.close": "닫기",
   "download.downloadAnyway": "그래도 다운로드",
   "download.alreadyDownloaded": "\"{title}\"은(는) 이미 다운로드한 적이 있습니다.",
@@ -312,6 +315,8 @@ const ko: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "폴더에서 보기",
+  "history.openFile": "파일 열기",
+  "history.openFileFailed": "파일을 열 수 없습니다. 이동되었거나 삭제되었을 수 있습니다.",
   "history.deleteItem": "삭제",
 
   // Added: error classification & i18n fixes

@@ -16,6 +16,7 @@ const zhCN: Record<string, string> = {
   "layout.downloadComplete": "{title}下载完成。",
   "layout.downloading": "{count}个下载中...",
   "layout.idle": "空闲",
+  "layout.queuedCount": "{count}个排队中",
   "layout.recentActivity": "最近活动",
   "layout.stopAll": "全部停止",
   "layout.recentlyCompleted": "最近完成",
@@ -75,6 +76,8 @@ const zhCN: Record<string, string> = {
   "download.skippedQueue": "{count}个视频已跳过（已在队列中）。",
   "download.skippedExists": "{count}个视频已跳过（已下载）。",
   "download.cancel": "取消",
+  "download.pasteFromClipboard": "从剪贴板粘贴",
+  "download.clearInput": "清除",
   "download.close": "关闭",
   "download.downloadAnyway": "仍然下载",
   "download.alreadyDownloaded": "「{title}」已经下载过。",
@@ -312,6 +315,8 @@ const zhCN: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "在文件夹中显示",
+  "history.openFile": "打开文件",
+  "history.openFileFailed": "无法打开文件。文件可能已被移动或删除。",
   "history.deleteItem": "删除",
 
   // Added: error classification & i18n fixes

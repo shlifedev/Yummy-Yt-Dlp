@@ -18,6 +18,7 @@ const en: Record<string, string> = {
   "layout.downloadComplete": "{title} download complete.",
   "layout.downloading": "{count} downloading...",
   "layout.idle": "Idle",
+  "layout.queuedCount": "{count} queued",
   "layout.recentActivity": "Recent Activity",
   "layout.stopAll": "Stop All",
   "layout.recentlyCompleted": "Recently Completed",
@@ -78,6 +79,8 @@ const en: Record<string, string> = {
   "download.skippedQueue": "{count} video(s) skipped (already in queue).",
   "download.skippedExists": "{count} video(s) skipped (already downloaded).",
   "download.cancel": "Cancel",
+  "download.pasteFromClipboard": "Paste from clipboard",
+  "download.clearInput": "Clear",
   "download.close": "Close",
   "download.downloadAnyway": "Download anyway",
   "download.alreadyDownloaded": "\"{title}\" has already been downloaded.",
@@ -320,6 +323,8 @@ const en: Record<string, string> = {
 
   // Added: history actions
   "history.revealInFolder": "Show in folder",
+  "history.openFile": "Open file",
+  "history.openFileFailed": "Could not open the file. It may have been moved or deleted.",
   "history.deleteItem": "Delete",
 
   // Added: error classification & i18n fixes

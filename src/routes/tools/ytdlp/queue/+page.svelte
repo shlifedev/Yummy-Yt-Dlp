@@ -3,7 +3,7 @@
   import type { HistoryItem } from "$lib/bindings"
   import { ask } from "@tauri-apps/plugin-dialog"
   import { listen } from "@tauri-apps/api/event"
-  import { revealItemInDir } from "@tauri-apps/plugin-opener"
+  import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener"
   import { onMount, onDestroy } from "svelte"
   import { t, getDateLocale } from "$lib/i18n/index.svelte"
   import { extractError } from "$lib/utils/errors"
@@ -358,6 +358,17 @@
     }
   }
 
+  async function handleOpenFile(filePath: string | null | undefined) {
+    if (!filePath) return
+    try {
+      await openPath(filePath)
+    } catch (e) {
+      // Typically the file was moved/deleted after download — point at the folder instead.
+      console.error("Failed to open file:", e)
+      actionError = t("history.openFileFailed")
+    }
+  }
+
   function handleSearch(value: string) {
     clearTimeout(searchTimeout)
     search = value
@@ -473,6 +484,14 @@
     </div>
     <div class="flex items-center gap-1 shrink-0">
       {#if item.filePath}
+        <button
+          class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-primary transition-all p-1.5 rounded-md hover:bg-yt-primary/10"
+          onclick={() => handleOpenFile(item.filePath)}
+          aria-label={t("history.openFile")}
+          title={t("history.openFile")}
+        >
+          <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+        </button>
         <button
           class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-primary transition-all p-1.5 rounded-md hover:bg-yt-primary/10"
           onclick={() => handleReveal(item.filePath)}

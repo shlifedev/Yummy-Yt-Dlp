@@ -18,6 +18,7 @@
     SUB_CONVERT_FORMATS,
   } from "$lib/advanced"
   import { platform } from "@tauri-apps/plugin-os"
+  import { readText } from "@tauri-apps/plugin-clipboard-manager"
   import { listen } from "@tauri-apps/api/event"
   import { onMount, onDestroy, untrack } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
@@ -951,6 +952,37 @@
     if (e.key === "Enter" && !downloading && !preparingDownload) handleAnalyze()
   }
 
+  let urlInputEl = $state<HTMLInputElement | null>(null)
+
+  // Pasting a URL is the first action in almost every session — surface it as one click
+  // instead of focus → ⌘V. The url $effect then auto-analyzes like a manual paste would.
+  async function handlePasteUrl() {
+    try {
+      const text = (await readText())?.trim()
+      if (!text) return
+      url = text
+      urlInputEl?.focus()
+    } catch (e) {
+      console.error("Failed to read clipboard:", e)
+      urlInputEl?.focus()
+    }
+  }
+
+  // Reset to a blank slate: the analyzed result belongs to the cleared URL, so it goes too.
+  function handleClearUrl() {
+    url = ""
+    videoInfo = null
+    quickInfo = null
+    playlistResult = null
+    error = null
+    errorKey = null
+    notice = null
+    duplicateCheck = null
+    pendingRequest = null
+    cancelActiveScan()
+    urlInputEl?.focus()
+  }
+
 </script>
 
 <div class="h-full flex flex-col bg-yt-bg">
@@ -1055,9 +1087,10 @@
             <span class="material-symbols-outlined text-[20px] group-focus-within:scale-110 transition-transform">link</span>
           </div>
           <input
-            class="w-full h-12 bg-yt-bg text-yt-text rounded-lg pl-11 pr-4 border border-yt-border focus:ring-4 focus:ring-yt-primary/10 focus:border-yt-primary focus:outline-none transition-all duration-300 text-sm placeholder:text-yt-text-muted hover:border-yt-primary/50 shadow-sm"
+            class="w-full h-12 bg-yt-bg text-yt-text rounded-lg pl-11 pr-20 border border-yt-border focus:ring-4 focus:ring-yt-primary/10 focus:border-yt-primary focus:outline-none transition-all duration-300 text-sm placeholder:text-yt-text-muted hover:border-yt-primary/50 shadow-sm"
             placeholder={t("download.urlPlaceholder")}
             type="text"
+            bind:this={urlInputEl}
             bind:value={url}
             onkeydown={handleKeydown}
             disabled={downloading}
@@ -1074,6 +1107,32 @@
                  class="text-yt-text-muted hover:text-yt-warning transition-colors flex items-center"
                >
                  <span class="material-symbols-outlined text-[18px]">close</span>
+               </button>
+            </div>
+           {:else if url.trim()}
+            <div class="absolute inset-y-0 right-3 flex items-center">
+               <button
+                 type="button"
+                 onclick={handleClearUrl}
+                 aria-label={t("download.clearInput")}
+                 title={t("download.clearInput")}
+                 class="p-1 rounded-md text-yt-text-muted hover:text-yt-text hover:bg-yt-highlight transition-colors flex items-center"
+                 disabled={downloading}
+               >
+                 <span class="material-symbols-outlined text-[18px]">close</span>
+               </button>
+            </div>
+           {:else}
+            <div class="absolute inset-y-0 right-3 flex items-center">
+               <button
+                 type="button"
+                 onclick={handlePasteUrl}
+                 aria-label={t("download.pasteFromClipboard")}
+                 title={t("download.pasteFromClipboard")}
+                 class="p-1 rounded-md text-yt-text-muted hover:text-yt-primary hover:bg-yt-highlight transition-colors flex items-center"
+                 disabled={downloading}
+               >
+                 <span class="material-symbols-outlined text-[18px]">content_paste</span>
                </button>
             </div>
            {/if}
@@ -1403,9 +1462,17 @@
          
          <!-- Empty State (No URL, No Info) -->
          {#if !videoInfo && !quickInfo && !playlistResult && !url}
-            <div class="flex flex-col items-center justify-center py-20 opacity-50 select-none">
-               <span class="material-symbols-outlined text-6xl text-yt-text-border mb-4">download_for_offline</span>
-               <p class="text-yt-text-secondary text-sm">{t("download.emptyState")}</p>
+            <div class="flex flex-col items-center justify-center py-20 select-none">
+               <span class="material-symbols-outlined text-6xl text-yt-text-border mb-4 opacity-50">download_for_offline</span>
+               <p class="text-yt-text-secondary text-sm opacity-70">{t("download.emptyState")}</p>
+               <button
+                 type="button"
+                 onclick={handlePasteUrl}
+                 class="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yt-surface border border-yt-border hover:border-yt-primary/40 hover:bg-yt-highlight text-sm font-medium text-yt-text-secondary hover:text-yt-text transition-colors"
+               >
+                 <span class="material-symbols-outlined text-[18px]">content_paste</span>
+                 <span>{t("download.pasteFromClipboard")}</span>
+               </button>
             </div>
          {/if}
        </div>

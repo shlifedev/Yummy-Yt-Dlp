@@ -143,6 +143,24 @@
   // Queue flash animation
   let queueFlash = $state(false)
 
+  // Aggregate progress across everything still in flight (pending counts as 0%), so the
+  // sidebar shows download state at a glance without opening the popup.
+  let overallProgress = $derived.by(() => {
+    const items = activeDownloads.filter(d => d.status === "downloading" || d.status === "pending")
+    if (items.length === 0) return 0
+    return Math.round(items.reduce((s, d) => s + (d.progress || 0), 0) / items.length)
+  })
+
+  async function handleCancelOne(id: number) {
+    try {
+      const result = await commands.cancelDownload(id)
+      if (result.status === "error") showErrorToast(extractError(result.error))
+    } catch (e: any) {
+      showErrorToast(e?.message || String(e))
+    }
+    loadQueueSummary()
+  }
+
   const navItems = [
     { href: "/tools/ytdlp", icon: "download", labelKey: "nav.downloader", exact: true },
     { href: "/tools/ytdlp/queue", icon: "toc", labelKey: "nav.queueHistory" }, // explicit queue page link
@@ -744,9 +762,9 @@
 
     <!-- Sidebar Footer / Queue Summary -->
     <div class="p-3 border-t border-yt-border bg-yt-surface">
-      <button 
+      <button
         onclick={() => popupOpen = !popupOpen}
-        class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-yt-highlight hover:bg-yt-overlay-strong border border-yt-border transition-all group {queueFlash ? 'animate-queue-flash' : ''}"
+        class="w-full relative overflow-hidden flex items-center justify-between px-3 py-2.5 rounded-lg bg-yt-highlight hover:bg-yt-overlay-strong border border-yt-border transition-all group {queueFlash ? 'animate-queue-flash' : ''}"
       >
         <div class="flex items-center gap-2.5">
           <div class="relative">
@@ -759,7 +777,9 @@
             <span class="block text-xs font-semibold text-yt-text">{t("nav.queue")}</span>
             <span class="block text-[10px] text-yt-text-secondary">
               {#if activeCount > 0}
-                {t("layout.downloading", { count: activeCount })}
+                {t("layout.downloading", { count: activeCount })} · {overallProgress}%
+              {:else if pendingCount > 0}
+                {t("layout.queuedCount", { count: pendingCount })}
               {:else}
                 {t("layout.idle")}
               {/if}
@@ -767,6 +787,11 @@
           </div>
         </div>
         <span class="material-symbols-outlined text-yt-text-muted text-[16px]">{popupOpen ? "expand_more" : "expand_less"}</span>
+        {#if (activeCount + pendingCount) > 0}
+          <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-yt-primary/15">
+            <div class="h-full bg-yt-primary transition-all duration-500" style="width: {overallProgress}%"></div>
+          </div>
+        {/if}
       </button>
     </div>
   </aside>
@@ -1074,7 +1099,17 @@
 
         {#each activeDownloads as item (item.id)}
           <div class="bg-yt-bg rounded border border-yt-border p-2.5 relative overflow-hidden group">
-            <p class="text-xs font-medium text-yt-text truncate relative z-10">{item.title}</p>
+            {#if item.status === "downloading" || item.status === "pending"}
+              <button
+                onclick={() => handleCancelOne(item.id)}
+                aria-label={t("download.cancel")}
+                title={t("download.cancel")}
+                class="absolute top-1.5 right-1.5 z-20 p-0.5 rounded opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-error hover:bg-yt-error/10 transition-all flex items-center"
+              >
+                <span class="material-symbols-outlined text-[14px]">close</span>
+              </button>
+            {/if}
+            <p class="text-xs font-medium text-yt-text truncate relative z-10 pr-5">{item.title}</p>
             {#if item.groupTitle}
               <p class="text-[9px] text-yt-text-muted truncate relative z-10 flex items-center gap-0.5 mt-0.5">
                 <span class="material-symbols-outlined text-[11px]">playlist_play</span>
