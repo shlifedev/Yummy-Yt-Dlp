@@ -37,6 +37,15 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "category": "Utility",
+    "linux": {
+      "deb": {
+        "depends": ["libayatana-appindicator3-1"]
+      },
+      "rpm": {
+        "depends": ["libayatana-appindicator3"]
+      }
+    },
     "resources": {
       "binaries/*": "binaries/",
       "binaries/ytdlp": "binaries/ytdlp"
