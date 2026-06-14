@@ -7,29 +7,41 @@
 </script>
 
 <script lang="ts">
-  import { commands, type PlaylistScanMeta, type PlaylistScanEvent, type PlaylistEntry, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions } from "$lib/bindings"
+  import { commands, type AppSettings, type DownloadRequest, type PlaylistScanEvent, type DuplicateCheckResult, type QuickMetadata, type AdvancedOptions, type VideoInfo } from "$lib/bindings"
   import {
     defaultAdvancedOptions,
     validateAdvancedField,
     type AdvancedTextField,
-    MAX_SLEEP_INTERVAL,
-    SPONSORBLOCK_CATEGORIES,
-    CONTAINER_FORMATS,
-    SUB_CONVERT_FORMATS,
   } from "$lib/advanced"
   import { platform } from "@tauri-apps/plugin-os"
   import { readText } from "@tauri-apps/plugin-clipboard-manager"
   import { listen } from "@tauri-apps/api/event"
   import { onMount, onDestroy, untrack } from "svelte"
   import { t } from "$lib/i18n/index.svelte"
-  import { extractError, getErrorKey } from "$lib/utils/errors"
+  import { errorMessage, extractError, getErrorKey } from "$lib/utils/errors"
   import { formatSize, formatDuration } from "$lib/utils/format"
+  import AdvancedOptionsDrawer from "$lib/components/AdvancedOptionsDrawer.svelte"
   import { buildSingleDownloadRequest } from "$lib/utils/download-request.js"
+  import {
+    buildDownloadRequests,
+    buildFormatString as makeFormatString,
+    buildQualityLabel as makeQualityLabel,
+    buildTemplate as makeTemplate,
+    countActiveAdvancedOptions,
+    getTemplatePreview as makeTemplatePreview,
+    isAudioDownloadFormat,
+    isLosslessDownloadFormat,
+    type BatchProgress,
+    type DownloadFormat,
+    type PlaylistDownloadEntry,
+    type PlaylistView,
+    type SkippedDetails,
+  } from "$lib/ytdlp/download-page"
 
   // URL & analyze state
   let url = $state("")
   let analyzing = $state(false)
-  let videoInfo = $state<any>(null)
+  let videoInfo = $state<VideoInfo | null>(null)
   let quickInfo = $state<QuickMetadata | null>(null)
   let loadingFormats = $state(false)
   let error = $state<string | null>(null)
@@ -52,8 +64,6 @@
     cookieSelectEl?.scrollIntoView({ behavior: "smooth", block: "center" })
     cookieSelectEl?.focus()
   }
-  type PlaylistView = PlaylistScanMeta & { entries: PlaylistEntry[] }
-
   let playlistResult = $state<PlaylistView | null>(null)
   // Streaming playlist scan state. The scan id is generated client-side (monotonic counter)
   // and set BEFORE invoking startPlaylistScan, so the first "entries" event can never beat
@@ -74,7 +84,7 @@
   let unlistenScan: (() => void) | null = null
 
   // Download options
-  let format = $state<"mp4" | "mkv" | "mp3" | "flac" | "opus" | "wav">("mp4")
+  let format = $state<DownloadFormat>("mp4")
   let quality = $state("best")
   let audioQuality = $state("0")
 
@@ -83,29 +93,10 @@
   let advanced = $state<AdvancedOptions>(defaultAdvancedOptions())
 
   // Number of advanced options that differ from their defaults (shown as a badge on the trigger).
-  const activeAdvancedCount = $derived(
-    [
-      advanced.writeSubs, advanced.writeAutoSubs, advanced.embedSubs,
-      advanced.subLangs !== "en", advanced.convertSubs !== "",
-      advanced.sponsorblockMode !== "off",
-      advanced.embedThumbnail, advanced.embedMetadata, advanced.embedChapters,
-      advanced.writeThumbnail, advanced.writeInfoJson,
-      advanced.videoCodec !== "auto", advanced.limitRate !== "",
-      advanced.concurrentFragments !== 1, advanced.retries != null, advanced.sleepInterval !== 0,
-      advanced.mergeOutputFormat !== "", advanced.remuxVideo !== "",
-      advanced.downloadSections !== "", advanced.splitChapters,
-      advanced.proxy !== "", advanced.noMtime, advanced.restrictFilenames,
-    ].filter(Boolean).length,
-  )
+  const activeAdvancedCount = $derived(countActiveAdvancedOptions(advanced))
 
-  // Shared control classes for the advanced drawer
-  const selCls = "bg-yt-bg border border-yt-border rounded px-1.5 py-0.5 text-xs text-yt-text focus:ring-1 focus:ring-yt-primary focus:outline-none cursor-pointer"
-  const txtCls = "bg-yt-bg border border-yt-border rounded px-2 py-0.5 text-xs text-yt-text w-28 focus:ring-1 focus:ring-yt-primary focus:outline-none"
-  const numCls = "bg-yt-bg border border-yt-border rounded px-2 py-0.5 text-xs text-yt-text w-16 focus:ring-1 focus:ring-yt-primary focus:outline-none"
-
-  const audioFormats = ["mp3", "flac", "opus", "wav"] as const
-  const isAudioFormat = $derived((audioFormats as readonly string[]).includes(format))
-  const isLosslessFormat = $derived(format === "flac" || format === "wav")
+  const isAudioFormat = $derived(isAudioDownloadFormat(format))
+  const isLosslessFormat = $derived(isLosslessDownloadFormat(format))
 
   // Filename template state
   let useAdvancedTemplate = $state(false)
@@ -113,7 +104,7 @@
   let templateUploaderFolder = $state(false)
   let templateUploadDate = $state(false)
   let templateVideoId = $state(false)
-  let fullSettings = $state<any>(null)
+  let fullSettings = $state<AppSettings | null>(null)
 
   // Download state (live progress/cancel lives in the queue popup; this page only enqueues)
   let downloading = $state(false)
@@ -127,17 +118,17 @@
 
   // Batch download state
   let downloadingAll = $state(false)
-  let batchProgress = $state({ current: 0, total: 0 })
+  let batchProgress = $state<BatchProgress>({ current: 0, total: 0 })
 
   // Duplicate check state
   let duplicateCheck = $state<DuplicateCheckResult | null>(null)
-  let pendingRequest = $state<any>(null)
+  let pendingRequest = $state<DownloadRequest | null>(null)
 
   // Informational notice (e.g. "N skipped because already downloaded") — shown separately
   // from `error` so a successful batch isn't presented as a failure.
   let notice = $state<string | null>(null)
   // Titles of videos skipped during a batch, grouped by reason, for the expandable detail list.
-  let skippedDetails = $state<{ queue: string[]; exists: string[] }>({ queue: [], exists: [] })
+  let skippedDetails = $state<SkippedDetails>({ queue: [], exists: [] })
   let skippedExpanded = $state(false)
 
   // Analyze elapsed time
@@ -296,7 +287,7 @@
   // later one (per-key store writes would otherwise interleave snapshots).
   let settingsSaveQueue: Promise<void> = Promise.resolve()
 
-  function autoSaveSettings(patch: Record<string, any>): Promise<boolean> {
+  function autoSaveSettings(patch: Partial<AppSettings>): Promise<boolean> {
     if (!fullSettings) return Promise.resolve(false)
     // Merge synchronously so rapid consecutive changes build on each other instead of a stale
     // snapshot whose full-settings save would silently revert the earlier change.
@@ -339,34 +330,6 @@
     autoSaveSettings({ advanced: $state.snapshot(advanced) })
   }
 
-  // Save a free-text advanced field only when it's valid (or empty); the backend rejects bad
-  // values too, but this keeps settings.json clean and gives instant inline feedback.
-  function saveAdvancedText(field: AdvancedTextField) {
-    if (validateAdvancedField(field, (advanced as any)[field])) saveAdvanced()
-  }
-
-  function toggleSponsorblockCategory(cat: string) {
-    advanced.sponsorblockCategories = advanced.sponsorblockCategories.includes(cat)
-      ? advanced.sponsorblockCategories.filter((c) => c !== cat)
-      : [...advanced.sponsorblockCategories, cat]
-    saveAdvanced()
-  }
-
-  function setConcurrentFragments(v: string) {
-    advanced.concurrentFragments = Math.max(1, Math.min(16, parseInt(v) || 1))
-    saveAdvanced()
-  }
-
-  function setRetries(v: string) {
-    advanced.retries = v.trim() === "" ? null : Math.max(0, Math.min(100, parseInt(v) || 0))
-    saveAdvanced()
-  }
-
-  function setSleepInterval(v: string) {
-    advanced.sleepInterval = Math.max(0, Math.min(MAX_SLEEP_INTERVAL, parseInt(v) || 0))
-    saveAdvanced()
-  }
-
   function resetAdvanced() {
     advanced = defaultAdvancedOptions()
     saveAdvanced()
@@ -388,23 +351,14 @@
     } catch (e) { console.error("Failed to select dir:", e) }
   }
 
-  function buildTemplate(): string {
-    let name = "%(title)s"
-    if (templateUploadDate) name = "%(upload_date)s " + name
-    if (templateVideoId) name = name + " [%(id)s]"
-    let path = name + ".%(ext)s"
-    if (templateUploaderFolder) path = "%(uploader)s/" + path
-    return path
-  }
-
-  function getTemplatePreview(): string {
-    if (useAdvancedTemplate) return filenameTemplate
-    let name = "Title"
-    if (templateUploadDate) name = "20240101 " + name
-    if (templateVideoId) name = name + " [dQw4w9WgXcQ]"
-    let path = name + ".mp4"
-    if (templateUploaderFolder) path = "Uploader/" + path
-    return path
+  function templatePreview(): string {
+    return makeTemplatePreview({
+      useAdvancedTemplate,
+      filenameTemplate,
+      templateUploaderFolder,
+      templateUploadDate,
+      templateVideoId,
+    })
   }
 
   // Rapid consecutive checkbox changes are safe: autoSaveSettings merges synchronously and
@@ -412,7 +366,9 @@
   function saveTemplateSettings() {
     autoSaveSettings({
       useAdvancedTemplate,
-      filenameTemplate: useAdvancedTemplate ? filenameTemplate : buildTemplate(),
+      filenameTemplate: useAdvancedTemplate
+        ? filenameTemplate
+        : makeTemplate({ templateUploaderFolder, templateUploadDate, templateVideoId }),
       templateUploaderFolder,
       templateUploadDate,
       templateVideoId,
@@ -629,10 +585,10 @@
         await firstResult
         if (currentGeneration !== analyzeGeneration) return
       }
-    } catch (e: any) {
+    } catch (e) {
       if (currentGeneration !== analyzeGeneration) return
       errorKey = null
-      error = e.message || String(e)
+      error = errorMessage(e)
     } finally {
       if (currentGeneration === analyzeGeneration) {
         analyzing = false
@@ -660,10 +616,10 @@
         return
       }
       videoInfo = infoResult.data
-    } catch (e: any) {
+    } catch (e) {
       if (currentGeneration !== analyzeGeneration) return
       errorKey = null
-      error = e.message || String(e)
+      error = errorMessage(e)
     } finally {
       if (currentGeneration === analyzeGeneration) {
         analyzing = false
@@ -673,19 +629,11 @@
   }
 
   function buildFormatString(): string {
-    if (isAudioFormat) return "bestaudio/best"
-    let h = ""
-    if (quality === "1080p") h = "[height<=1080]"
-    else if (quality === "720p") h = "[height<=720]"
-    else if (quality === "480p") h = "[height<=480]"
-    if (format === "mp4") return `bestvideo${h}[ext=mp4]+bestaudio[ext=m4a]/best${h}[ext=mp4]/best${h}`
-    return `bestvideo${h}+bestaudio/best${h}`
+    return makeFormatString(format, quality)
   }
 
   function buildQualityLabel(): string {
-    return isAudioFormat
-      ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`)
-      : (quality === "best" ? "Best" : quality)
+    return makeQualityLabel(format, quality, audioQuality)
   }
 
   async function ensureMetadataForDownload() {
@@ -758,7 +706,7 @@
     }
   }
 
-  async function executeDownload(request: any) {
+  async function executeDownload(request: DownloadRequest) {
     downloading = true
     error = null
     errorKey = null
@@ -778,10 +726,10 @@
         playlistResult = null
         cancelActiveScan()
       }
-    } catch (e: any) {
+    } catch (e) {
       downloading = false
       errorKey = null
-      error = e.message || String(e)
+      error = errorMessage(e)
     }
   }
 
@@ -822,12 +770,12 @@
 
   // Returns true when the batch is enqueued (or every entry was skipped as a duplicate),
   // false when the backend rejected it — callers must keep the page state for a retry then.
-  async function enqueueBatchDownloads(entries: Array<{ url: string, videoId: string, title: string | null }>): Promise<boolean> {
+  async function enqueueBatchDownloads(entries: PlaylistDownloadEntry[]): Promise<boolean> {
     const generation = analyzeGeneration
     const totalCount = entries.length
     batchProgress = { current: 0, total: totalCount }
     const formatStr = buildFormatString()
-    const qualityLabel = isAudioFormat ? (isLosslessFormat ? "Lossless" : `${audioQuality === "0" ? "Best" : audioQuality}`) : (quality === "best" ? "Best" : quality)
+    const qualityLabel = buildQualityLabel()
 
     // Duplicate-check all entries in parallel (was sequential N round-trips).
     const checks = await Promise.all(entries.map(async (entry) => {
@@ -859,17 +807,12 @@
 
     if (survivors.length === 0) return true
 
-    const requests = survivors.map((entry) => ({
-      videoUrl: entry.url,
-      videoId: entry.videoId,
-      title: entry.title || `Video ${entry.videoId}`,
+    const requests = buildDownloadRequests(survivors, {
       formatId: formatStr,
       qualityLabel,
-      outputDir: null,
-      cookieBrowser: null,
-      audioFormat: isAudioFormat ? format : null,
-      audioQuality: isAudioFormat && !isLosslessFormat ? audioQuality : null,
-    }))
+      format,
+      audioQuality,
+    })
 
     // Backend creates a group iff a title is given AND 2+ requests survive.
     const groupTitle = survivors.length >= 2 ? (playlistResult?.title ?? null) : null
@@ -905,9 +848,9 @@
         cancelActiveScan()
         selectedEntries = new Set()
       }
-    } catch (e: any) {
+    } catch (e) {
       errorKey = null
-      error = e.message || String(e)
+      error = errorMessage(e)
     } finally {
       downloadingAll = false
       batchProgress = { current: 0, total: 0 }
@@ -942,9 +885,9 @@
       url = ""
       videoInfo = null
       playlistResult = null
-    } catch (e: any) {
+    } catch (e) {
       errorKey = null
-      error = e.message || String(e)
+      error = errorMessage(e)
     } finally {
       downloadingAll = false
       batchProgress = { current: 0, total: 0 }
@@ -1231,9 +1174,9 @@
                 <input type="checkbox" bind:checked={templateVideoId} onchange={saveTemplateSettings} class="rounded border-yt-border text-yt-primary focus:ring-0 w-3.5 h-3.5 cursor-default" />
                 <span>{t("download.videoId")}</span>
              </label>
-             <span class="ml-auto min-w-0 flex items-center gap-1.5 text-[11px] text-yt-text-muted truncate" title={getTemplatePreview()}>
+             <span class="ml-auto min-w-0 flex items-center gap-1.5 text-[11px] text-yt-text-muted truncate" title={templatePreview()}>
                 <span class="opacity-70 shrink-0">{t("download.filenamePreview")}</span>
-                <span class="font-mono text-yt-text-secondary truncate">{getTemplatePreview()}</span>
+                <span class="font-mono text-yt-text-secondary truncate">{templatePreview()}</span>
              </span>
           </div>
 
@@ -1485,260 +1428,15 @@
 <svelte:window onkeydown={(e) => { if (advancedExpanded && e.key === "Escape") advancedExpanded = false }} />
 
 {#if advancedExpanded && fullSettings?.advanced}
-  {#snippet advLabel(text: string, help: string)}
-    <span role="note" class="cursor-help shrink-0 text-yt-text-secondary" onmouseenter={(e) => showTooltip(e, help)} onmouseleave={hideTooltip}>{text}</span>
-  {/snippet}
-  {#snippet toggleSwitch(on: boolean, set: () => void, label: string)}
-    <button type="button" role="switch" aria-checked={on} aria-label={label} onclick={set} class="relative shrink-0 w-9 h-5 rounded-full transition-colors {on ? 'bg-yt-primary' : 'bg-yt-border'}">
-      <span class="absolute top-[2px] left-[2px] w-4 h-4 rounded-full bg-white transition-transform duration-200 {on ? 'translate-x-4' : ''}"></span>
-    </button>
-  {/snippet}
-  {#snippet ffmpegChip()}
-    <span class="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-yt-warning/10 text-yt-warning text-[9px] font-semibold uppercase tracking-wide"><span class="material-symbols-outlined text-[11px]">bolt</span>ffmpeg</span>
-  {/snippet}
-
-  <!-- backdrop -->
-  <button type="button" aria-label={t("download.advClose")} class="fixed inset-0 z-40 bg-black/40 cursor-default animate-scrim-in" onclick={() => (advancedExpanded = false)}></button>
-
-  <!-- drawer -->
-  <aside class="fixed top-0 right-0 h-screen w-[400px] max-w-[88vw] z-50 bg-yt-surface border-l border-yt-border shadow-2xl flex flex-col animate-drawer-in">
-    <header data-tauri-drag-region class="shrink-0 flex items-center gap-2.5 px-4 h-14 border-b border-yt-border">
-      <span class="material-symbols-outlined text-yt-primary text-[20px]">tune</span>
-      <h2 class="text-sm font-semibold text-yt-text">{t("download.advanced")}</h2>
-      {#if activeAdvancedCount > 0}
-        <span class="inline-flex items-center justify-center h-4 px-1.5 rounded-full bg-yt-primary/15 text-yt-primary text-[10px] font-semibold">{activeAdvancedCount}</span>
-      {/if}
-      <div class="ml-auto flex items-center gap-1">
-        {#if activeAdvancedCount > 0}
-          <button type="button" onclick={resetAdvanced} class="text-xs font-medium text-yt-text-secondary hover:text-yt-error transition-colors px-2 py-1 rounded">{t("download.advReset")}</button>
-        {/if}
-        <button type="button" aria-label={t("download.advClose")} onclick={() => (advancedExpanded = false)} class="w-7 h-7 rounded-md hover:bg-yt-highlight flex items-center justify-center text-yt-text-secondary">
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-    </header>
-
-    <div class="flex-1 overflow-y-auto px-4 py-3.5 space-y-3 text-xs">
-
-      <!-- Subtitles -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">subtitles</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advSubsHeader")}</span>
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advWriteSubs"), t("download.advWriteSubsHelp"))}
-            {@render toggleSwitch(advanced.writeSubs, () => { advanced.writeSubs = !advanced.writeSubs; saveAdvanced() }, t("download.advWriteSubs"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advWriteAutoSubs"), t("download.advWriteAutoSubsHelp"))}
-            {@render toggleSwitch(advanced.writeAutoSubs, () => { advanced.writeAutoSubs = !advanced.writeAutoSubs; saveAdvanced() }, t("download.advWriteAutoSubs"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advEmbedSubs"), t("download.advEmbedSubsHelp"))}
-            {@render toggleSwitch(advanced.embedSubs, () => { advanced.embedSubs = !advanced.embedSubs; saveAdvanced() }, t("download.advEmbedSubs"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advSubLangs"), t("download.advSubLangsHelp"))}
-            <input type="text" bind:value={advanced.subLangs} oninput={() => saveAdvancedText("subLangs")} placeholder={t("download.advSubLangsPlaceholder")} class="{txtCls} {advanced.subLangs.trim() !== '' && !validateAdvancedField('subLangs', advanced.subLangs) ? 'border-yt-error' : ''}" />
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advConvertSubs"), t("download.advConvertSubsHelp"))}
-            <select bind:value={advanced.convertSubs} onchange={saveAdvanced} class={selCls}>
-              {#each SUB_CONVERT_FORMATS as f}
-                <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <!-- SponsorBlock -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">shield</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advSbHeader")}</span>
-          {@render ffmpegChip()}
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advSbMode"), t("download.advSbModeHelp"))}
-            <select bind:value={advanced.sponsorblockMode} onchange={saveAdvanced} class={selCls}>
-              <option value="off">{t("download.advSbOff")}</option>
-              <option value="mark">{t("download.advSbMark")}</option>
-              <option value="remove">{t("download.advSbRemove")}</option>
-            </select>
-          </div>
-          {#if advanced.sponsorblockMode === "remove"}
-            <div class="flex items-start gap-1 text-[10px] text-yt-warning"><span class="material-symbols-outlined text-[12px] mt-px">warning</span><span>{t("download.advSbRemoveWarn")}</span></div>
-          {/if}
-          {#if advanced.sponsorblockMode !== "off"}
-            <div class="space-y-1.5">
-              {@render advLabel(t("download.advSbCategories"), t("download.advSbCategoriesHelp"))}
-              <div class="flex flex-wrap gap-1.5">
-                {#each SPONSORBLOCK_CATEGORIES as cat}
-                  <button type="button" onclick={() => toggleSponsorblockCategory(cat)} class="px-2 py-0.5 rounded-full text-[11px] border transition-colors {advanced.sponsorblockCategories.includes(cat) ? 'bg-yt-primary/10 border-yt-primary/40 text-yt-primary' : 'border-yt-border text-yt-text-secondary hover:border-yt-primary/40'}">{cat}</button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-      </section>
-
-      <!-- Embedding & metadata -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">sell</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advEmbedHeader")}</span>
-          {@render ffmpegChip()}
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advEmbedThumbnail"), t("download.advEmbedThumbnailHelp"))}
-            {@render toggleSwitch(advanced.embedThumbnail, () => { advanced.embedThumbnail = !advanced.embedThumbnail; saveAdvanced() }, t("download.advEmbedThumbnail"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advEmbedMetadata"), t("download.advEmbedMetadataHelp"))}
-            {@render toggleSwitch(advanced.embedMetadata, () => { advanced.embedMetadata = !advanced.embedMetadata; saveAdvanced() }, t("download.advEmbedMetadata"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advEmbedChapters"), t("download.advEmbedChaptersHelp"))}
-            {@render toggleSwitch(advanced.embedChapters, () => { advanced.embedChapters = !advanced.embedChapters; saveAdvanced() }, t("download.advEmbedChapters"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advWriteThumbnail"), t("download.advWriteThumbnailHelp"))}
-            {@render toggleSwitch(advanced.writeThumbnail, () => { advanced.writeThumbnail = !advanced.writeThumbnail; saveAdvanced() }, t("download.advWriteThumbnail"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advWriteInfoJson"), t("download.advWriteInfoJsonHelp"))}
-            {@render toggleSwitch(advanced.writeInfoJson, () => { advanced.writeInfoJson = !advanced.writeInfoJson; saveAdvanced() }, t("download.advWriteInfoJson"))}
-          </div>
-        </div>
-      </section>
-
-      <!-- Format & codec -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">movie</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advFormatHeader")}</span>
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advVideoCodec"), t("download.advVideoCodecHelp"))}
-            <select bind:value={advanced.videoCodec} onchange={saveAdvanced} class={selCls}>
-              <option value="auto">{t("download.advCodecAuto")}</option>
-              <option value="av01">AV1</option>
-              <option value="vp9">VP9</option>
-              <option value="h264">H.264</option>
-            </select>
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advLimitRate"), t("download.advLimitRateHelp"))}
-            <input type="text" bind:value={advanced.limitRate} oninput={() => saveAdvancedText("limitRate")} placeholder="1M" class="{numCls} {advanced.limitRate.trim() !== '' && !validateAdvancedField('limitRate', advanced.limitRate) ? 'border-yt-error' : ''}" />
-          </div>
-          {#if advanced.videoCodec !== "auto"}
-            <p class="text-[10px] text-yt-text-secondary/70 leading-snug">{t("download.advCodecHint")}</p>
-          {/if}
-        </div>
-      </section>
-
-      <!-- Network -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">lan</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advNetHeader")}</span>
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advConcurrentFragments"), t("download.advConcurrentFragmentsHelp"))}
-            <input type="number" min="1" max="16" value={advanced.concurrentFragments} oninput={(e) => setConcurrentFragments(e.currentTarget.value)} class={numCls} />
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advRetries"), t("download.advRetriesHelp"))}
-            <input type="number" min="0" max="100" value={advanced.retries ?? ""} oninput={(e) => setRetries(e.currentTarget.value)} class={numCls} />
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advSleepInterval"), t("download.advSleepIntervalHelp"))}
-            <input type="number" min="0" max={MAX_SLEEP_INTERVAL} value={advanced.sleepInterval} oninput={(e) => setSleepInterval(e.currentTarget.value)} class={numCls} />
-          </div>
-        </div>
-      </section>
-
-      <!-- Container -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">inventory_2</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advContainerHeader")}</span>
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advMergeFormat"), t("download.advMergeFormatHelp"))}
-            <select bind:value={advanced.mergeOutputFormat} onchange={saveAdvanced} class={selCls}>
-              {#each CONTAINER_FORMATS as f}
-                <option value={f}>{f === "" ? t("download.advCodecAuto") : f.toUpperCase()}</option>
-              {/each}
-            </select>
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advRemuxVideo"), t("download.advRemuxVideoHelp"))}
-            <select bind:value={advanced.remuxVideo} onchange={saveAdvanced} class={selCls}>
-              {#each CONTAINER_FORMATS as f}
-                <option value={f}>{f === "" ? t("settings.none") : f.toUpperCase()}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <!-- Sections / chapters -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">content_cut</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advSectionsHeader")}</span>
-          {@render ffmpegChip()}
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advDownloadSections"), t("download.advDownloadSectionsHelp"))}
-            <input type="text" bind:value={advanced.downloadSections} oninput={() => saveAdvancedText("downloadSections")} placeholder={t("download.advDownloadSectionsPlaceholder")} class="{txtCls} {advanced.downloadSections.trim() !== '' && !validateAdvancedField('downloadSections', advanced.downloadSections) ? 'border-yt-error' : ''}" />
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advSplitChapters"), t("download.advSplitChaptersHelp"))}
-            {@render toggleSwitch(advanced.splitChapters, () => { advanced.splitChapters = !advanced.splitChapters; saveAdvanced() }, t("download.advSplitChapters"))}
-          </div>
-        </div>
-      </section>
-
-      <!-- Proxy / timestamp / filename -->
-      <section class="bg-yt-bg border border-yt-border rounded-lg overflow-hidden">
-        <div class="flex items-center gap-2 px-3.5 h-10 border-b border-yt-border/50">
-          <span class="material-symbols-outlined text-[18px] text-yt-text-secondary">hub</span>
-          <span class="text-xs font-semibold text-yt-text">{t("download.advMiscHeader")}</span>
-        </div>
-        <div class="p-3.5 space-y-2.5">
-          <div class="space-y-1.5">
-            {@render advLabel(t("download.advProxy"), t("download.advProxyHelp"))}
-            <input type="text" bind:value={advanced.proxy} oninput={() => saveAdvancedText("proxy")} placeholder="http://127.0.0.1:8080" class="w-full bg-yt-bg border border-yt-border rounded px-2 py-1 text-xs text-yt-text focus:ring-1 focus:ring-yt-primary focus:outline-none {advanced.proxy.trim() !== '' && !validateAdvancedField('proxy', advanced.proxy) ? 'border-yt-error' : ''}" />
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advNoMtime"), t("download.advNoMtimeHelp"))}
-            {@render toggleSwitch(advanced.noMtime, () => { advanced.noMtime = !advanced.noMtime; saveAdvanced() }, t("download.advNoMtime"))}
-          </div>
-          <div class="flex items-center justify-between gap-3 min-h-[28px]">
-            {@render advLabel(t("download.advRestrictFilenames"), t("download.advRestrictFilenamesHelp"))}
-            {@render toggleSwitch(advanced.restrictFilenames, () => { advanced.restrictFilenames = !advanced.restrictFilenames; saveAdvanced() }, t("download.advRestrictFilenames"))}
-          </div>
-        </div>
-      </section>
-
-    </div>
-
-    <footer class="shrink-0 flex items-center gap-3 px-4 h-14 border-t border-yt-border">
-      <button type="button" onclick={resetAdvanced} class="px-3 py-2 rounded-md text-xs font-medium text-yt-text-secondary hover:bg-yt-highlight transition-colors">{t("download.advReset")}</button>
-      <button type="button" onclick={() => (advancedExpanded = false)} class="ml-auto px-5 h-9 rounded-md bg-yt-primary hover:bg-yt-primary-hover text-white text-sm font-medium transition-colors">{t("download.advDone")}</button>
-    </footer>
-  </aside>
+  <AdvancedOptionsDrawer
+    bind:advanced
+    {activeAdvancedCount}
+    onClose={() => (advancedExpanded = false)}
+    onSave={saveAdvanced}
+    onReset={resetAdvanced}
+    {showTooltip}
+    {hideTooltip}
+  />
 {/if}
 
 <style>
@@ -1748,19 +1446,5 @@
   }
   .animate-scale-in {
     animation: scale-in 0.2s ease-out;
-  }
-  @keyframes drawer-in {
-    from { opacity: 0; transform: translateX(16px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-  .animate-drawer-in {
-    animation: drawer-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  @keyframes scrim-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  .animate-scrim-in {
-    animation: scrim-in 0.2s ease-out;
   }
 </style>

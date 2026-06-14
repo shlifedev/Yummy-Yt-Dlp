@@ -1,5 +1,6 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
+  import type { DepInstallEvent, DownloadTaskInfo, FullDependencyStatus, GlobalDownloadEvent } from "$lib/bindings"
   import { invoke } from "@tauri-apps/api/core"
   import { listen } from "@tauri-apps/api/event"
   import { platform } from "@tauri-apps/plugin-os"
@@ -8,15 +9,13 @@
   import { onMount, onDestroy } from "svelte"
   import { openUrl } from "@tauri-apps/plugin-opener"
   import { t, initLocale } from "$lib/i18n/index.svelte"
-  import { extractError } from "$lib/utils/errors"
+  import { errorMessage, extractError } from "$lib/utils/errors"
   import { initTheme } from "$lib/theme/index.svelte"
   import { check, type Update } from "@tauri-apps/plugin-updater"
   import { relaunch, exit } from "@tauri-apps/plugin-process"
-  import type { ActiveDownload, ProgressCacheEntry } from "$lib/types"
+  import type { ProgressCacheEntry } from "$lib/types"
 
   let { children } = $props()
-
-  import type { FullDependencyStatus, DepInstallEvent } from "$lib/bindings"
 
   let checking = $state(true)
   let ytdlpInstalled = $state(false)
@@ -47,8 +46,8 @@
 
   // Popup state
   let popupOpen = $state(false)
-  let activeDownloads = $state<ActiveDownload[]>([])
-  let recentCompleted = $state<ActiveDownload[]>([])
+  let activeDownloads = $state<DownloadTaskInfo[]>([])
+  let recentCompleted = $state<DownloadTaskInfo[]>([])
   let progressCache = $state<Map<number, ProgressCacheEntry>>(new Map())
   let activeCount = $derived(activeDownloads.filter(d => d.status === "downloading").length)
   let pendingCount = $derived(activeDownloads.filter(d => d.status === "pending").length)
@@ -110,8 +109,8 @@
       } else {
         debugCmdResults[depName] = { status: "error", message: extractError(r.error) }
       }
-    } catch (e: any) {
-      debugCmdResults[depName] = { status: "error", message: e?.message || String(e) }
+    } catch (e) {
+      debugCmdResults[depName] = { status: "error", message: errorMessage(e) }
     }
     debugCmdResults = { ...debugCmdResults }
     await debugRefreshStatus()
@@ -155,8 +154,8 @@
     try {
       const result = await commands.cancelDownload(id)
       if (result.status === "error") showErrorToast(extractError(result.error))
-    } catch (e: any) {
-      showErrorToast(e?.message || String(e))
+    } catch (e) {
+      showErrorToast(errorMessage(e))
     }
     loadQueueSummary()
   }
@@ -190,7 +189,7 @@
       }
       if (result.status === "ok") {
         const data = result.data
-        activeDownloads = data.activeItems.map((item: any) => {
+        activeDownloads = data.activeItems.map((item) => {
           // item.groupTitle is populated by the (joined) active-queue summary query.
           const cached = progressCache.get(item.id)
           if (cached && item.status === "downloading") {
@@ -200,7 +199,7 @@
         })
         recentCompleted = data.recentCompleted
         // 더 이상 활성이 아닌 다운로드의 캐시 정리
-        const activeIds = new Set(data.activeItems.map((d: any) => d.id))
+        const activeIds = new Set(data.activeItems.map((d) => d.id))
         for (const id of progressCache.keys()) {
           if (!activeIds.has(id)) progressCache.delete(id)
         }
@@ -224,9 +223,9 @@
         console.error("Failed to cancel all downloads:", result.error)
         showErrorToast(extractError(result.error))
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error("Failed to cancel all downloads:", e)
-      showErrorToast(e?.message || String(e))
+      showErrorToast(errorMessage(e))
     }
     // Refresh immediately
     loadQueueSummary()
@@ -345,7 +344,7 @@
     }
 
     try {
-      const unlistenFn = await listen("download-event", (event: any) => {
+      const unlistenFn = await listen<GlobalDownloadEvent>("download-event", (event) => {
         const data = event.payload
 
         if (data.eventType === "progress") {
@@ -391,8 +390,8 @@
 
     // Backend blocks a close while downloads are active and tells us how many.
     try {
-      const unlistenBlockedFn = await listen("close-blocked", (event: any) => {
-        closeBlockedCount = typeof event.payload === "number" ? event.payload : (event.payload?.count ?? 0)
+      const unlistenBlockedFn = await listen<number | { count?: number }>("close-blocked", (event) => {
+        closeBlockedCount = typeof event.payload === "number" ? event.payload : (event.payload.count ?? 0)
         showCloseBlockedDialog = true
       })
       unlistenCloseBlocked = unlistenBlockedFn
@@ -514,8 +513,8 @@
 
     // Listen for install progress events
     try {
-      const unlistenFn = await listen("dep-install-event", (event: any) => {
-        const data = event.payload as DepInstallEvent
+      const unlistenFn = await listen<DepInstallEvent>("dep-install-event", (event) => {
+        const data = event.payload
         installProgress[data.depName] = {
           stage: data.stage,
           percent: data.percent,
@@ -552,8 +551,8 @@
       } else {
         installError = extractError(result.error)
       }
-    } catch (e: any) {
-      installError = e?.message || String(e)
+    } catch (e) {
+      installError = errorMessage(e)
     } finally {
       installing = false
       if (unlistenDepInstall) {

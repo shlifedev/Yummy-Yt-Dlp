@@ -40,3 +40,7 @@ export function getErrorKey(err: unknown): string {
 export function extractError(err: unknown): string {
   return t(getErrorKey(err))
 }
+
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}

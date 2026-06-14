@@ -1,20 +1,32 @@
 <script lang="ts">
   import { commands } from "$lib/bindings"
-  import type { HistoryItem } from "$lib/bindings"
+  import type { DownloadTaskInfo, GlobalDownloadEvent, HistoryEntry, HistoryItem } from "$lib/bindings"
   import { ask } from "@tauri-apps/plugin-dialog"
   import { listen } from "@tauri-apps/api/event"
   import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener"
   import { onMount, onDestroy } from "svelte"
-  import { t, getDateLocale } from "$lib/i18n/index.svelte"
-  import { extractError } from "$lib/utils/errors"
-  import { formatSize } from "$lib/utils/format"
   import { fade } from "svelte/transition"
+  import { t } from "$lib/i18n/index.svelte"
+  import { errorMessage, extractError } from "$lib/utils/errors"
+  import {
+    activeRowKey,
+    buildActiveFilters,
+    buildActiveRows,
+    groupDenominator as getGroupDenominator,
+    groupDone,
+    groupProgress as getGroupProgress,
+    historyEntryKey,
+    nextGroupMaxCounts,
+    type ActiveFilter,
+  } from "$lib/ytdlp/queue-view"
   import GroupHeader from "$lib/components/GroupHeader.svelte"
+  import QueueActiveItem from "$lib/components/QueueActiveItem.svelte"
+  import QueueHistoryItem from "$lib/components/QueueHistoryItem.svelte"
 
   // "In progress" section — downloads table, everything not yet completed.
-  let active = $state<any[]>([])
+  let active = $state<DownloadTaskInfo[]>([])
   // "Records" section — history (completed). Now a HistoryEntry[] (group | single).
-  let history = $state<any[]>([])
+  let history = $state<HistoryEntry[]>([])
   let historyTotal = $state(0)
   let page = $state(0)
   let pageSize = $state(20)
@@ -22,7 +34,7 @@
   let firstLoad = $state(true)
   let expandedErrors = $state<Set<number>>(new Set())
   let searchTimeout: ReturnType<typeof setTimeout>
-  let activeFilter = $state<string | null>(null)
+  let activeFilter = $state<ActiveFilter>(null)
   let busyActions = $state<Set<string>>(new Set())
   // Last queue/history action failure (retry/cancel/clear/delete), shown as a dismissible banner.
   let actionError = $state<string | null>(null)
@@ -57,14 +69,7 @@
   let filteredActive = $derived(activeFilter ? active.filter(i => i.status === activeFilter) : inProgress)
   // Collapse the active list into group rows (by group_id) + standalone rows.
   let activeRows = $derived(buildActiveRows(filteredActive))
-  let activeFilters = $derived([
-    { key: null, labelKey: "queue.all", count: inProgress.length },
-    { key: "downloading", labelKey: "queue.downloading", count: active.filter(i => i.status === "downloading").length },
-    { key: "pending", labelKey: "queue.pending", count: active.filter(i => i.status === "pending").length },
-    { key: "failed", labelKey: "queue.failed", count: active.filter(i => i.status === "failed").length },
-    { key: "cancelled", labelKey: "queue.cancelled", count: active.filter(i => i.status === "cancelled").length },
-    { key: "completed", labelKey: "queue.completed", count: active.filter(i => i.status === "completed").length },
-  ])
+  let activeFilters = $derived(buildActiveFilters(active, inProgress))
   let activeTitleKey = $derived(activeFilters.find(f => f.key === activeFilter)?.labelKey ?? "queue.all")
 
   // The active-queue payload only carries items still in the downloads table, so once a group's
@@ -73,49 +78,11 @@
   // bar can't jump backwards as members finish and disappear.
   let groupMaxCount = $state<Map<number, number>>(new Map())
 
-  function recordGroupCounts(items: any[]) {
-    const counts = new Map<number, number>()
-    for (const item of items) {
-      if (item.groupId != null) counts.set(item.groupId, (counts.get(item.groupId) ?? 0) + 1)
-    }
-    let changed = false
-    for (const [gid, n] of counts) {
-      if (n > (groupMaxCount.get(gid) ?? 0)) { groupMaxCount.set(gid, n); changed = true }
-    }
-    if (changed) groupMaxCount = new Map(groupMaxCount)
-  }
-
   function groupDenominator(gid: number, visible: number): number {
-    return Math.max(visible, groupMaxCount.get(gid) ?? 0)
+    return getGroupDenominator(groupMaxCount, gid, visible)
   }
-
-  function buildActiveRows(items: any[]) {
-    const rows: any[] = []
-    const groups = new Map<number, any>()
-    for (const item of items) {
-      if (item.groupId != null) {
-        let g = groups.get(item.groupId)
-        if (!g) {
-          g = { kind: "group", groupId: item.groupId, title: item.groupTitle || "—", items: [] }
-          groups.set(item.groupId, g)
-          rows.push(g)
-        }
-        g.items.push(item)
-      } else {
-        rows.push({ kind: "single", item })
-      }
-    }
-    return rows
-  }
-
-  function groupDone(items: any[]): number {
-    return items.filter(i => i.status === "completed").length
-  }
-  function groupProgress(gid: number, items: any[]): number {
-    const denom = groupDenominator(gid, items.length)
-    if (!denom) return 0
-    const sum = items.reduce((s, i) => s + (i.status === "completed" ? 100 : (i.progress || 0)), 0)
-    return Math.round(sum / denom)
+  function groupProgress(gid: number, items: DownloadTaskInfo[]): number {
+    return getGroupProgress(groupMaxCount, gid, items)
   }
   function isActiveExpanded(gid: number): boolean {
     return !collapsedActiveGroups.has(gid)
@@ -179,7 +146,7 @@
     // row in place (cheap), while status transitions re-pull the active queue (and history,
     // on completion) so rows move between sections. A slow 5s poll stays as a safety net.
     try {
-      unlistenDownload = await listen("download-event", (event: any) => {
+      unlistenDownload = await listen<GlobalDownloadEvent>("download-event", (event) => {
         const data = event.payload
         if (data.eventType === "progress") {
           const idx = active.findIndex(d => d.id === data.taskId)
@@ -220,7 +187,7 @@
       if (requestId !== activeLoadSeq) return
       if (r.status === "ok") {
         active = r.data
-        recordGroupCounts(r.data)
+        groupMaxCount = nextGroupMaxCounts(groupMaxCount, r.data)
         recordPollResult(true)
       } else {
         console.error("Failed to load active queue:", r.error)
@@ -272,9 +239,9 @@
           console.error("Failed to cancel:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to cancel:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -288,9 +255,9 @@
           console.error("Failed to retry:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to retry:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -304,9 +271,9 @@
           console.error("Failed to cancel all:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to cancel all:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -320,9 +287,9 @@
           console.error("Failed to cancel group:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to cancel group:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -339,9 +306,9 @@
           console.error("Failed to clear all:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to clear all:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -356,9 +323,9 @@
           console.error("Failed to delete history item:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to delete history item:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -373,9 +340,9 @@
           console.error("Failed to delete history group:", r.error)
           actionError = extractError(r.error)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("Failed to delete history group:", e)
-        actionError = e?.message || String(e)
+        actionError = errorMessage(e)
       }
     })
   }
@@ -420,131 +387,7 @@
     loadHistory()
   }
 
-  function thumbUrl(videoId: string | null | undefined): string | null {
-    const id = videoId?.trim()
-    return id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : null
-  }
-
-  function hideThumb(e: Event) {
-    (e.currentTarget as HTMLImageElement).remove()
-  }
-
-  function formatDate(ts: number): string {
-    return new Date(ts * 1000).toLocaleString(getDateLocale(), { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-  }
 </script>
-
-{#snippet activeItemCard(item: any)}
-  {@const thumbnail = thumbUrl(item.videoId)}
-  <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-yt-surface border border-yt-border/60" in:fade>
-    <div class="relative w-16 h-10 rounded overflow-hidden bg-yt-overlay-subtle shrink-0">
-      <span class="absolute inset-0 flex items-center justify-center material-symbols-outlined text-yt-text-muted text-[18px]">movie</span>
-      {#if thumbnail}
-        <img src={thumbnail} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
-      {/if}
-      {#if item.status === "downloading"}
-        <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
-          <span class="material-symbols-outlined text-white text-[16px] animate-spin">progress_activity</span>
-        </div>
-      {/if}
-    </div>
-
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center justify-between gap-2 mb-0.5">
-        <h4 class="font-medium text-yt-text text-sm truncate">{item.title}</h4>
-        <span class="text-[10px] px-1.5 py-0.5 rounded bg-yt-overlay border border-yt-border text-yt-text-secondary whitespace-nowrap shrink-0">{item.qualityLabel || "N/A"}</span>
-      </div>
-      <div class="flex items-center gap-3 text-xs">
-        {#if item.status === "downloading"}
-          <span class="text-yt-primary font-mono">{item.speed || "0 KiB/s"}</span>
-          <span class="text-yt-text-muted">ETA {item.eta || "--:--"}</span>
-          <div class="flex-1 max-w-32 bg-yt-overlay rounded-full h-1 overflow-hidden">
-            <div class="bg-yt-primary h-full transition-all duration-300" style="width: {item.progress || 0}%"></div>
-          </div>
-        {:else if item.status === "pending"}
-          <span class="text-yt-text-secondary">{t("queue.pendingStatus")}</span>
-        {:else if item.status === "failed"}
-          <button class="text-yt-error hover:underline flex items-center gap-1" onclick={() => toggleError(item.id)}>
-            {item.errorMessage ? t(item.errorMessage) : t("queue.failed")}
-            <span class="material-symbols-outlined text-[14px]">expand_more</span>
-          </button>
-        {:else if item.status === "cancelled"}
-          <span class="text-yt-text-muted">{t("queue.cancelled")}</span>
-        {:else if item.status === "completed"}
-          <span class="text-yt-success flex items-center gap-1">
-            <span class="material-symbols-outlined text-[14px]">check_circle</span>
-            {t("queue.completed")}
-          </span>
-        {/if}
-      </div>
-      {#if item.status === "failed" && (item.errorDetail || item.errorMessage) && expandedErrors.has(item.id)}
-        <div class="mt-2 text-xs text-yt-error bg-yt-error/5 p-2 rounded border border-yt-error/10 font-mono whitespace-pre-wrap">{item.errorDetail || t(item.errorMessage)}</div>
-      {/if}
-    </div>
-
-    <div class="shrink-0">
-      {#if item.status === "downloading" || item.status === "pending"}
-        <button class="p-1.5 rounded-md hover:bg-yt-error/10 text-yt-text-muted hover:text-yt-error transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick={() => handleCancel(item.id)} disabled={isBusy(`cancel:${item.id}`)} title={t("download.cancel")}>
-          <span class="material-symbols-outlined text-[18px] {isBusy(`cancel:${item.id}`) ? 'animate-spin' : ''}">{isBusy(`cancel:${item.id}`) ? "progress_activity" : "close"}</span>
-        </button>
-      {:else if item.status === "failed" || item.status === "cancelled"}
-        <button class="p-1.5 rounded-md hover:bg-yt-primary/10 text-yt-text-muted hover:text-yt-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed" onclick={() => handleRetry(item.id)} disabled={isBusy(`retry:${item.id}`)} title={t("queue.retry")}>
-          <span class="material-symbols-outlined text-[18px] {isBusy(`retry:${item.id}`) ? 'animate-spin' : ''}">{isBusy(`retry:${item.id}`) ? "progress_activity" : "refresh"}</span>
-        </button>
-      {/if}
-    </div>
-  </div>
-{/snippet}
-
-{#snippet historyItemCard(item: any)}
-  {@const thumbnail = thumbUrl(item.videoId)}
-  <div class="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-yt-highlight/40 transition-colors">
-    <div class="relative w-16 h-10 rounded overflow-hidden bg-yt-overlay-subtle shrink-0">
-      <span class="absolute inset-0 flex items-center justify-center material-symbols-outlined text-yt-success/60 text-[18px]">check_circle</span>
-      {#if thumbnail}
-        <img src={thumbnail} alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror={hideThumb} />
-      {/if}
-    </div>
-    <div class="flex-1 min-w-0">
-      <h4 class="font-medium text-yt-text text-sm truncate mb-0.5">{item.title}</h4>
-      <div class="flex items-center gap-2 text-xs text-yt-text-secondary flex-wrap">
-        <span class="px-1.5 py-0.5 rounded bg-yt-overlay">{item.qualityLabel || "N/A"}</span>
-        <span class="px-1.5 py-0.5 rounded bg-yt-overlay">{item.format}</span>
-        <span>{formatSize(item.fileSize, "-")}</span>
-        <span>{formatDate(item.downloadedAt)}</span>
-      </div>
-    </div>
-    <div class="flex items-center gap-1 shrink-0">
-      {#if item.filePath}
-        <button
-          class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-primary transition-all p-1.5 rounded-md hover:bg-yt-primary/10"
-          onclick={() => handleOpenFile(item.filePath)}
-          aria-label={t("history.openFile")}
-          title={t("history.openFile")}
-        >
-          <span class="material-symbols-outlined text-[18px]">play_arrow</span>
-        </button>
-        <button
-          class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-primary transition-all p-1.5 rounded-md hover:bg-yt-primary/10"
-          onclick={() => handleReveal(item.filePath)}
-          aria-label={t("history.revealInFolder")}
-          title={t("history.revealInFolder")}
-        >
-          <span class="material-symbols-outlined text-[18px]">folder_open</span>
-        </button>
-      {/if}
-      <button
-        class="opacity-0 group-hover:opacity-100 text-yt-text-muted hover:text-yt-error transition-all p-1.5 rounded-md hover:bg-yt-error/10"
-        onclick={() => handleDeleteHistory(item.id)}
-        disabled={isBusy(`delete-history:${item.id}`)}
-        aria-label={t("history.deleteItem")}
-        title={t("history.deleteItem")}
-      >
-        <span class="material-symbols-outlined text-[18px]">delete</span>
-      </button>
-    </div>
-  </div>
-{/snippet}
 
 <div class="flex-1 flex flex-col h-full bg-yt-bg overflow-y-auto hide-scrollbar">
   <header class="px-6 py-6 shrink-0 border-b border-yt-border bg-yt-surface/30">
@@ -623,7 +466,7 @@
           </div>
         </div>
         <div class="space-y-2">
-          {#each activeRows as row (row.kind === "group" ? `g${row.groupId}` : `s${row.item.id}`)}
+          {#each activeRows as row (activeRowKey(row))}
             {#if row.kind === "group"}
               <GroupHeader
                 title={row.title}
@@ -639,12 +482,28 @@
               {#if isActiveExpanded(row.groupId)}
                 <div class="pl-6 space-y-2">
                   {#each row.items as item (item.id)}
-                    {@render activeItemCard(item)}
+                    <QueueActiveItem
+                      {item}
+                      errorExpanded={expandedErrors.has(item.id)}
+                      cancelBusy={isBusy(`cancel:${item.id}`)}
+                      retryBusy={isBusy(`retry:${item.id}`)}
+                      onCancel={() => handleCancel(item.id)}
+                      onRetry={() => handleRetry(item.id)}
+                      onToggleError={() => toggleError(item.id)}
+                    />
                   {/each}
                 </div>
               {/if}
             {:else}
-              {@render activeItemCard(row.item)}
+              <QueueActiveItem
+                item={row.item}
+                errorExpanded={expandedErrors.has(row.item.id)}
+                cancelBusy={isBusy(`cancel:${row.item.id}`)}
+                retryBusy={isBusy(`retry:${row.item.id}`)}
+                onCancel={() => handleCancel(row.item.id)}
+                onRetry={() => handleRetry(row.item.id)}
+                onToggleError={() => toggleError(row.item.id)}
+              />
             {/if}
           {/each}
         </div>
@@ -676,7 +535,7 @@
         </div>
       {:else}
         <div class="space-y-2">
-          {#each history as entry (entry.kind === "group" ? `g${entry.group.groupId}` : `s${entry.item.id}`)}
+          {#each history as entry (historyEntryKey(entry))}
             {#if entry.kind === "group"}
               <GroupHeader
                 title={entry.group.title}
@@ -691,12 +550,24 @@
               {#if isHistoryExpanded(entry.group.groupId)}
                 <div class="pl-6 space-y-2">
                   {#each (historyGroupItems.get(entry.group.groupId) ?? []) as item (item.id)}
-                    {@render historyItemCard(item)}
+                    <QueueHistoryItem
+                      {item}
+                      deleteBusy={isBusy(`delete-history:${item.id}`)}
+                      onOpen={() => handleOpenFile(item.filePath)}
+                      onReveal={() => handleReveal(item.filePath)}
+                      onDelete={() => handleDeleteHistory(item.id)}
+                    />
                   {/each}
                 </div>
               {/if}
             {:else}
-              {@render historyItemCard(entry.item)}
+              <QueueHistoryItem
+                item={entry.item}
+                deleteBusy={isBusy(`delete-history:${entry.item.id}`)}
+                onOpen={() => handleOpenFile(entry.item.filePath)}
+                onReveal={() => handleReveal(entry.item.filePath)}
+                onDelete={() => handleDeleteHistory(entry.item.id)}
+              />
             {/if}
           {/each}
         </div>
