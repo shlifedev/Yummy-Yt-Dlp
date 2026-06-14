@@ -34,11 +34,26 @@ jobs:
           - platform: macos-14
             target: universal-apple-darwin
             name: macos
+          # ubuntu-22.04 on purpose: the build machine's glibc becomes the floor,
+          # so building on 22.04 (glibc 2.35) keeps the bundle usable on older distros.
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux
 
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.name == 'linux'
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          # libtinfo5: yt-dlp's PyInstaller _internal/libreadline.so.6 links
+          # against it; linuxdeploy refuses to build the AppImage when the
+          # dependency can't be resolved on the build machine.
+          packages: libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev libfuse2 libtinfo5
+          version: 1.0
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -194,15 +209,90 @@ jobs:
           lipo -info "$BIN/ffmpeg" "$BIN/deno"
           ls -la "$BIN" "$BIN/ytdlp"
 
+      - name: Prepare bundled binaries (Linux)
+        if: matrix.name == 'linux'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BIN=src-tauri/binaries
+          mkdir -p "$BIN"
+          # --retry-all-errors also retries the 404s GitHub briefly serves while
+          # a rolling release's assets are being swapped out.
+          fetch() {
+            curl -fL --retry 5 --retry-delay 15 --retry-all-errors --connect-timeout 20 "$1" -o "$2"
+          }
+          # BtbN deletes and re-uploads the rolling "latest" assets on every
+          # autobuild, so the URL can 404 for many minutes. Fall back to the
+          # newest finished autobuild release (same content, immutable assets).
+          fetch_btbn_ffmpeg() {
+            local suffix="$1" dest="$2" url
+            if fetch "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${suffix}" "$dest"; then
+              return 0
+            fi
+            echo "rolling 'latest' asset unavailable; falling back to newest autobuild release"
+            url=$(curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=10" \
+              | jq -r --arg s "$suffix" '[.[] | select(.tag_name != "latest") | .assets[] | select(.name | endswith($s)) | .browser_download_url] | first // empty')
+            test -n "$url"
+            fetch "$url" "$dest"
+          }
+          fetch "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux.zip" /tmp/ytdlp.zip
+          rm -rf /tmp/ytdlp-extract "$BIN/ytdlp"
+          unzip -q /tmp/ytdlp.zip -d /tmp/ytdlp-extract
+          mkdir -p "$BIN/ytdlp"
+          cp -R /tmp/ytdlp-extract/. "$BIN/ytdlp/"
+          # yt-dlp_linux.zip ships the executable as yt-dlp_linux; normalize to yt-dlp.
+          mv "$BIN/ytdlp/yt-dlp_linux" "$BIN/ytdlp/yt-dlp"
+          chmod +x "$BIN/ytdlp/yt-dlp"
+          test -d "$BIN/ytdlp/_internal"
+          # linuxdeploy resolves every bundled ELF's DT_NEEDED against system
+          # lib paths only, so sonames that exist solely inside _internal
+          # (libreadline.so.6, libffi.so.6, libpython3.14, ...) abort the
+          # AppImage build. Expose the missing ones to the resolver via
+          # /usr/local/lib symlinks — linuxdeploy then deploys yt-dlp's own
+          # copies into the AppDir.
+          for lib in "$BIN"/ytdlp/_internal/lib*.so*; do
+            name="$(basename "$lib")"
+            if ! ldconfig -p | grep -qF "	${name} ("; then
+              echo "exposing bundled soname to linuxdeploy: ${name}"
+              sudo ln -sf "$(realpath "$lib")" "/usr/local/lib/${name}"
+            fi
+          done
+          sudo ldconfig
+          fetch_btbn_ffmpeg "linux64-gpl.tar.xz" /tmp/ffmpeg.tar.xz
+          mkdir -p /tmp/ffx && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffx
+          cp "$(find /tmp/ffx -type f -name ffmpeg | head -1)" "$BIN/ffmpeg"
+          chmod +x "$BIN/ffmpeg"
+          PROBE=$(find /tmp/ffx -type f -name ffprobe | head -1 || true)
+          if [ -n "$PROBE" ]; then
+            cp "$PROBE" "$BIN/ffprobe"
+            chmod +x "$BIN/ffprobe"
+          fi
+          fetch "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip" /tmp/deno.zip
+          unzip -q /tmp/deno.zip -d /tmp/denox
+          cp "$(find /tmp/denox -type f -name deno | head -1)" "$BIN/deno"
+          chmod +x "$BIN/deno"
+          ls -la "$BIN" "$BIN/ytdlp"
+
       # No TAURI_SIGNING_* env here: dev builds deliberately skip updater artifacts
       # because they never feed the R2 updater manifest.
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # linuxdeploy strips every deployed binary and chokes on the yt-dlp
+          # PyInstaller _internal libs ("failed to run linuxdeploy"). Skip
+          # stripping — only the Linux AppImage bundler reads this.
+          NO_STRIP: true
         with:
           tauriScript: bun run tauri
-          args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json
+          # Linux dev builds skip rpm (its xz pass over the big sidecar payload
+          # adds ~30 min and dev testers use deb/AppImage) and run verbose so
+          # bundler failures like linuxdeploy's actually show their output.
+          args: --target ${{ matrix.target }} --config .github/tauri/no-updater-artifacts.json ${{ matrix.name == 'linux' && '--bundles deb,appimage --verbose' || '' }}
 
       - name: Rename portable exe
         if: matrix.name == 'windows'
@@ -222,6 +312,9 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             src-tauri/target/${{ matrix.target }}/release/bundle/*portable*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           if-no-files-found: ignore
 
   publish-dev:
@@ -293,3 +386,6 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.msi
             artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.rpm

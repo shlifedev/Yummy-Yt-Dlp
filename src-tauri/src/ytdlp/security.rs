@@ -163,6 +163,19 @@ fn is_blocked_v4(v4: std::net::Ipv4Addr) -> bool {
         || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
 }
 
+/// Whether a path segment is a Windows reserved device name (CON, PRN, AUX,
+/// NUL, COM1-9, LPT1-9). Windows compares against the stem before the first
+/// dot, case-insensitively — so "con.mp4" is reserved too. COM0/LPT0 and
+/// COM10+ are not reserved.
+fn is_windows_reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim();
+    let upper = stem.to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (upper.len() == 4
+            && (upper.starts_with("COM") || upper.starts_with("LPT"))
+            && matches!(upper.as_bytes()[3], b'1'..=b'9'))
+}
+
 /// Validate and sanitize a download output path.
 ///
 /// Ensures the path:
@@ -196,10 +209,24 @@ pub fn sanitize_output_path(path: &str) -> Result<String, AppError> {
 
     // Check for path traversal in any component
     for component in p.components() {
-        if let std::path::Component::ParentDir = component {
-            return Err(AppError::FileError(
-                "Download path must not contain '..' traversal".to_string(),
-            ));
+        match component {
+            std::path::Component::ParentDir => {
+                return Err(AppError::FileError(
+                    "Download path must not contain '..' traversal".to_string(),
+                ));
+            }
+            // Reserved device names only break things on Windows; on Unix a
+            // directory literally named "aux" is legal and must stay usable.
+            #[cfg(target_os = "windows")]
+            std::path::Component::Normal(seg)
+                if seg.to_str().is_some_and(is_windows_reserved_name) =>
+            {
+                return Err(AppError::FileError(format!(
+                    "Download path contains a Windows reserved name: '{}'",
+                    seg.to_string_lossy()
+                )));
+            }
+            _ => {}
         }
     }
 
@@ -239,6 +266,21 @@ pub fn sanitize_filename_template(template: &str) -> Result<String, AppError> {
         return Err(AppError::Custom(
             "Filename template must be a relative path".to_string(),
         ));
+    }
+
+    // Windows reserves names by the stem before the first dot, so a static
+    // stem like "CON.%(ext)s" still expands to an unwritable "CON.mp4".
+    // Stems with a %(...) field are yt-dlp's job (--windows-filenames); we
+    // reject typed-in reserved stems on every platform since downloads can
+    // land on NTFS shares/drives from any OS.
+    for segment in template.split(['/', '\\']) {
+        let stem = segment.split('.').next().unwrap_or("");
+        if !stem.contains("%(") && is_windows_reserved_name(stem) {
+            return Err(AppError::Custom(format!(
+                "Filename template contains a Windows reserved name: '{}'",
+                segment
+            )));
+        }
     }
 
     Ok(template.to_string())
@@ -596,6 +638,44 @@ mod tests {
     fn test_template_path_traversal() {
         assert!(sanitize_filename_template("../../%(title)s.%(ext)s").is_err());
         assert!(sanitize_filename_template("../secret/%(title)s").is_err());
+    }
+
+    // === Windows reserved name tests ===
+
+    #[test]
+    fn test_windows_reserved_names() {
+        assert!(is_windows_reserved_name("CON"));
+        assert!(is_windows_reserved_name("con"));
+        assert!(is_windows_reserved_name("con.mp4"));
+        assert!(is_windows_reserved_name("NUL.tar.gz"));
+        assert!(is_windows_reserved_name("COM1"));
+        assert!(is_windows_reserved_name("lpt9"));
+        assert!(is_windows_reserved_name(" aux "));
+
+        assert!(!is_windows_reserved_name("console"));
+        assert!(!is_windows_reserved_name("COM0"));
+        assert!(!is_windows_reserved_name("COM10"));
+        assert!(!is_windows_reserved_name("LPT0"));
+        assert!(!is_windows_reserved_name("conf"));
+        assert!(!is_windows_reserved_name(""));
+    }
+
+    #[test]
+    fn test_template_windows_reserved_names() {
+        assert!(sanitize_filename_template("CON.%(ext)s").is_err());
+        assert!(sanitize_filename_template("aux/%(title)s.%(ext)s").is_err());
+        assert!(sanitize_filename_template("videos\\nul\\%(title)s.%(ext)s").is_err());
+        // Dynamic segments are yt-dlp's job (--windows-filenames)
+        assert!(sanitize_filename_template("%(title)s.%(ext)s").is_ok());
+        assert!(sanitize_filename_template("CONcert/%(title)s.%(ext)s").is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_output_path_windows_reserved_names() {
+        assert!(sanitize_output_path("C:\\Users\\test\\CON").is_err());
+        assert!(sanitize_output_path("C:\\Users\\test\\com1\\videos").is_err());
+        assert!(sanitize_output_path("C:\\Users\\test\\Downloads").is_ok());
     }
 
     // === Cookie browser tests ===

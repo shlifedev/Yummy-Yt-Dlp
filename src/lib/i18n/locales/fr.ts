@@ -317,6 +317,7 @@ const fr: Record<string, string> = {
   "history.revealInFolder": "Afficher dans le dossier",
   "history.openFile": "Ouvrir le fichier",
   "history.openFileFailed": "Impossible d'ouvrir le fichier. Il a peut-être été déplacé ou supprimé.",
+  "history.revealFailed": "Impossible d'afficher le fichier dans le dossier. Il a peut-être été déplacé ou supprimé.",
   "history.deleteItem": "Supprimer",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const fr: Record<string, string> = {
   "layout.downloadFailedToast": "Échec du téléchargement : {title}",
   "layout.failedCount": "{count} téléchargement(s) échoué(s)",
   "queue.actionFailed": "L'action a échoué",
+  "queue.pollFailed": "Impossible d'actualiser la liste des téléchargements. Nouvelles tentatives en cours.",
   "update.failed": "Échec de la mise à jour",
   "update.restartNow": "Redémarrer maintenant",
   "update.restartManually": "La mise à jour a été installée, mais le redémarrage automatique a échoué. Veuillez redémarrer l'application manuellement.",

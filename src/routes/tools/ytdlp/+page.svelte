@@ -743,9 +743,12 @@
               duplicateUrl = url.trim()
               return
             }
+          } else if (dupResult.status === "error") {
+            console.warn("Duplicate check failed, proceeding with download:", extractError(dupResult.error))
           }
         } catch (e) {
-          // Duplicate check failed, proceed with download anyway
+          // Duplicate check is advisory — proceed with the download anyway
+          console.warn("Duplicate check failed, proceeding with download:", e)
         }
       }
 
@@ -1414,7 +1417,7 @@
 
               <!-- List -->
               <div class="divide-y divide-yt-border/50">
-                 {#each playlistResult.entries as entry, i}
+                 {#each playlistResult.entries as entry (entry.videoId)}
                     <div class="group flex items-center gap-3 p-3 hover:bg-yt-highlight/50 transition-colors {selectedEntries.has(entry.videoId) ? 'bg-yt-primary/5' : ''}">
                        <!-- Checkbox -->
                        <div class="shrink-0 pl-1">

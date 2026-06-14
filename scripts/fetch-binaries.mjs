@@ -15,12 +15,13 @@ const BIN = join(repoRoot, "src-tauri", "binaries")
 const platform = process.platform
 const arch = process.arch
 
-if (platform !== "darwin" && platform !== "win32") {
+if (!["darwin", "win32", "linux"].includes(platform)) {
   console.log(`fetch-binaries: ${platform} is not a bundled-release target; skipping (use the in-app installer instead)`)
   process.exit(0)
 }
 
 const isWin = platform === "win32"
+const isLinux = platform === "linux"
 const exe = (name) => (isWin ? `${name}.exe` : name)
 
 const targets = {
@@ -46,10 +47,14 @@ async function download(url, dest) {
 }
 
 // bsdtar (default tar on macOS and Windows 10+) extracts both zip and tar.gz.
+// Linux ships GNU tar, which can't read zip — use unzip there instead.
 function extract(archive, destDir) {
   mkdirSync(destDir, { recursive: true })
-  const r = spawnSync("tar", ["-xf", archive, "-C", destDir], { stdio: "inherit" })
-  if (r.status !== 0) throw new Error(`extraction failed for ${archive}`)
+  const useUnzip = isLinux && archive.endsWith(".zip")
+  const r = useUnzip
+    ? spawnSync("unzip", ["-q", archive, "-d", destDir], { stdio: "inherit" })
+    : spawnSync("tar", ["-xf", archive, "-C", destDir], { stdio: "inherit" })
+  if (r.status !== 0) throw new Error(`extraction failed for ${archive} (linux needs unzip + xz-utils installed)`)
 }
 
 function findFile(dir, name) {
@@ -70,7 +75,7 @@ function makeExecutable(path) {
 }
 
 async function fetchYtdlp() {
-  const zipName = isWin ? "yt-dlp_win.zip" : "yt-dlp_macos.zip"
+  const zipName = isWin ? "yt-dlp_win.zip" : isLinux ? "yt-dlp_linux.zip" : "yt-dlp_macos.zip"
   const archive = join(tmp, zipName)
   await download(`https://github.com/yt-dlp/yt-dlp/releases/latest/download/${zipName}`, archive)
   const extractDir = join(tmp, "ytdlp-extract")
@@ -86,10 +91,11 @@ async function fetchYtdlp() {
   cpSync(extractDir, destDir, { recursive: true })
   if (keep !== null) writeFileSync(gitkeep, keep)
 
-  // The macOS onedir zip names the executable yt-dlp_macos; normalize to yt-dlp.
+  // The macOS/Linux onedir zips name the executable yt-dlp_macos / yt-dlp_linux;
+  // normalize to yt-dlp (same rule as dep_ytdlp.rs get_archived_exe_name()).
   if (!isWin) {
-    const macName = join(destDir, "yt-dlp_macos")
-    if (existsSync(macName)) renameSync(macName, targets.ytdlp)
+    const archivedName = join(destDir, isLinux ? "yt-dlp_linux" : "yt-dlp_macos")
+    if (existsSync(archivedName)) renameSync(archivedName, targets.ytdlp)
   }
   // Fail loudly if the upstream onedir layout ever changes, so we never seed a
   // tree that can't resolve yt-dlp.
@@ -104,6 +110,12 @@ async function fetchFfmpeg() {
   if (isWin) {
     const archive = join(tmp, "ffmpeg.zip")
     await download("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", archive)
+    extract(archive, extractDir)
+  } else if (isLinux) {
+    // Same BtbN builds dep_ffmpeg.rs uses at runtime. Needs xz-utils for tar to unpack.
+    const ffArch = arch === "arm64" ? "linuxarm64" : "linux64"
+    const archive = join(tmp, "ffmpeg.tar.xz")
+    await download(`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${ffArch}-gpl.tar.xz`, archive)
     extract(archive, extractDir)
   } else {
     const ffArch = arch === "arm64" ? "arm64" : "x64"
@@ -126,9 +138,13 @@ async function fetchFfmpeg() {
 async function fetchDeno() {
   const denoTarget = isWin
     ? "x86_64-pc-windows-msvc"
-    : arch === "arm64"
-      ? "aarch64-apple-darwin"
-      : "x86_64-apple-darwin"
+    : isLinux
+      ? arch === "arm64"
+        ? "aarch64-unknown-linux-gnu"
+        : "x86_64-unknown-linux-gnu"
+      : arch === "arm64"
+        ? "aarch64-apple-darwin"
+        : "x86_64-apple-darwin"
   const archive = join(tmp, "deno.zip")
   await download(`https://github.com/denoland/deno/releases/latest/download/deno-${denoTarget}.zip`, archive)
   const extractDir = join(tmp, "denox")

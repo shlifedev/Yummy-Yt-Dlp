@@ -325,6 +325,7 @@ const en: Record<string, string> = {
   "history.revealInFolder": "Show in folder",
   "history.openFile": "Open file",
   "history.openFileFailed": "Could not open the file. It may have been moved or deleted.",
+  "history.revealFailed": "Could not show the file in folder. It may have been moved or deleted.",
   "history.deleteItem": "Delete",
 
   // Added: error classification & i18n fixes
@@ -340,6 +341,7 @@ const en: Record<string, string> = {
   "layout.downloadFailedToast": "Download failed: {title}",
   "layout.failedCount": "{count} download(s) failed",
   "queue.actionFailed": "Action failed",
+  "queue.pollFailed": "Could not refresh the download list. Will keep retrying.",
   "update.failed": "Update failed",
   "update.restartNow": "Restart now",
   "update.restartManually": "The update was installed, but the app couldn't restart automatically. Please restart it manually.",

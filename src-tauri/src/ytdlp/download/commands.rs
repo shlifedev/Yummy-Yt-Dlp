@@ -143,9 +143,18 @@ pub async fn cancel_all_downloads(app: AppHandle) -> Result<u32, AppError> {
     let mut cancelled = 0u32;
 
     for id in ids {
-        if db_state.cancel_if_active(id).unwrap_or(false) {
-            manager.send_cancel(id);
-            cancelled += 1;
+        match db_state.cancel_if_active(id) {
+            Ok(true) => {
+                manager.send_cancel(id);
+                cancelled += 1;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                crate::modules::logger::warn_cat(
+                    "download",
+                    &format!("[download:{}] cancel_if_active failed: {}", id, e),
+                );
+            }
         }
     }
 
@@ -230,9 +239,18 @@ pub async fn cancel_group(app: AppHandle, group_id: u64) -> Result<u32, AppError
     let mut cancelled = 0u32;
 
     for id in ids {
-        if db_state.cancel_if_active(id).unwrap_or(false) {
-            manager.send_cancel(id);
-            cancelled += 1;
+        match db_state.cancel_if_active(id) {
+            Ok(true) => {
+                manager.send_cancel(id);
+                cancelled += 1;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                crate::modules::logger::warn_cat(
+                    "download",
+                    &format!("[download:{}] cancel_if_active failed: {}", id, e),
+                );
+            }
         }
     }
 

@@ -317,6 +317,7 @@ const ja: Record<string, string> = {
   "history.revealInFolder": "フォルダで表示",
   "history.openFile": "ファイルを開く",
   "history.openFileFailed": "ファイルを開けませんでした。移動または削除された可能性があります。",
+  "history.revealFailed": "フォルダ内でファイルを表示できませんでした。移動または削除された可能性があります。",
   "history.deleteItem": "削除",
 
   // Added: error classification & i18n fixes
@@ -332,6 +333,7 @@ const ja: Record<string, string> = {
   "layout.downloadFailedToast": "ダウンロード失敗: {title}",
   "layout.failedCount": "{count}件のダウンロードが失敗しました",
   "queue.actionFailed": "操作を実行できませんでした",
+  "queue.pollFailed": "ダウンロードリストを更新できませんでした。自動的に再試行します。",
   "update.failed": "アップデートに失敗しました",
   "update.restartNow": "今すぐ再起動",
   "update.restartManually": "アップデートはインストールされましたが、自動再起動に失敗しました。手動でアプリを再起動してください。",
