@@ -1,6 +1,21 @@
 # Changelog
 
 
+## v1.1.50 (2026-06-14)
+
+### Features
+- add Linux to the build and release pipeline
+
+### Bug Fixes
+- expose yt-dlp's private sonames so linuxdeploy can resolve them
+- install libtinfo5 so linuxdeploy can resolve yt-dlp's readline dep
+- skip linuxdeploy stripping so the AppImage bundles
+- satisfy windows clippy in reserved-name path check
+- surface silent frontend failures and clean up listeners
+
+### Other Changes
+- verbose linux dev bundling and drop rpm from dev builds
+
 ## v1.1.49 (2026-06-11)
 
 ## v1.1.48 (2026-06-11)
