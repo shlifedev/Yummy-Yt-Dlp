@@ -1,6 +1,11 @@
 # Changelog
 
 
+## v1.1.51 (2026-06-15)
+
+### Bug Fixes
+- align tauri rust dependency versions
+
 ## v1.1.50 (2026-06-14)
 
 ### Features
